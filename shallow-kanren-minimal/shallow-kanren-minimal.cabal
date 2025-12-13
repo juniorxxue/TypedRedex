@@ -22,7 +22,43 @@ library
   default-language: Haskell2010
 
 executable example-lambda-step
-  hs-source-dirs:   app
+  hs-source-dirs:   examples/lambda-step
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    shallow-kanren-minimal,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-stlc-bidir
+  hs-source-dirs:   examples/stlc-bidir
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    shallow-kanren-minimal,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-hm-inference
+  hs-source-dirs:   examples/hm-inference
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    shallow-kanren-minimal,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-pcf-step
+  hs-source-dirs:   examples/pcf-step
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    shallow-kanren-minimal,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-poly-infer
+  hs-source-dirs:   examples/poly-infer
   main-is:          Main.hs
   build-depends:
     base >=4.12 && <5,
