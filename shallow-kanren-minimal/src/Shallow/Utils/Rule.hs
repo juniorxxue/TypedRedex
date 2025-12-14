@@ -17,12 +17,13 @@
 -- @
 -- stepAppL = rule2 \"step-app-l\" $ \\concl ->
 --   fresh3 $ \\e1 e1' e2 ->
---     concl (app e1 e2) (app e1' e2) *>   -- conclusion pattern
---     call (step e1 e1')                   -- premise
+--     concl (app e1 e2) (app e1' e2) *>  -- conclusion pattern
+--     call (step e1 e1')                  -- premise
 -- @
 --
 -- IMPORTANT: Put @concl@ FIRST, before premises. This ensures the
--- patterns constrain fresh variables before recursive calls.
+-- patterns constrain fresh variables before recursive calls, which
+-- is necessary for termination.
 
 module Shallow.Utils.Rule
   ( -- * Rule combinators
@@ -36,6 +37,11 @@ module Shallow.Utils.Rule
   , axiom2
   , axiom3
   , axiom4
+    -- * Combining multiple rules
+  , rules
+  , rules2
+  , rules3
+  , rules4
   ) where
 
 import Shallow.Core.Internal.Kanren
@@ -128,3 +134,57 @@ axiom4 :: (Kanren rel, LogicType a, LogicType b, LogicType c, LogicType d)
        -> L a rel -> L b rel -> L c rel -> L d rel
        -> L a rel -> L b rel -> L c rel -> L d rel -> Relation rel
 axiom4 name px py pz pw = rule4 name $ \concl -> concl px py pz pw
+
+-- | Combine multiple unary rules into one relation.
+--
+-- @
+-- value = rules "value" [valueLam, valueZero, valueSucc]
+-- @
+rules :: (Kanren rel, LogicType a)
+      => String
+      -> [L a rel -> Relation rel]
+      -> L a rel -> Relation rel
+rules name rs = relation name $ \x ->
+  conde [call (r x) | r <- rs]
+
+-- | Combine multiple binary rules into one relation.
+--
+-- @
+-- step = rules2 "step"
+--   [ stepBeta
+--   , stepAppL
+--   , stepAppR
+--   , ...
+--   ]
+-- @
+rules2 :: (Kanren rel, LogicType a, LogicType b)
+       => String
+       -> [L a rel -> L b rel -> Relation rel]
+       -> L a rel -> L b rel -> Relation rel
+rules2 name rs = relation2 name $ \x y ->
+  conde [call (r x y) | r <- rs]
+
+-- | Combine multiple ternary rules into one relation.
+--
+-- @
+-- subst0 = rules3 "subst0"
+--   [ subst0Lam
+--   , subst0Var0
+--   , subst0App
+--   , ...
+--   ]
+-- @
+rules3 :: (Kanren rel, LogicType a, LogicType b, LogicType c)
+       => String
+       -> [L a rel -> L b rel -> L c rel -> Relation rel]
+       -> L a rel -> L b rel -> L c rel -> Relation rel
+rules3 name rs = relation3 name $ \x y z ->
+  conde [call (r x y z) | r <- rs]
+
+-- | Combine multiple quaternary rules into one relation.
+rules4 :: (Kanren rel, LogicType a, LogicType b, LogicType c, LogicType d)
+       => String
+       -> [L a rel -> L b rel -> L c rel -> L d rel -> Relation rel]
+       -> L a rel -> L b rel -> L c rel -> L d rel -> Relation rel
+rules4 name rs = relation4 name $ \x y z w ->
+  conde [call (r x y z w) | r <- rs]

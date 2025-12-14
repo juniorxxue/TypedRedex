@@ -157,69 +157,92 @@ value = relation "value" $ \t ->
   conde
     [ fresh $ \b -> t <=> lam b
     , t <=> zero
-    , fresh $ \v -> do
-        t <=> succTm v
-        call $ value v
-        pure ()
+    , fresh $ \v ->
+        t <=> succTm v *>
+        call (value v)
     ]
 
 --------------------------------------------------------------------------------
 -- Substitution (naive, non-capture-avoiding)
 --------------------------------------------------------------------------------
 
+-- subst0 body arg out means [arg/0]body = out
+
+-- Lambda: don't substitute under binder
+subst0Lam :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
+subst0Lam = rule3 "subst0-lam" $ \concl ->
+  fresh2 $ \b arg ->
+    concl (lam b) arg (lam b)
+
+-- Variable at index 0: replace with arg
+subst0Var0 :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
+subst0Var0 = rule3 "subst0-var0" $ \concl ->
+  fresh $ \arg ->
+    concl (var zro) arg arg
+
+-- Variable at index n+1: decrement to n
+subst0VarS :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
+subst0VarS = rule3 "subst0-varS" $ \concl ->
+  fresh2 $ \n' arg ->
+    concl (var (suc n')) arg (var n')
+
+-- Application
+subst0App :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
+subst0App = rule3 "subst0-app" $ \concl ->
+  fresh5 $ \f a arg f' a' ->
+    concl (app f a) arg (app f' a') *>
+    call (subst0 f arg f') *>
+    call (subst0 a arg a')
+
+-- Zero
+subst0Zero :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
+subst0Zero = rule3 "subst0-zero" $ \concl ->
+  fresh $ \arg ->
+    concl zero arg zero
+
+-- Succ
+subst0Succ :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
+subst0Succ = rule3 "subst0-succ" $ \concl ->
+  fresh3 $ \e arg e' ->
+    concl (succTm e) arg (succTm e') *>
+    call (subst0 e arg e')
+
+-- Pred
+subst0Pred :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
+subst0Pred = rule3 "subst0-pred" $ \concl ->
+  fresh3 $ \e arg e' ->
+    concl (predTm e) arg (predTm e') *>
+    call (subst0 e arg e')
+
+-- Ifz
+subst0Ifz :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
+subst0Ifz = rule3 "subst0-ifz" $ \concl ->
+  fresh4 $ \e e1 e2 arg -> fresh3 $ \e' e1' e2' ->
+    concl (ifz e e1 e2) arg (ifz e' e1' e2') *>
+    call (subst0 e arg e') *>
+    call (subst0 e1 arg e1') *>
+    call (subst0 e2 arg e2')
+
+-- Fix
+subst0Fix :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
+subst0Fix = rule3 "subst0-fix" $ \concl ->
+  fresh3 $ \e arg e' ->
+    concl (fix e) arg (fix e') *>
+    call (subst0 e arg e')
+
+-- Combined substitution relation
 subst0 :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
-subst0 = relation3 "subst0" $ \body arg out ->
-  conde
-    [ fresh $ \b -> do
-        body <=> lam b
-        out <=> lam b
-        pure ()
-    , fresh2 $ \n n' -> do
-        body <=> var n
-        conde
-          [ do
-              n <=> zro
-              out <=> arg
-              pure ()
-          , do
-              n <=> suc n'
-              out <=> var n'
-              pure ()
-          ]
-        pure ()
-    , fresh4 $ \f a f' a' -> do
-        body <=> app f a
-        call $ subst0 f arg f'
-        call $ subst0 a arg a'
-        out <=> app f' a'
-        pure ()
-    , do
-        body <=> zero
-        out <=> zero
-        pure ()
-    , fresh2 $ \e e' -> do
-        body <=> succTm e
-        call $ subst0 e arg e'
-        out <=> succTm e'
-        pure ()
-    , fresh2 $ \e e' -> do
-        body <=> predTm e
-        call $ subst0 e arg e'
-        out <=> predTm e'
-        pure ()
-    , fresh3 $ \e e1 e2 -> fresh3 $ \e' e1' e2' -> do
-        body <=> ifz e e1 e2
-        call $ subst0 e arg e'
-        call $ subst0 e1 arg e1'
-        call $ subst0 e2 arg e2'
-        out <=> ifz e' e1' e2'
-        pure ()
-    , fresh2 $ \e e' -> do
-        body <=> fix e
-        call $ subst0 e arg e'
-        out <=> fix e'
-        pure ()
-    ]
+subst0 = rules3 "subst0"
+  [ subst0Lam
+  , subst0Var0
+  , subst0VarS
+  , subst0App
+  , subst0Zero
+  , subst0Succ
+  , subst0Pred
+  , subst0Ifz
+  , subst0Fix
+  ]
 
 --------------------------------------------------------------------------------
 -- Small-step operational semantics using inference-rule style
@@ -353,20 +376,19 @@ stepFix = rule2 "fix" $ \concl ->
 
 -- Combined step relation
 step :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-step = relation2 "step" $ \t t' ->
-  conde
-    [ call $ stepBeta t t'
-    , call $ stepAppL t t'
-    , call $ stepAppR t t'
-    , call $ stepSucc t t'
-    , call $ stepPredZero t t'
-    , call $ stepPredSucc t t'
-    , call $ stepPred t t'
-    , call $ stepIfzZero t t'
-    , call $ stepIfzSucc t t'
-    , call $ stepIfzCong t t'
-    , call $ stepFix t t'
-    ]
+step = rules2 "step"
+  [ stepBeta
+  , stepAppL
+  , stepAppR
+  , stepSucc
+  , stepPredZero
+  , stepPredSucc
+  , stepPred
+  , stepIfzZero
+  , stepIfzSucc
+  , stepIfzCong
+  , stepFix
+  ]
 
 -- Run step in mode (I,O)
 stepIO :: Tm -> Stream Tm
@@ -415,11 +437,10 @@ main = do
   putStrLn "=== Syntax Comparison ==="
   putStrLn ""
   putStrLn "OLD STYLE (explicit <=>):"
-  putStrLn "  stepAppL = relation2 \"step_appL\" $ \\t t' -> fresh3 $ \\e1 e1' e2 -> do"
-  putStrLn "    t <=> app e1 e2"
-  putStrLn "    call $ step e1 e1'"
+  putStrLn "  stepAppL = relation2 \"step_appL\" $ \\t t' -> fresh3 $ \\e1 e1' e2 ->"
+  putStrLn "    t <=> app e1 e2 *>"
+  putStrLn "    call (step e1 e1') *>"
   putStrLn "    t' <=> app e1' e2"
-  putStrLn "    pure ()"
   putStrLn ""
   putStrLn "NEW STYLE (inference rule with concl):"
   putStrLn "  stepAppL = rule2 \"app-L\" $ \\concl ->"
