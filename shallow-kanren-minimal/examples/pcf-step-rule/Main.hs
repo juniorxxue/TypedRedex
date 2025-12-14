@@ -232,12 +232,11 @@ subst0 = relation3 "subst0" $ \body arg out ->
 --   (λx.body) v ⟶ e'
 
 stepBeta :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepBeta = rule2 "β" $ \match result ->
+stepBeta = rule2 "β" $ \concl ->
   fresh3 $ \body v e' ->
-    match (app (lam body) v) *>
+    concl (app (lam body) v) e' *>
     call (value v) *>
-    call (subst0 body v e') *>
-    result e'
+    call (subst0 body v e')
 
 -- Application left congruence:
 --
@@ -246,11 +245,10 @@ stepBeta = rule2 "β" $ \match result ->
 --   e₁ e₂ ⟶ e₁' e₂
 
 stepAppL :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepAppL = rule2 "app-L" $ \match result ->
+stepAppL = rule2 "app-L" $ \concl ->
   fresh3 $ \e1 e1' e2 ->
-    match (app e1 e2) *>
-    call (step e1 e1') *>
-    result (app e1' e2)
+    concl (app e1 e2) (app e1' e2) *>
+    call (step e1 e1')
 
 -- Application right congruence:
 --
@@ -259,12 +257,11 @@ stepAppL = rule2 "app-L" $ \match result ->
 --   v e₂ ⟶ v e₂'
 
 stepAppR :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepAppR = rule2 "app-R" $ \match result ->
+stepAppR = rule2 "app-R" $ \concl ->
   fresh3 $ \v e2 e2' ->
-    match (app v e2) *>
+    concl (app v e2) (app v e2') *>
     call (value v) *>
-    call (step e2 e2') *>
-    result (app v e2')
+    call (step e2 e2')
 
 -- Successor congruence:
 --
@@ -273,11 +270,10 @@ stepAppR = rule2 "app-R" $ \match result ->
 --   succ(e) ⟶ succ(e')
 
 stepSucc :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepSucc = rule2 "succ" $ \match result ->
+stepSucc = rule2 "succ" $ \concl ->
   fresh2 $ \e e' ->
-    match (succTm e) *>
-    call (step e e') *>
-    result (succTm e')
+    concl (succTm e) (succTm e') *>
+    call (step e e')
 
 -- Predecessor of zero (axiom):
 --
@@ -294,11 +290,10 @@ stepPredZero = axiom2 "pred-zero" (predTm zero) zero
 --   pred(succ(v)) ⟶ v
 
 stepPredSucc :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepPredSucc = rule2 "pred-succ" $ \match result ->
+stepPredSucc = rule2 "pred-succ" $ \concl ->
   fresh $ \v ->
-    match (predTm (succTm v)) *>
-    call (value v) *>
-    result v
+    concl (predTm (succTm v)) v *>
+    call (value v)
 
 -- Predecessor congruence:
 --
@@ -307,11 +302,10 @@ stepPredSucc = rule2 "pred-succ" $ \match result ->
 --   pred(e) ⟶ pred(e')
 
 stepPred :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepPred = rule2 "pred" $ \match result ->
+stepPred = rule2 "pred" $ \concl ->
   fresh2 $ \e e' ->
-    match (predTm e) *>
-    call (step e e') *>
-    result (predTm e')
+    concl (predTm e) (predTm e') *>
+    call (step e e')
 
 -- If-zero when condition is zero:
 --
@@ -319,10 +313,9 @@ stepPred = rule2 "pred" $ \match result ->
 --   ifz(0, e₁, e₂) ⟶ e₁
 
 stepIfzZero :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepIfzZero = rule2 "ifz-zero" $ \match result ->
+stepIfzZero = rule2 "ifz-zero" $ \concl ->
   fresh2 $ \e1 e2 ->
-    match (ifz zero e1 e2) *>
-    result e1
+    concl (ifz zero e1 e2) e1
 
 -- If-zero when condition is successor:
 --
@@ -331,11 +324,10 @@ stepIfzZero = rule2 "ifz-zero" $ \match result ->
 --   ifz(succ(v), e₁, e₂) ⟶ e₂
 
 stepIfzSucc :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepIfzSucc = rule2 "ifz-succ" $ \match result ->
+stepIfzSucc = rule2 "ifz-succ" $ \concl ->
   fresh3 $ \v e1 e2 ->
-    match (ifz (succTm v) e1 e2) *>
-    call (value v) *>
-    result e2
+    concl (ifz (succTm v) e1 e2) e2 *>
+    call (value v)
 
 -- If-zero congruence:
 --
@@ -344,11 +336,10 @@ stepIfzSucc = rule2 "ifz-succ" $ \match result ->
 --   ifz(e, e₁, e₂) ⟶ ifz(e', e₁, e₂)
 
 stepIfzCong :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepIfzCong = rule2 "ifz" $ \match result ->
+stepIfzCong = rule2 "ifz" $ \concl ->
   fresh4 $ \e e' e1 e2 ->
-    match (ifz e e1 e2) *>
-    call (step e e') *>
-    result (ifz e' e1 e2)
+    concl (ifz e e1 e2) (ifz e' e1 e2) *>
+    call (step e e')
 
 -- Fixpoint unrolling:
 --
@@ -356,10 +347,9 @@ stepIfzCong = rule2 "ifz" $ \match result ->
 --   fix(e) ⟶ e (fix(e))
 
 stepFix :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepFix = rule2 "fix" $ \match result ->
+stepFix = rule2 "fix" $ \concl ->
   fresh $ \e ->
-    match (fix e) *>
-    result (app e (fix e))
+    concl (fix e) (app e (fix e))
 
 -- Combined step relation
 step :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
@@ -431,12 +421,11 @@ main = do
   putStrLn "    t' <=> app e1' e2"
   putStrLn "    pure ()"
   putStrLn ""
-  putStrLn "NEW STYLE (inference rule, match/result):"
-  putStrLn "  stepAppL = rule2 \"app-L\" $ \\match result ->"
+  putStrLn "NEW STYLE (inference rule with concl):"
+  putStrLn "  stepAppL = rule2 \"app-L\" $ \\concl ->"
   putStrLn "    fresh3 $ \\e1 e1' e2 ->"
-  putStrLn "      match (app e1 e2) *>       -- input pattern"
-  putStrLn "      call (step e1 e1') *>      -- premise"
-  putStrLn "      result (app e1' e2)        -- output pattern"
+  putStrLn "      concl (app e1 e2) (app e1' e2) *>"
+  putStrLn "      call (step e1 e1')"
   putStrLn ""
   putStrLn "The new style matches the inference rule:"
   putStrLn "      e₁ ⟶ e₁'"
