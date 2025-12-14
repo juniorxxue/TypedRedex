@@ -1,0 +1,57 @@
+cabal-version:      2.4
+name:               shallow-kanren-fresh-prototype
+version:            0.1.0.0
+license:            MIT
+author:             Fresh-aware shallow-kanren prototype
+maintainer:         you@example.com
+build-type:         Simple
+
+library
+  hs-source-dirs:   src-fresh
+  exposed-modules:
+    Stream
+    Shallow.Core.Internal.Logic
+    Shallow.Core.Internal.Kanren
+    Shallow.Interpreters.SubstKanrenFresh
+    Shallow.Utils.Kanren
+  build-depends:
+    base >=4.12 && <5,
+    mtl  >=2.2  && <3,
+    unbound-generics >=0.4 && <0.5
+  default-language: Haskell2010
+  default-extensions:
+    DeriveGeneric
+    DeriveDataTypeable
+
+executable fresh-lambda
+  hs-source-dirs:   examples-fresh/fresh-lambda
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    shallow-kanren-fresh-prototype,
+    mtl  >=2.2  && <3,
+    unbound-generics >=0.4 && <0.5
+  default-language: Haskell2010
+  default-extensions:
+    DeriveGeneric
+    DeriveDataTypeable
+    FlexibleInstances
+    FlexibleContexts
+    MultiParamTypeClasses
+
+executable stlc-bidir
+  hs-source-dirs:   examples-fresh/stlc-bidir
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    shallow-kanren-fresh-prototype,
+    mtl  >=2.2  && <3,
+    unbound-generics >=0.4 && <0.5
+  default-language: Haskell2010
+  default-extensions:
+    DeriveGeneric
+    DeriveDataTypeable
+    FlexibleInstances
+    FlexibleContexts
+    MultiParamTypeClasses
+    RankNTypes

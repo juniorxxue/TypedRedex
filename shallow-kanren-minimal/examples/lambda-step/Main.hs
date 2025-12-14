@@ -138,11 +138,10 @@ stepAppL = relation2 "step_appL" $ \t t' -> fresh3 $ \t1 t1' t2 -> do
   pure ()
 
 stepAppR :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
-stepAppR = relation2 "step_appR" $ \t t' -> fresh3 $ \v t2 t2' -> do
+stepAppR = relation2 "step_appR" v t2 t2' -> do
   call $ value v
-  t <=> app v t2
-  t' <=> app v t2'
   call $ step t2 t2'
+  conclude $ step (app v t2) (app v t2')
   pure ()
 
 step :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
