@@ -15,6 +15,7 @@ library
     Shallow.Core.Internal.Logic
     Shallow.Interpreters.SubstKanren
     Shallow.Utils.Kanren
+    Shallow.Utils.Rule
     Shallow.Utils.Type
   build-depends:
     base >=4.12 && <5,
@@ -93,6 +94,15 @@ executable pure-binding
 
 executable example-system-f
   hs-source-dirs:   examples/system-f
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    shallow-kanren-minimal,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-pcf-step-rule
+  hs-source-dirs:   examples/pcf-step-rule
   main-is:          Main.hs
   build-depends:
     base >=4.12 && <5,
