@@ -1,4 +1,3 @@
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -8,12 +7,20 @@ import Control.Applicative (empty)
 import Shallow.Core.Kanren
 import Shallow.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import Shallow.Interpreters.SubstKanren (runSubstKanren, takeS, Stream)
+import Shallow.Interpreters.TracingKanren (runWithDerivation, prettyDerivation, Derivation(..))
+import Shallow.Utils.Rule
 import Shallow.Utils.Type (quote0, quote1, quote2)
 
 -- Bidirectional typing for STLC (Dunfield & Krishnaswami style)
--- Uses de Bruijn indices for variables
+-- Using inference-rule style syntax
+--
+-- Synthesis: Γ ⊢ e ⇒ A
+-- Checking:  Γ ⊢ e ⇐ A
 
+--------------------------------------------------------------------------------
 -- Natural numbers for de Bruijn indices
+--------------------------------------------------------------------------------
+
 data Nat = Z | S Nat deriving (Eq, Show)
 
 instance LogicType Nat where
@@ -42,7 +49,10 @@ zro = Ground ZR
 suc :: Logic Nat var -> Logic Nat var
 suc = Ground . SR
 
+--------------------------------------------------------------------------------
 -- Types
+--------------------------------------------------------------------------------
+
 data Ty = TUnit | TArr Ty Ty deriving (Eq, Show)
 
 instance LogicType Ty where
@@ -57,8 +67,8 @@ instance LogicType Ty where
   reify (TArrR (Ground a) (Ground b)) = TArr <$> reify a <*> reify b
   reify _ = Nothing
 
-  quote TUnitR = quote0 "TUnit" TUnitR
-  quote (TArrR a b) = quote2 "TArr" TArrR a b
+  quote TUnitR = quote0 "Unit" TUnitR
+  quote (TArrR a b) = quote2 "→" TArrR a b
 
   unifyVal _ TUnitR TUnitR = pure ()
   unifyVal unif (TArrR a b) (TArrR a' b') = unif a a' *> unif b b'
@@ -73,7 +83,10 @@ tunit = Ground TUnitR
 tarr :: Logic Ty var -> Logic Ty var -> Logic Ty var
 tarr a b = Ground $ TArrR a b
 
+--------------------------------------------------------------------------------
 -- Terms
+--------------------------------------------------------------------------------
+
 data Tm
   = Var Nat           -- x
   | Unit              -- ()
@@ -108,11 +121,11 @@ instance LogicType Tm where
   reify _ = Nothing
 
   quote (VarR n) = quote1 "Var" VarR n
-  quote UnitR = quote0 "Unit" UnitR
-  quote (LamR b) = quote1 "Lam" LamR b
-  quote (LamAnnR ty b) = quote2 "LamAnn" LamAnnR ty b
+  quote UnitR = quote0 "()" UnitR
+  quote (LamR b) = quote1 "λ" LamR b
+  quote (LamAnnR ty b) = quote2 "λ:" LamAnnR ty b
   quote (AppR f a) = quote2 "App" AppR f a
-  quote (AnnR e ty) = quote2 "Ann" AnnR e ty
+  quote (AnnR e ty) = quote2 ":" AnnR e ty
 
   unifyVal unif (VarR n) (VarR n') = unif n n'
   unifyVal _ UnitR UnitR = pure ()
@@ -147,7 +160,10 @@ app f a = Ground $ AppR f a
 ann :: Logic Tm var -> Logic Ty var -> Logic Tm var
 ann e ty = Ground $ AnnR e ty
 
+--------------------------------------------------------------------------------
 -- Type contexts as lists (reversed, so head = most recent binding)
+--------------------------------------------------------------------------------
+
 data Ctx = Nil | Cons Ty Ctx deriving (Eq, Show)
 
 instance LogicType Ctx where
@@ -162,8 +178,8 @@ instance LogicType Ctx where
   reify (ConsR (Ground ty) (Ground ctx)) = Cons <$> reify ty <*> reify ctx
   reify _ = Nothing
 
-  quote NilR = quote0 "Nil" NilR
-  quote (ConsR ty ctx) = quote2 "Cons" ConsR ty ctx
+  quote NilR = quote0 "·" NilR
+  quote (ConsR ty ctx) = quote2 "," ConsR ty ctx
 
   unifyVal _ NilR NilR = pure ()
   unifyVal unif (ConsR ty ctx) (ConsR ty' ctx') = unif ty ty' *> unif ctx ctx'
@@ -178,71 +194,143 @@ nil = Ground NilR
 cons :: Logic Ty var -> Logic Ctx var -> Logic Ctx var
 cons ty ctx = Ground $ ConsR ty ctx
 
--- Context lookup: lookup ctx n ty means ctx(n) = ty
+--------------------------------------------------------------------------------
+-- Context lookup: Γ(n) = A
+--------------------------------------------------------------------------------
+
+-- Base case: (Γ, A)(0) = A
+--
+-- ─────────────────────── [lookup-here]
+-- lookup (Γ,A) 0 A
+
+lookupHere :: (Kanren rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Relation rel
+lookupHere = rule3 "lookup-here" $ \concl ->
+  fresh2 $ \ty rest ->
+    concl (cons ty rest) zro ty
+
+-- Inductive: (Γ, B)(S n) = A  ←  Γ(n) = A
+--
+--      lookup Γ n A
+-- ─────────────────────── [lookup-there]
+-- lookup (Γ,B) (S n) A
+
+lookupThere :: (Kanren rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Relation rel
+lookupThere = rule3 "lookup-there" $ \concl ->
+  fresh4 $ \ty' rest n' ty -> do
+    concl (cons ty' rest) (suc n') ty
+    call $ lookup' rest n' ty
+
+-- Combined lookup relation
 lookup' :: (Kanren rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Relation rel
-lookup' = relation3 "lookup" $ \ctx n ty ->
-  conde
-    [ -- Base case: lookup (Cons ty _) Z ty
-      fresh $ \rest -> do
-        n <=> zro
-        ctx <=> cons ty rest
-        pure ()
-    , -- Inductive: lookup (Cons _ ctx') (S n') ty  ← lookup ctx' n' ty
-      fresh3 $ \ty' rest n' -> do
-        n <=> suc n'
-        ctx <=> cons ty' rest
-        call $ lookup' rest n' ty
-        pure ()
-    ]
+lookup' = rules3 "lookup"
+  [ lookupHere
+  , lookupThere
+  ]
 
--- Bidirectional typing
--- Synthesis mode: synth Γ e A means Γ ⊢ e ⇒ A
+--------------------------------------------------------------------------------
+-- Synthesis mode: Γ ⊢ e ⇒ A
+--------------------------------------------------------------------------------
+
+-- Variable rule:
+--      Γ(x) = A
+-- ─────────────────── [⇒Var]
+--   Γ ⊢ x ⇒ A
+
+synthVar :: (Kanren rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
+synthVar = rule3 "⇒Var" $ \concl ->
+  fresh3 $ \ctx n ty -> do
+    concl ctx (var n) ty
+    call $ lookup' ctx n ty
+
+-- Unit rule:
+-- ─────────────────── [⇒Unit]
+--   Γ ⊢ () ⇒ Unit
+
+synthUnit :: (Kanren rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
+synthUnit = rule3 "⇒Unit" $ \concl ->
+  fresh $ \ctx ->
+    concl ctx unit tunit
+
+-- Annotated lambda rule:
+--   Γ, x:A ⊢ e ⇒ B
+-- ─────────────────────── [⇒λ:]
+--   Γ ⊢ (λx:A.e) ⇒ A → B
+
+synthLamAnn :: (Kanren rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
+synthLamAnn = rule3 "⇒λ:" $ \concl ->
+  fresh4 $ \ctx a b body -> do
+    concl ctx (lamAnn a body) (tarr a b)
+    call $ synth (cons a ctx) body b
+
+-- Application rule:
+--   Γ ⊢ e₁ ⇒ A → B    Γ ⊢ e₂ ⇐ A
+-- ─────────────────────────────────── [⇒App]
+--        Γ ⊢ e₁ e₂ ⇒ B
+
+synthApp :: (Kanren rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
+synthApp = rule3 "⇒App" $ \concl ->
+  fresh5 $ \ctx e1 e2 a b -> do
+    concl ctx (app e1 e2) b
+    call $ synth ctx e1 (tarr a b)
+    call $ check ctx e2 a
+
+-- Annotation rule:
+--      Γ ⊢ e ⇐ A
+-- ─────────────────── [⇒Ann]
+--   Γ ⊢ (e:A) ⇒ A
+
+synthAnn :: (Kanren rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
+synthAnn = rule3 "⇒Ann" $ \concl ->
+  fresh3 $ \ctx e ty -> do
+    concl ctx (ann e ty) ty
+    call $ check ctx e ty
+
+-- Combined synthesis relation
 synth :: (Kanren rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-synth = relation3 "synth" $ \ctx e ty ->
-  conde
-    [ -- Var: Γ ⊢ x ⇒ A  if Γ(x) = A
-      fresh $ \n -> do
-        e <=> var n
-        call $ lookup' ctx n ty
-        pure ()
-    , -- Unit: Γ ⊢ () ⇒ Unit
-      do
-        e <=> unit
-        ty <=> tunit
-        pure ()
-    , -- →I⇒: Γ, x:A ⊢ e ⇒ B  =>  Γ ⊢ (λx:A.e) ⇒ A → B
-      fresh3 $ \a b body -> do
-        e <=> lamAnn a body
-        ty <=> tarr a b
-        call $ synth (cons a ctx) body b
-        pure ()
-    , -- →E: Γ ⊢ e₁ ⇒ A → B   Γ ⊢ e₂ ⇐ A  =>  Γ ⊢ e₁ e₂ ⇒ B
-      fresh3 $ \e1 e2 a -> do
-        e <=> app e1 e2
-        call $ synth ctx e1 (tarr a ty)
-        call $ check ctx e2 a
-        pure ()
-    , -- Anno: Γ ⊢ e ⇐ A  =>  Γ ⊢ (e:A) ⇒ A
-      fresh $ \e' -> do
-        e <=> ann e' ty
-        call $ check ctx e' ty
-        pure ()
-    ]
+synth = rules3 "synth"
+  [ synthVar
+  , synthUnit
+  , synthLamAnn
+  , synthApp
+  , synthAnn
+  ]
 
--- Checking mode: check Γ e A means Γ ⊢ e ⇐ A
+--------------------------------------------------------------------------------
+-- Checking mode: Γ ⊢ e ⇐ A
+--------------------------------------------------------------------------------
+
+-- Lambda introduction (checking):
+--   Γ, x:A ⊢ e ⇐ B
+-- ─────────────────── [⇐λ]
+--   Γ ⊢ λx.e ⇐ A → B
+
+checkLam :: (Kanren rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
+checkLam = rule3 "⇐λ" $ \concl ->
+  fresh4 $ \ctx a b body -> do
+    concl ctx (lam body) (tarr a b)
+    call $ check (cons a ctx) body b
+
+-- Subsumption rule (checking falls back to synthesis):
+--      Γ ⊢ e ⇒ A
+-- ─────────────────── [⇐Sub]
+--      Γ ⊢ e ⇐ A
+
+checkSub :: (Kanren rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
+checkSub = rule3 "⇐Sub" $ \concl ->
+  fresh3 $ \ctx e ty -> do
+    concl ctx e ty
+    call $ synth ctx e ty
+
+-- Combined checking relation
 check :: (Kanren rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-check = relation3 "check" $ \ctx e ty ->
-  conde
-    [ -- →I⇐: Γ, x:A ⊢ e ⇐ B  =>  Γ ⊢ λx.e ⇐ A → B
-      fresh3 $ \a b body -> do
-        e <=> lam body
-        ty <=> tarr a b
-        call $ check (cons a ctx) body b
-        pure ()
-    , -- Sub: Γ ⊢ e ⇒ A   A = B  =>  Γ ⊢ e ⇐ B
-      -- (unification handles the equality check)
-      call $ synth ctx e ty
-    ]
+check = rules3 "check"
+  [ checkLam
+  , checkSub
+  ]
+
+--------------------------------------------------------------------------------
+-- Running queries
+--------------------------------------------------------------------------------
 
 -- Run synthesis in mode (I,I,O): given ctx and term, find type
 synthIO :: Ctx -> Tm -> Stream Ty
@@ -256,39 +344,60 @@ checkIII ctx0 e0 ty0 = runSubstKanren $ do
   _ <- embed $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 
+-- Run synthesis with derivation tracing
+synthWithTrace :: Ctx -> Tm -> Stream (Ty, Derivation)
+synthWithTrace ctx0 e0 = runWithDerivation $ fresh $ \ty -> do
+  _ <- embed $ synth (Ground $ project ctx0) (Ground $ project e0) ty
+  eval ty
+
+-- Run checking with derivation tracing
+checkWithTrace :: Ctx -> Tm -> Ty -> Stream ((), Derivation)
+checkWithTrace ctx0 e0 ty0 = runWithDerivation $ do
+  _ <- embed $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
+  pure ()
+
+--------------------------------------------------------------------------------
+-- Main
+--------------------------------------------------------------------------------
+
 main :: IO ()
 main = do
   putStrLn "=== Bidirectional Typing for STLC ==="
   putStrLn ""
 
   -- Example 1: Synthesize type for (λx:Unit. x)
-  let id_unit = LamAnn TUnit (Var Z)
-  putStrLn $ "Synthesize: λx:Unit. x"
-  print $ takeS 1 (synthIO Nil id_unit)
+  let ex1 = LamAnn TUnit (Var Z)
+  putStrLn "Example 1: Synthesize λx:Unit. x"
+  print $ takeS 1 (synthIO Nil ex1)
   putStrLn ""
 
   -- Example 2: Synthesize type for annotated identity
-  let id_ann = Ann (Lam (Var Z)) (TArr TUnit TUnit)
-  putStrLn $ "Synthesize: ((λx. x) : Unit → Unit)"
-  print $ takeS 1 (synthIO Nil id_ann)
+  let ex2 = Ann (Lam (Var Z)) (TArr TUnit TUnit)
+  putStrLn "Example 2: Synthesize ((λx. x) : Unit → Unit)"
+  print $ takeS 1 (synthIO Nil ex2)
   putStrLn ""
 
   -- Example 3: Check that (λx. x) has type Unit → Unit
-  let id_unannotated = Lam (Var Z)
-  putStrLn $ "Check: λx. x ⇐ Unit → Unit"
-  print $ takeS 1 (checkIII Nil id_unannotated (TArr TUnit TUnit))
+  let ex3 = Lam (Var Z)
+  putStrLn "Example 3: Check λx. x ⇐ Unit → Unit"
+  print $ takeS 1 (checkIII Nil ex3 (TArr TUnit TUnit))
   putStrLn ""
 
   -- Example 4: Application
-  let app_term = App (Ann (Lam (Var Z)) (TArr TUnit TUnit)) Unit
-  putStrLn $ "Synthesize: ((λx. x) : Unit → Unit) ()"
-  print $ takeS 1 (synthIO Nil app_term)
+  let ex4 = App (Ann (Lam (Var Z)) (TArr TUnit TUnit)) Unit
+  putStrLn "Example 4: Synthesize ((λx. x) : Unit → Unit) ()"
+  print $ takeS 1 (synthIO Nil ex4)
   putStrLn ""
 
-  -- Example 5: Term synthesis
-  -- Given type (Unit → Unit) → Unit, synthesize a term
-  putStrLn $ "Synthesize term with type (Unit → Unit) → Unit"
-  let query = runSubstKanren $ fresh $ \e -> do
-        _ <- embed $ synth nil e (tarr (tarr tunit tunit) tunit)
-        eval e
-  print $ takeS 3 query
+  putStrLn "=== Derivation Trees ==="
+  putStrLn ""
+
+  -- (λf:Unit→Unit. λx:Unit. f x) ⇒ (Unit→Unit) → Unit → Unit
+  let ex5 = LamAnn (TArr TUnit TUnit) (LamAnn TUnit (App (Var (S Z)) (Var Z)))
+  putStrLn "Derivation 5: λf:Unit→Unit. λx:Unit. f x"
+  putStrLn "Expected: Nested ⇒λ: with ⇒App, lookup"
+  case takeS 1 (synthWithTrace Nil ex5) of
+    [(ty, deriv)] -> do
+      putStrLn $ "Type: " ++ show ty
+      putStrLn $ prettyDerivation deriv
+    _ -> putStrLn "No derivation found"

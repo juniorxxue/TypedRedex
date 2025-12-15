@@ -8,7 +8,7 @@ import Shallow.Core.Kanren
 import Shallow.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import Shallow.Interpreters.SubstKanren (runSubstKanren, takeS, Stream)
 import Shallow.Interpreters.DeepKanren (DeepKanren, runDeep, formatAsRule, extractAllRules, deepVar)
-import Shallow.Interpreters.TracingKanren (runWithDerivation, prettyDerivation, Derivation(..))
+import Shallow.Interpreters.TracingKanren (runWithDerivation, prettyDerivation, substInDerivation, Derivation(..))
 import Shallow.Utils.Type (quote0, quote1, quote2, quote3)
 
 -- PCF (Programming Computable Functions) with fixpoints
@@ -448,21 +448,197 @@ main = do
   putStrLn "=== Derivation Trees (TracingKanren) ==="
   putStrLn ""
 
-  -- Show derivation for pred(succ(0))
-  putStrLn "Derivation for: pred(succ(0)) → 0"
+  -- Example 1: pred(succ(0)) → 0
+  -- Uses: step → pred-succ → value
+  putStrLn "Example 1: pred(succ(0)) → 0"
+  putStrLn "Expected: pred-succ rule with value premise"
   case takeS 1 (stepWithTrace ex1) of
     [(result, deriv)] -> do
-      putStrLn $ "Result: " ++ show result
-      putStrLn "Derivation:"
-      putStrLn $ prettyDerivation deriv
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
     _ -> putStrLn "No derivation found"
-  putStrLn ""
 
-  -- Show derivation for (λx.x) 0
-  putStrLn "Derivation for: (λx.x) 0 → 0"
+  -- Example 2: (λx.x) 0 → 0
+  -- Uses: step → β → value, subst0 → subst0-var0
+  putStrLn "Example 2: (λx.x) 0 → 0"
+  putStrLn "Expected: β rule with value and subst0 premises"
   case takeS 1 (stepWithTrace ex3) of
     [(result, deriv)] -> do
-      putStrLn $ "Result: " ++ show result
-      putStrLn "Derivation:"
-      putStrLn $ prettyDerivation deriv
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
     _ -> putStrLn "No derivation found"
+
+  -- Example 3: succ(pred(succ(0))) → succ(0)
+  -- Uses: step → succ → step → pred-succ → value
+  -- Shows congruence rule with nested step
+  let ex4 = Succ (Pred (Succ Zero))
+  putStrLn "Example 3: succ(pred(succ(0))) → succ(0)"
+  putStrLn "Expected: succ congruence with nested pred-succ"
+  case takeS 1 (stepWithTrace ex4) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 4: ifz(pred(succ(0)), 1, 2) → ifz(0, 1, 2)
+  -- Uses: step → ifz-cong → step → pred-succ → value
+  -- Shows ifz congruence with nested step
+  let ex5 = Ifz (Pred (Succ Zero)) (Succ Zero) (Succ (Succ Zero))
+  putStrLn "Example 4: ifz(pred(succ(0)), 1, 2) → ifz(0, 1, 2)"
+  putStrLn "Expected: ifz congruence with nested pred-succ"
+  case takeS 1 (stepWithTrace ex5) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 5: ifz(succ(0), 1, 2) → 2
+  -- Uses: step → ifz-succ → value
+  let ex6 = Ifz (Succ Zero) (Succ Zero) (Succ (Succ Zero))
+  putStrLn "Example 5: ifz(succ(0), 1, 2) → 2"
+  putStrLn "Expected: ifz-succ rule with value premise"
+  case takeS 1 (stepWithTrace ex6) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 6: ((λx.λy.x) 0) 1 → (λy.0) 1
+  -- Uses: step → app-L → step → β → value, subst0
+  -- Shows application left congruence with nested β
+  let ex7 = App (App (Lam (Lam (Var (S Z)))) Zero) (Succ Zero)
+  putStrLn "Example 6: ((λx.λy.x) 0) 1 → (λy.0) 1"
+  putStrLn "Expected: app-L congruence with nested β reduction"
+  case takeS 1 (stepWithTrace ex7) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 7: (λx.succ(x)) 0 → succ(0)
+  -- Uses: step → β → value, subst0 → subst0-succ → subst0-var0
+  -- Shows substitution into succ
+  let ex8 = App (Lam (Succ (Var Z))) Zero
+  putStrLn "Example 7: (λx.succ(x)) 0 → succ(0)"
+  putStrLn "Expected: β with substitution into succ"
+  case takeS 1 (stepWithTrace ex8) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 8: fix(λf.λx.x) → (λf.λx.x) fix(λf.λx.x)
+  -- Uses: step → fix (axiom, no premises)
+  let ex9 = Fix (Lam (Lam (Var Z)))
+  putStrLn "Example 8: fix(λf.λx.x) → (λf.λx.x) fix(λf.λx.x)"
+  putStrLn "Expected: fix unrolling (axiom)"
+  case takeS 1 (stepWithTrace ex9) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 9: (λx.x) (λy.y) → (λy.y)
+  -- β reduction with lambda as argument
+  let ex10 = App (Lam (Var Z)) (Lam (Var Z))
+  putStrLn "Example 9: (λx.x) (λy.y) → (λy.y)"
+  putStrLn "Expected: β with lambda value"
+  case takeS 1 (stepWithTrace ex10) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 10: pred(succ(succ(0))) → succ(0)
+  -- pred-succ with nested succ value
+  let ex11 = Pred (Succ (Succ Zero))
+  putStrLn "Example 10: pred(succ(succ(0))) → succ(0)"
+  putStrLn "Expected: pred-succ with nested value proof"
+  case takeS 1 (stepWithTrace ex11) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 11: ((λx.λy.y) 0) → (λy.y)
+  -- β reduction, body doesn't use argument
+  let ex12 = App (Lam (Lam (Var Z))) Zero
+  putStrLn "Example 11: (λx.λy.y) 0 → (λy.y)"
+  putStrLn "Expected: β with subst0-lam (lambda doesn't capture)"
+  case takeS 1 (stepWithTrace ex12) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 12: ifz(0, 0, succ(0)) → 0
+  -- ifz-zero (simplest case)
+  let ex13 = Ifz Zero Zero (Succ Zero)
+  putStrLn "Example 12: ifz(0, 0, 1) → 0"
+  putStrLn "Expected: ifz-zero (axiom-like, no premises)"
+  case takeS 1 (stepWithTrace ex13) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 13: (λf.f 0) (λx.succ(x)) → (λx.succ(x)) 0
+  -- β reduction with function as argument, result is application
+  let ex14 = App (Lam (App (Var Z) Zero)) (Lam (Succ (Var Z)))
+  putStrLn "Example 13: (λf.f 0) (λx.succ(x)) → (λx.succ(x)) 0"
+  putStrLn "Expected: β with complex subst0-app"
+  case takeS 1 (stepWithTrace ex14) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 14: pred(0) → 0
+  -- pred-zero axiom
+  let ex15 = Pred Zero
+  putStrLn "Example 14: pred(0) → 0"
+  putStrLn "Expected: pred-zero (axiom)"
+  case takeS 1 (stepWithTrace ex15) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 15: (λx.pred(x)) succ(0) → pred(succ(0))
+  -- β with subst into pred
+  let ex16 = App (Lam (Pred (Var Z))) (Succ Zero)
+  putStrLn "Example 15: (λx.pred(x)) succ(0) → pred(succ(0))"
+  putStrLn "Expected: β with subst0-pred"
+  case takeS 1 (stepWithTrace ex16) of
+    [(result, deriv)] -> do
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+    _ -> putStrLn "No derivation found"
+
+  -- Example 16: (succ(0)) applied to nothing - value, no step
+  -- This should have NO derivation (values don't step)
+  let ex17 = Succ Zero
+  putStrLn "Example 16: succ(0) (value - should not step)"
+  putStrLn "Expected: No derivation (values are stuck)"
+  case takeS 1 (stepWithTrace ex17) of
+    [] -> putStrLn "Correct: No derivation found (value doesn't step)\n"
+    [(result, deriv)] -> do
+      putStrLn "Unexpected: found a step"
+      let deriv' = substInDerivation "x0" (showTm result) deriv
+      putStrLn $ prettyDerivation deriv'
+
+-- Helper to show a term nicely
+showTm :: Tm -> String
+showTm Zero = "0"
+showTm (Succ e) = "succ(" ++ showTm e ++ ")"
+showTm (Pred e) = "pred(" ++ showTm e ++ ")"
+showTm (Var Z) = "x"
+showTm (Var (S n)) = "y" ++ show (natToInt n)
+showTm (Lam b) = "(λ." ++ showTm b ++ ")"
+showTm (App f a) = "(" ++ showTm f ++ " " ++ showTm a ++ ")"
+showTm (Ifz c t e) = "ifz(" ++ showTm c ++ ", " ++ showTm t ++ ", " ++ showTm e ++ ")"
+showTm (Fix e) = "fix(" ++ showTm e ++ ")"
+
+natToInt :: Nat -> Int
+natToInt Z = 0
+natToInt (S n) = 1 + natToInt n
