@@ -8,6 +8,7 @@ import Shallow.Core.Kanren
 import Shallow.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import Shallow.Interpreters.SubstKanren (runSubstKanren, takeS, Stream)
 import Shallow.Interpreters.DeepKanren (DeepKanren, runDeep, formatAsRule, extractAllRules, deepVar)
+import Shallow.Interpreters.TracingKanren (runWithDerivation, prettyDerivation, Derivation(..))
 import Shallow.Utils.Type (quote0, quote1, quote2, quote3)
 
 -- PCF (Programming Computable Functions) with fixpoints
@@ -396,6 +397,14 @@ stepIO t0 = runSubstKanren $ fresh $ \t' -> do
   _ <- embed $ step (Ground $ project t0) t'
   eval t'
 
+-- Run step with derivation tracing
+type TracingStream a = Stream (a, Derivation)
+
+stepWithTrace :: Tm -> TracingStream Tm
+stepWithTrace t0 = runWithDerivation $ fresh $ \t' -> do
+  _ <- embed $ step (Ground $ project t0) t'
+  eval t'
+
 -- Helper to extract all rules from a binary relation
 printAllRules :: (L Tm DeepKanren -> L Tm DeepKanren -> Relation DeepKanren) -> IO ()
 printAllRules rel = do
@@ -434,3 +443,26 @@ main = do
   let ex3 = App (Lam (Var Z)) Zero
   putStrLn "Step: (λx.x) 0"
   print $ takeS 1 (stepIO ex3)
+  putStrLn ""
+
+  putStrLn "=== Derivation Trees (TracingKanren) ==="
+  putStrLn ""
+
+  -- Show derivation for pred(succ(0))
+  putStrLn "Derivation for: pred(succ(0)) → 0"
+  case takeS 1 (stepWithTrace ex1) of
+    [(result, deriv)] -> do
+      putStrLn $ "Result: " ++ show result
+      putStrLn "Derivation:"
+      putStrLn $ prettyDerivation deriv
+    _ -> putStrLn "No derivation found"
+  putStrLn ""
+
+  -- Show derivation for (λx.x) 0
+  putStrLn "Derivation for: (λx.x) 0 → 0"
+  case takeS 1 (stepWithTrace ex3) of
+    [(result, deriv)] -> do
+      putStrLn $ "Result: " ++ show result
+      putStrLn "Derivation:"
+      putStrLn $ prettyDerivation deriv
+    _ -> putStrLn "No derivation found"

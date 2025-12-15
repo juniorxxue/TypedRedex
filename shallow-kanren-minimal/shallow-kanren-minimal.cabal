@@ -15,6 +15,7 @@ library
     Shallow.Core.Internal.Logic
     Shallow.Interpreters.SubstKanren
     Shallow.Interpreters.DeepKanren
+    Shallow.Interpreters.TracingKanren
     Shallow.Utils.Kanren
     Shallow.Utils.Rule
     Shallow.Utils.Type
