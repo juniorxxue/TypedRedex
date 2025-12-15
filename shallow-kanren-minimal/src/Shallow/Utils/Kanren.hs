@@ -12,6 +12,7 @@ module Shallow.Utils.Kanren
 , conde
 , Var', L
 , occursCheck
+, prettyLogic
 ) where
 import Shallow.Core.Internal.Kanren
 import Shallow.Core.Internal.Logic
@@ -20,6 +21,33 @@ import Data.Maybe (fromMaybe)
 
 type Var' a rel = Var a (KVar rel)
 type L a rel = Logic a (KVar rel)
+
+-- | Pretty-print a logic value using quote and displayVar.
+-- Used by tracing interpreters to capture relation arguments.
+prettyLogic :: (Kanren rel, LogicType a) => L a rel -> String
+prettyLogic (Free v) = displayVar v
+prettyLogic (Ground r) = prettyReified r
+  where
+    prettyReified :: (Kanren rel, LogicType a) => Reified a (KVar rel) -> String
+    prettyReified r' =
+      let (con, fields) = quote r'
+      in formatCon (name con) (map prettyField fields)
+
+    prettyField :: Kanren rel => Field a (KVar rel) -> String
+    prettyField (Field _ logic) = prettyLogicAny logic
+
+    prettyLogicAny :: (Kanren rel, LogicType t) => Logic t (KVar rel) -> String
+    prettyLogicAny (Free v) = displayVar v
+    prettyLogicAny (Ground r') = prettyReified r'
+
+    formatCon :: String -> [String] -> String
+    formatCon n [] = n
+    formatCon n args = n ++ "(" ++ intercalate ", " args ++ ")"
+
+    intercalate :: String -> [String] -> String
+    intercalate _ [] = ""
+    intercalate _ [x] = x
+    intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
 
 flatteningUnify :: (Alternative rel, LogicType a) => (forall a'. (LogicType a') => Var' a' rel -> L a' rel -> rel ()) -> L a rel -> L a rel -> rel ()
 flatteningUnify unifyVar (Free a) b = unifyVar a b
@@ -63,19 +91,29 @@ argument5 :: (Kanren rel, LogicType a, LogicType b, LogicType c, LogicType d, Lo
 argument5 a_ b_ c_ d_ e_ f = argument a_ $ \a -> argument b_ $ \b -> argument c_ $ \c -> argument d_ $ \d -> argument e_ $ \e -> f a b c d e
 
 relation :: (Kanren rel, LogicType a) => String -> (L a rel -> rel ()) -> L a rel -> Relation rel
-relation n f a_ = Relation n $ argument a_ f
+relation n f a_ = Relation n $ do
+  onRelationCall n [prettyLogic a_]
+  argument a_ f
 
 relation2 :: (Kanren rel, LogicType a, LogicType b) => String -> (L a rel -> L b rel -> rel ()) -> L a rel -> L b rel -> Relation rel
-relation2 n f a_ b_ = Relation n $ argument2 a_ b_ f
+relation2 n f a_ b_ = Relation n $ do
+  onRelationCall n [prettyLogic a_, prettyLogic b_]
+  argument2 a_ b_ f
 
 relation3 :: (Kanren rel, LogicType a, LogicType b, LogicType c) => String -> (L a rel -> L b rel -> L c rel -> rel ()) -> L a rel -> L b rel -> L c rel -> Relation rel
-relation3 n f a_ b_ c_ = Relation n $ argument3 a_ b_ c_ f
+relation3 n f a_ b_ c_ = Relation n $ do
+  onRelationCall n [prettyLogic a_, prettyLogic b_, prettyLogic c_]
+  argument3 a_ b_ c_ f
 
 relation4 :: (Kanren rel, LogicType a, LogicType b, LogicType c, LogicType d) => String -> (L a rel -> L b rel -> L c rel -> L d rel -> rel ()) -> L a rel -> L b rel -> L c rel -> L d rel -> Relation rel
-relation4 n f a_ b_ c_ d_ = Relation n $ argument4 a_ b_ c_ d_ f
+relation4 n f a_ b_ c_ d_ = Relation n $ do
+  onRelationCall n [prettyLogic a_, prettyLogic b_, prettyLogic c_, prettyLogic d_]
+  argument4 a_ b_ c_ d_ f
 
 relation5 :: (Kanren rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e) => String -> (L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> rel ()) -> L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> Relation rel
-relation5 n f a_ b_ c_ d_ e_ = Relation n $ argument5 a_ b_ c_ d_ e_ f
+relation5 n f a_ b_ c_ d_ e_ = Relation n $ do
+  onRelationCall n [prettyLogic a_, prettyLogic b_, prettyLogic c_, prettyLogic d_, prettyLogic e_]
+  argument5 a_ b_ c_ d_ e_ f
 
 call :: (Kanren rel) => Relation rel -> rel ()
 call = call_ Opaque

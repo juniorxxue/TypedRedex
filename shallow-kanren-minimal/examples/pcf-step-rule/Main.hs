@@ -1,4 +1,3 @@
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -6,8 +5,9 @@ module Main (main) where
 
 import Control.Applicative (empty)
 import Shallow.Core.Kanren
-import Shallow.Core.Internal.Logic (Logic (Ground), LogicType (..))
+import Shallow.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import Shallow.Interpreters.SubstKanren (runSubstKanren, takeS, Stream)
+import Shallow.Interpreters.DeepKanren (DeepKanren, runDeep, formatAsRule, extractAllRules, deepVar)
 import Shallow.Utils.Type (quote0, quote1, quote2, quote3)
 
 -- PCF (Programming Computable Functions) with fixpoints
@@ -157,8 +157,8 @@ value = relation "value" $ \t ->
   conde
     [ fresh $ \b -> t <=> lam b
     , t <=> zero
-    , fresh $ \v ->
-        t <=> succTm v *>
+    , fresh $ \v -> do
+        t <=> succTm v
         call (value v)
     ]
 
@@ -189,9 +189,9 @@ subst0VarS = rule3 "subst0-varS" $ \concl ->
 -- Application
 subst0App :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0App = rule3 "subst0-app" $ \concl ->
-  fresh5 $ \f a arg f' a' ->
-    concl (app f a) arg (app f' a') *>
-    call (subst0 f arg f') *>
+  fresh5 $ \f a arg f' a' -> do
+    concl (app f a) arg (app f' a')
+    call (subst0 f arg f')
     call (subst0 a arg a')
 
 -- Zero
@@ -203,31 +203,31 @@ subst0Zero = rule3 "subst0-zero" $ \concl ->
 -- Succ
 subst0Succ :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0Succ = rule3 "subst0-succ" $ \concl ->
-  fresh3 $ \e arg e' ->
-    concl (succTm e) arg (succTm e') *>
+  fresh3 $ \e arg e' -> do
+    concl (succTm e) arg (succTm e')
     call (subst0 e arg e')
 
 -- Pred
 subst0Pred :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0Pred = rule3 "subst0-pred" $ \concl ->
-  fresh3 $ \e arg e' ->
-    concl (predTm e) arg (predTm e') *>
+  fresh3 $ \e arg e' -> do
+    concl (predTm e) arg (predTm e')
     call (subst0 e arg e')
 
 -- Ifz
 subst0Ifz :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0Ifz = rule3 "subst0-ifz" $ \concl ->
-  fresh4 $ \e e1 e2 arg -> fresh3 $ \e' e1' e2' ->
-    concl (ifz e e1 e2) arg (ifz e' e1' e2') *>
-    call (subst0 e arg e') *>
-    call (subst0 e1 arg e1') *>
+  fresh4 $ \e e1 e2 arg -> fresh3 $ \e' e1' e2' -> do
+    concl (ifz e e1 e2) arg (ifz e' e1' e2')
+    call (subst0 e arg e')
+    call (subst0 e1 arg e1')
     call (subst0 e2 arg e2')
 
 -- Fix
 subst0Fix :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0Fix = rule3 "subst0-fix" $ \concl ->
-  fresh3 $ \e arg e' ->
-    concl (fix e) arg (fix e') *>
+  fresh3 $ \e arg e' -> do
+    concl (fix e) arg (fix e')
     call (subst0 e arg e')
 
 -- Combined substitution relation
@@ -256,9 +256,9 @@ subst0 = rules3 "subst0"
 
 stepBeta :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepBeta = rule2 "β" $ \concl ->
-  fresh3 $ \body v e' ->
-    concl (app (lam body) v) e' *>
-    call (value v) *>
+  fresh3 $ \body v e' -> do
+    concl (app (lam body) v) e'
+    call (value v)
     call (subst0 body v e')
 
 -- Application left congruence:
@@ -269,8 +269,8 @@ stepBeta = rule2 "β" $ \concl ->
 
 stepAppL :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepAppL = rule2 "app-L" $ \concl ->
-  fresh3 $ \e1 e1' e2 ->
-    concl (app e1 e2) (app e1' e2) *>
+  fresh3 $ \e1 e1' e2 -> do
+    concl (app e1 e2) (app e1' e2)
     call (step e1 e1')
 
 -- Application right congruence:
@@ -281,9 +281,9 @@ stepAppL = rule2 "app-L" $ \concl ->
 
 stepAppR :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepAppR = rule2 "app-R" $ \concl ->
-  fresh3 $ \v e2 e2' ->
-    concl (app v e2) (app v e2') *>
-    call (value v) *>
+  fresh3 $ \v e2 e2' -> do
+    concl (app v e2) (app v e2')
+    call (value v)
     call (step e2 e2')
 
 -- Successor congruence:
@@ -294,8 +294,8 @@ stepAppR = rule2 "app-R" $ \concl ->
 
 stepSucc :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepSucc = rule2 "succ" $ \concl ->
-  fresh2 $ \e e' ->
-    concl (succTm e) (succTm e') *>
+  fresh2 $ \e e' -> do
+    concl (succTm e) (succTm e')
     call (step e e')
 
 -- Predecessor of zero (axiom):
@@ -314,8 +314,8 @@ stepPredZero = axiom2 "pred-zero" (predTm zero) zero
 
 stepPredSucc :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepPredSucc = rule2 "pred-succ" $ \concl ->
-  fresh $ \v ->
-    concl (predTm (succTm v)) v *>
+  fresh $ \v -> do
+    concl (predTm (succTm v)) v
     call (value v)
 
 -- Predecessor congruence:
@@ -326,8 +326,8 @@ stepPredSucc = rule2 "pred-succ" $ \concl ->
 
 stepPred :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepPred = rule2 "pred" $ \concl ->
-  fresh2 $ \e e' ->
-    concl (predTm e) (predTm e') *>
+  fresh2 $ \e e' -> do
+    concl (predTm e) (predTm e')
     call (step e e')
 
 -- If-zero when condition is zero:
@@ -348,8 +348,8 @@ stepIfzZero = rule2 "ifz-zero" $ \concl ->
 
 stepIfzSucc :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepIfzSucc = rule2 "ifz-succ" $ \concl ->
-  fresh3 $ \v e1 e2 ->
-    concl (ifz (succTm v) e1 e2) e2 *>
+  fresh3 $ \v e1 e2 -> do
+    concl (ifz (succTm v) e1 e2) e2
     call (value v)
 
 -- If-zero congruence:
@@ -360,8 +360,8 @@ stepIfzSucc = rule2 "ifz-succ" $ \concl ->
 
 stepIfzCong :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepIfzCong = rule2 "ifz" $ \concl ->
-  fresh4 $ \e e' e1 e2 ->
-    concl (ifz e e1 e2) (ifz e' e1 e2) *>
+  fresh4 $ \e e' e1 e2 -> do
+    concl (ifz e e1 e2) (ifz e' e1 e2)
     call (step e e')
 
 -- Fixpoint unrolling:
@@ -396,9 +396,26 @@ stepIO t0 = runSubstKanren $ fresh $ \t' -> do
   _ <- embed $ step (Ground $ project t0) t'
   eval t'
 
+-- Helper to extract all rules from a binary relation
+printAllRules :: (L Tm DeepKanren -> L Tm DeepKanren -> Relation DeepKanren) -> IO ()
+printAllRules rel = do
+  let goal = runDeep $ do
+        let Relation _ body = rel (deepVar 0) (deepVar 1)
+        body
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRule name ruleGoal
+    putStrLn "") rules
+
 main :: IO ()
 main = do
-  putStrLn "=== PCF Small-Step Semantics (Inference-Rule Style) ==="
+  putStrLn "=== Automatic Rule Extraction (DeepKanren) ==="
+  putStrLn ""
+
+  -- Extract all step rules automatically
+  printAllRules step
+
+  putStrLn "=== PCF Small-Step Semantics (Execution) ==="
   putStrLn ""
 
   -- Example 1: pred(succ(0)) → 0
@@ -417,38 +434,3 @@ main = do
   let ex3 = App (Lam (Var Z)) Zero
   putStrLn "Step: (λx.x) 0"
   print $ takeS 1 (stepIO ex3)
-  putStrLn ""
-
-  -- Example 4: Fix unrolling
-  -- fix (λf. λx. ifz(x, 0, succ(f (pred x))))
-  let fixBody = Lam (Lam (Ifz (Var Z) Zero (Succ (App (Var (S Z)) (Pred (Var Z))))))
-  let ex4 = Fix fixBody
-  putStrLn "Step: fix (λf. λx. ifz(x, 0, succ(f (pred x))))"
-  print $ takeS 1 (stepIO ex4)
-  putStrLn ""
-
-  -- Example 5: Complex evaluation
-  -- (λx. succ(succ(x))) (pred(succ(0)))
-  let ex5 = App (Lam (Succ (Succ (Var Z)))) (Pred (Succ Zero))
-  putStrLn "Multi-step: (λx. succ(succ(x))) (pred(succ(0)))"
-  print $ takeS 5 (stepIO ex5)
-  putStrLn ""
-
-  putStrLn "=== Syntax Comparison ==="
-  putStrLn ""
-  putStrLn "OLD STYLE (explicit <=>):"
-  putStrLn "  stepAppL = relation2 \"step_appL\" $ \\t t' -> fresh3 $ \\e1 e1' e2 ->"
-  putStrLn "    t <=> app e1 e2 *>"
-  putStrLn "    call (step e1 e1') *>"
-  putStrLn "    t' <=> app e1' e2"
-  putStrLn ""
-  putStrLn "NEW STYLE (inference rule with concl):"
-  putStrLn "  stepAppL = rule2 \"app-L\" $ \\concl ->"
-  putStrLn "    fresh3 $ \\e1 e1' e2 ->"
-  putStrLn "      concl (app e1 e2) (app e1' e2) *>"
-  putStrLn "      call (step e1 e1')"
-  putStrLn ""
-  putStrLn "The new style matches the inference rule:"
-  putStrLn "      e₁ ⟶ e₁'"
-  putStrLn "  ─────────────────── [app-L]"
-  putStrLn "  e₁ e₂ ⟶ e₁' e₂"

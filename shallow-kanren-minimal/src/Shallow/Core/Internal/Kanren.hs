@@ -13,7 +13,7 @@ data FreshType (rel :: Type -> Type) (t :: Type) where
 data CallType = Opaque | Transparent
 
 
-class (Alternative rel, Functor (KVar rel)) => Kanren rel where
+class (Monad rel, Alternative rel, Functor (KVar rel)) => Kanren rel where
 
     data KVar rel :: Type -> Type
 
@@ -24,6 +24,12 @@ class (Alternative rel, Functor (KVar rel)) => Kanren rel where
     call_ :: CallType -> Relation rel -> rel ()
 
     displayVar :: KVar rel t -> String
+
+    -- Hook called when a relation is invoked with arguments.
+    -- Used by tracing/deep interpreters to capture structure.
+    -- Default implementation does nothing.
+    onRelationCall :: String -> [String] -> rel ()
+    onRelationCall _ _ = pure ()
 
 class (Kanren rel) => KanrenEval rel where
 

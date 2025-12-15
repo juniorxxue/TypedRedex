@@ -1,5 +1,4 @@
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE ApplicativeDo #-}
 
 -- | Inference-rule-style syntax for defining relations.
 --
@@ -16,9 +15,9 @@
 --
 -- @
 -- stepAppL = rule2 \"step-app-l\" $ \\concl ->
---   fresh3 $ \\e1 e1' e2 ->
---     concl (app e1 e2) (app e1' e2) *>  -- conclusion pattern
---     call (step e1 e1')                  -- premise
+--   fresh3 $ \\e1 e1' e2 -> do
+--     concl (app e1 e2) (app e1' e2)
+--     call (step e1 e1')
 -- @
 --
 -- IMPORTANT: Put @concl@ FIRST, before premises. This ensures the
@@ -60,8 +59,8 @@ rule name body = relation name $ \x ->
 --
 -- @
 -- stepAppL = rule2 \"app-L\" $ \\concl ->
---   fresh3 $ \\e1 e1' e2 ->
---     concl (app e1 e2) (app e1' e2) *>
+--   fresh3 $ \\e1 e1' e2 -> do
+--     concl (app e1 e2) (app e1' e2)
 --     call (step e1 e1')
 -- @
 --
@@ -77,7 +76,7 @@ rule2 :: (Kanren rel, LogicType a, LogicType b)
       -> ((L a rel -> L b rel -> rel ()) -> rel ())
       -> L a rel -> L b rel -> Relation rel
 rule2 name body = relation2 name $ \x y ->
-  body $ \px py -> x <=> px *> y <=> py
+  body $ \px py -> x <=> px >> y <=> py
 
 -- | Define a ternary relation using inference-rule style.
 rule3 :: (Kanren rel, LogicType a, LogicType b, LogicType c)
@@ -85,7 +84,7 @@ rule3 :: (Kanren rel, LogicType a, LogicType b, LogicType c)
       -> ((L a rel -> L b rel -> L c rel -> rel ()) -> rel ())
       -> L a rel -> L b rel -> L c rel -> Relation rel
 rule3 name body = relation3 name $ \x y z ->
-  body $ \px py pz -> x <=> px *> y <=> py *> z <=> pz
+  body $ \px py pz -> x <=> px >> y <=> py >> z <=> pz
 
 -- | Define a quaternary relation using inference-rule style.
 rule4 :: (Kanren rel, LogicType a, LogicType b, LogicType c, LogicType d)
@@ -93,7 +92,7 @@ rule4 :: (Kanren rel, LogicType a, LogicType b, LogicType c, LogicType d)
       -> ((L a rel -> L b rel -> L c rel -> L d rel -> rel ()) -> rel ())
       -> L a rel -> L b rel -> L c rel -> L d rel -> Relation rel
 rule4 name body = relation4 name $ \x y z w ->
-  body $ \px py pz pw -> x <=> px *> y <=> py *> z <=> pz *> w <=> pw
+  body $ \px py pz pw -> x <=> px >> y <=> py >> z <=> pz >> w <=> pw
 
 -- | Define a 5-ary relation using inference-rule style.
 rule5 :: (Kanren rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
@@ -101,7 +100,7 @@ rule5 :: (Kanren rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicT
       -> ((L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> rel ()) -> rel ())
       -> L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> Relation rel
 rule5 name body = relation5 name $ \x y z w v ->
-  body $ \px py pz pw pv -> x <=> px *> y <=> py *> z <=> pz *> w <=> pw *> v <=> pv
+  body $ \px py pz pw pv -> x <=> px >> y <=> py >> z <=> pz >> w <=> pw >> v <=> pv
 
 -- | Define an axiom (rule with no premises) for a unary relation.
 axiom :: (Kanren rel, LogicType a)

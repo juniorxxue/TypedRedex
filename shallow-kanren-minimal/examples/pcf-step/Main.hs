@@ -1,4 +1,3 @@
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -142,8 +141,8 @@ value = relation "value" $ \t ->
   conde
     [ fresh $ \b -> t <=> lam b
     , t <=> zero
-    , fresh $ \v ->
-        t <=> succTm v *>
+    , fresh $ \v -> do
+        t <=> succTm v
         call (value v)
     ]
 
@@ -171,9 +170,9 @@ subst0VarS = rule3 "subst0-varS" $ \concl ->
 -- Application
 subst0App :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0App = rule3 "subst0-app" $ \concl ->
-  fresh5 $ \f a arg f' a' ->
-    concl (app f a) arg (app f' a') *>
-    call (subst0 f arg f') *>
+  fresh5 $ \f a arg f' a' -> do
+    concl (app f a) arg (app f' a')
+    call (subst0 f arg f')
     call (subst0 a arg a')
 
 -- Zero
@@ -185,31 +184,31 @@ subst0Zero = rule3 "subst0-zero" $ \concl ->
 -- Succ
 subst0Succ :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0Succ = rule3 "subst0-succ" $ \concl ->
-  fresh3 $ \e arg e' ->
-    concl (succTm e) arg (succTm e') *>
+  fresh3 $ \e arg e' -> do
+    concl (succTm e) arg (succTm e')
     call (subst0 e arg e')
 
 -- Pred
 subst0Pred :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0Pred = rule3 "subst0-pred" $ \concl ->
-  fresh3 $ \e arg e' ->
-    concl (predTm e) arg (predTm e') *>
+  fresh3 $ \e arg e' -> do
+    concl (predTm e) arg (predTm e')
     call (subst0 e arg e')
 
 -- Ifz
 subst0Ifz :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0Ifz = rule3 "subst0-ifz" $ \concl ->
-  fresh4 $ \e e1 e2 arg -> fresh3 $ \e' e1' e2' ->
-    concl (ifz e e1 e2) arg (ifz e' e1' e2') *>
-    call (subst0 e arg e') *>
-    call (subst0 e1 arg e1') *>
+  fresh4 $ \e e1 e2 arg -> fresh3 $ \e' e1' e2' -> do
+    concl (ifz e e1 e2) arg (ifz e' e1' e2')
+    call (subst0 e arg e')
+    call (subst0 e1 arg e1')
     call (subst0 e2 arg e2')
 
 -- Fix
 subst0Fix :: (Kanren rel) => L Tm rel -> L Tm rel -> L Tm rel -> Relation rel
 subst0Fix = rule3 "subst0-fix" $ \concl ->
-  fresh3 $ \e arg e' ->
-    concl (fix e) arg (fix e') *>
+  fresh3 $ \e arg e' -> do
+    concl (fix e) arg (fix e')
     call (subst0 e arg e')
 
 -- Combined substitution relation
@@ -230,31 +229,31 @@ subst0 = rules3 "subst0"
 -- Beta reduction
 stepBeta :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepBeta = rule2 "β" $ \concl ->
-  fresh3 $ \body v e' ->
-    concl (app (lam body) v) e' *>
-    call (value v) *>
+  fresh3 $ \body v e' -> do
+    concl (app (lam body) v) e'
+    call (value v)
     call (subst0 body v e')
 
 -- App left
 stepAppL :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepAppL = rule2 "app-L" $ \concl ->
-  fresh3 $ \e1 e1' e2 ->
-    concl (app e1 e2) (app e1' e2) *>
+  fresh3 $ \e1 e1' e2 -> do
+    concl (app e1 e2) (app e1' e2)
     call (step e1 e1')
 
 -- App right
 stepAppR :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepAppR = rule2 "app-R" $ \concl ->
-  fresh3 $ \v e2 e2' ->
-    concl (app v e2) (app v e2') *>
-    call (value v) *>
+  fresh3 $ \v e2 e2' -> do
+    concl (app v e2) (app v e2')
+    call (value v)
     call (step e2 e2')
 
 -- Succ step
 stepSucc :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepSucc = rule2 "succ" $ \concl ->
-  fresh2 $ \e e' ->
-    concl (succTm e) (succTm e') *>
+  fresh2 $ \e e' -> do
+    concl (succTm e) (succTm e')
     call (step e e')
 
 -- Pred of zero
@@ -264,15 +263,15 @@ stepPredZero = axiom2 "pred-zero" (predTm zero) zero
 -- Pred of successor
 stepPredSucc :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepPredSucc = rule2 "pred-succ" $ \concl ->
-  fresh $ \v ->
-    concl (predTm (succTm v)) v *>
+  fresh $ \v -> do
+    concl (predTm (succTm v)) v
     call (value v)
 
 -- Pred congruence
 stepPred :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepPred = rule2 "pred" $ \concl ->
-  fresh2 $ \e e' ->
-    concl (predTm e) (predTm e') *>
+  fresh2 $ \e e' -> do
+    concl (predTm e) (predTm e')
     call (step e e')
 
 -- Ifz when zero
@@ -284,15 +283,15 @@ stepIfzZero = rule2 "ifz-zero" $ \concl ->
 -- Ifz when successor
 stepIfzSucc :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepIfzSucc = rule2 "ifz-succ" $ \concl ->
-  fresh3 $ \v e1 e2 ->
-    concl (ifz (succTm v) e1 e2) e2 *>
+  fresh3 $ \v e1 e2 -> do
+    concl (ifz (succTm v) e1 e2) e2
     call (value v)
 
 -- Ifz congruence
 stepIfzCong :: (Kanren rel) => L Tm rel -> L Tm rel -> Relation rel
 stepIfzCong = rule2 "ifz" $ \concl ->
-  fresh4 $ \e e' e1 e2 ->
-    concl (ifz e e1 e2) (ifz e' e1 e2) *>
+  fresh4 $ \e e' e1 e2 -> do
+    concl (ifz e e1 e2) (ifz e' e1 e2)
     call (step e e')
 
 -- Fix unrolling: fix e → e (fix e)

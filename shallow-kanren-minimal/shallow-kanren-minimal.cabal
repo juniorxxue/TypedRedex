@@ -14,20 +14,12 @@ library
     Shallow.Core.Internal.Kanren
     Shallow.Core.Internal.Logic
     Shallow.Interpreters.SubstKanren
+    Shallow.Interpreters.DeepKanren
     Shallow.Utils.Kanren
     Shallow.Utils.Rule
     Shallow.Utils.Type
   build-depends:
     base >=4.12 && <5,
-    mtl  >=2.2  && <3
-  default-language: Haskell2010
-
-executable example-lambda-step
-  hs-source-dirs:   examples/lambda-step
-  main-is:          Main.hs
-  build-depends:
-    base >=4.12 && <5,
-    shallow-kanren-minimal,
     mtl  >=2.2  && <3
   default-language: Haskell2010
 
