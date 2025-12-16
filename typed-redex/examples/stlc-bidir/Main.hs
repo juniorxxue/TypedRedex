@@ -1,18 +1,19 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ImplicitParams #-}
 
 module Main (main) where
 
 import Control.Applicative (empty)
-import TypedRedex.Core.Redex
+import TypedRedex.Core.Redex hiding (rule, rule3)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
 import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivation, Derivation(..))
-import TypedRedex.Utils.Rule
 import TypedRedex.Utils.Type (quote0, quote1, quote2)
+import TypedRedex.Utils.Define (rule3)
 
 -- Bidirectional typing for STLC (Dunfield & Krishnaswami style)
--- Using inference-rule style syntax
+-- Using the new judgment/rule syntax
 --
 -- Synthesis: Γ ⊢ e ⇒ A
 -- Checking:  Γ ⊢ e ⇐ A
@@ -195,138 +196,101 @@ cons :: Logic Ty var -> Logic Ctx var -> Logic Ctx var
 cons ty ctx = Ground $ ConsR ty ctx
 
 --------------------------------------------------------------------------------
--- Context lookup: Γ(n) = A
+-- Context lookup: Γ(n) = A (using judgment/rule style)
 --------------------------------------------------------------------------------
 
--- Base case: (Γ, A)(0) = A
---
 -- ─────────────────────── [lookup-here]
 -- lookup (Γ,A) 0 A
-
-lookupHere :: (Redex rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Relation rel
-lookupHere = rule3 "lookup-here" $ \concl ->
-  fresh2 $ \ty rest ->
-    concl (cons ty rest) zro ty
-
--- Inductive: (Γ, B)(S n) = A  ←  Γ(n) = A
 --
 --      lookup Γ n A
 -- ─────────────────────── [lookup-there]
 -- lookup (Γ,B) (S n) A
 
-lookupThere :: (Redex rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Relation rel
-lookupThere = rule3 "lookup-there" $ \concl ->
-  fresh4 $ \ty' rest n' ty -> do
-    concl (cons ty' rest) (suc n') ty
-    call $ lookup' rest n' ty
+lookup' :: (Redex rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Applied3 rel Ctx Nat Ty
+lookup' = judgment3 "lookup" [lookupHere, lookupThere]
+  where
+    lookupHere = rule3 "lookup-here" $ fresh2 $ \ty rest ->
+      concl $ lookup' (cons ty rest) zro ty
 
--- Combined lookup relation
-lookup' :: (Redex rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Relation rel
-lookup' = rules3 "lookup"
-  [ lookupHere
-  , lookupThere
-  ]
+    lookupThere = rule3 "lookup-there" $ fresh4 $ \ty' rest n' ty -> do
+      concl $ lookup' (cons ty' rest) (suc n') ty
+      prem  $ lookup' rest n' ty
 
 --------------------------------------------------------------------------------
--- Synthesis mode: Γ ⊢ e ⇒ A
+-- Synthesis mode: Γ ⊢ e ⇒ A (using judgment/rule style)
 --------------------------------------------------------------------------------
 
 -- Variable rule:
 --      Γ(x) = A
 -- ─────────────────── [⇒Var]
 --   Γ ⊢ x ⇒ A
-
-synthVar :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-synthVar = rule3 "⇒Var" $ \concl ->
-  fresh3 $ \ctx n ty -> do
-    concl ctx (var n) ty
-    call $ lookup' ctx n ty
-
+--
 -- Unit rule:
 -- ─────────────────── [⇒Unit]
 --   Γ ⊢ () ⇒ Unit
-
-synthUnit :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-synthUnit = rule3 "⇒Unit" $ \concl ->
-  fresh $ \ctx ->
-    concl ctx unit tunit
-
+--
 -- Annotated lambda rule:
 --   Γ, x:A ⊢ e ⇒ B
 -- ─────────────────────── [⇒λ:]
 --   Γ ⊢ (λx:A.e) ⇒ A → B
-
-synthLamAnn :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-synthLamAnn = rule3 "⇒λ:" $ \concl ->
-  fresh4 $ \ctx a b body -> do
-    concl ctx (lamAnn a body) (tarr a b)
-    call $ synth (cons a ctx) body b
-
+--
 -- Application rule:
 --   Γ ⊢ e₁ ⇒ A → B    Γ ⊢ e₂ ⇐ A
 -- ─────────────────────────────────── [⇒App]
 --        Γ ⊢ e₁ e₂ ⇒ B
-
-synthApp :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-synthApp = rule3 "⇒App" $ \concl ->
-  fresh5 $ \ctx e1 e2 a b -> do
-    concl ctx (app e1 e2) b
-    call $ synth ctx e1 (tarr a b)
-    call $ check ctx e2 a
-
+--
 -- Annotation rule:
 --      Γ ⊢ e ⇐ A
 -- ─────────────────── [⇒Ann]
 --   Γ ⊢ (e:A) ⇒ A
 
-synthAnn :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-synthAnn = rule3 "⇒Ann" $ \concl ->
-  fresh3 $ \ctx e ty -> do
-    concl ctx (ann e ty) ty
-    call $ check ctx e ty
+synth :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Applied3 rel Ctx Tm Ty
+synth = judgment3 "synth" [synthVar, synthUnit, synthLamAnn, synthApp, synthAnn]
+  where
+    synthVar = rule3 "⇒Var" $ fresh3 $ \ctx n ty -> do
+      concl $ synth ctx (var n) ty
+      prem  $ lookup' ctx n ty
 
--- Combined synthesis relation
-synth :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-synth = rules3 "synth"
-  [ synthVar
-  , synthUnit
-  , synthLamAnn
-  , synthApp
-  , synthAnn
-  ]
+    synthUnit = rule3 "⇒Unit" $ fresh $ \ctx ->
+      concl $ synth ctx unit tunit
+
+    synthLamAnn = rule3 "⇒λ:" $ fresh4 $ \ctx a b body -> do
+      concl $ synth ctx (lamAnn a body) (tarr a b)
+      prem  $ synth (cons a ctx) body b
+
+    synthApp = rule3 "⇒App" $ fresh5 $ \ctx e1 e2 a b -> do
+      concl $ synth ctx (app e1 e2) b
+      prem  $ synth ctx e1 (tarr a b)
+      prem  $ check ctx e2 a
+
+    synthAnn = rule3 "⇒Ann" $ fresh3 $ \ctx e ty -> do
+      concl $ synth ctx (ann e ty) ty
+      prem  $ check ctx e ty
 
 --------------------------------------------------------------------------------
--- Checking mode: Γ ⊢ e ⇐ A
+-- Checking mode: Γ ⊢ e ⇐ A (using judgment/rule style)
 --------------------------------------------------------------------------------
 
 -- Lambda introduction (checking):
 --   Γ, x:A ⊢ e ⇐ B
 -- ─────────────────── [⇐λ]
 --   Γ ⊢ λx.e ⇐ A → B
-
-checkLam :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-checkLam = rule3 "⇐λ" $ \concl ->
-  fresh4 $ \ctx a b body -> do
-    concl ctx (lam body) (tarr a b)
-    call $ check (cons a ctx) body b
-
+--
 -- Subsumption rule (checking falls back to synthesis):
 --      Γ ⊢ e ⇒ A
 -- ─────────────────── [⇐Sub]
 --      Γ ⊢ e ⇐ A
 
-checkSub :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-checkSub = rule3 "⇐Sub" $ \concl ->
-  fresh3 $ \ctx e ty -> do
-    concl ctx e ty
-    call $ synth ctx e ty
+check :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Applied3 rel Ctx Tm Ty
+check = judgment3 "check" [checkLam, checkSub]
+  where
+    checkLam = rule3 "⇐λ" $ fresh4 $ \ctx a b body -> do
+      concl $ check ctx (lam body) (tarr a b)
+      prem  $ check (cons a ctx) body b
 
--- Combined checking relation
-check :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-check = rules3 "check"
-  [ checkLam
-  , checkSub
-  ]
+    checkSub = rule3 "⇐Sub" $ fresh3 $ \ctx e ty -> do
+      concl $ check ctx e ty
+      prem  $ synth ctx e ty
 
 --------------------------------------------------------------------------------
 -- Running queries
@@ -335,25 +299,25 @@ check = rules3 "check"
 -- Run synthesis in mode (I,I,O): given ctx and term, find type
 synthIO :: Ctx -> Tm -> Stream Ty
 synthIO ctx0 e0 = runSubstRedex $ fresh $ \ty -> do
-  _ <- embed $ synth (Ground $ project ctx0) (Ground $ project e0) ty
+  app3Goal $ synth (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
 -- Run checking in mode (I,I,I): given ctx, term, and type, verify
 checkIII :: Ctx -> Tm -> Ty -> Stream ()
 checkIII ctx0 e0 ty0 = runSubstRedex $ do
-  _ <- embed $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
+  app3Goal $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 
 -- Run synthesis with derivation tracing
 synthWithTrace :: Ctx -> Tm -> Stream (Ty, Derivation)
 synthWithTrace ctx0 e0 = runWithDerivation $ fresh $ \ty -> do
-  _ <- embed $ synth (Ground $ project ctx0) (Ground $ project e0) ty
+  app3Goal $ synth (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
 -- Run checking with derivation tracing
 checkWithTrace :: Ctx -> Tm -> Ty -> Stream ((), Derivation)
 checkWithTrace ctx0 e0 ty0 = runWithDerivation $ do
-  _ <- embed $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
+  app3Goal $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 
 --------------------------------------------------------------------------------

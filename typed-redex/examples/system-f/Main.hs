@@ -6,12 +6,12 @@
 module Main (main) where
 
 import Control.Applicative (empty)
-import TypedRedex.Core.Redex hiding (rule2, rule3)
+import TypedRedex.Core.Redex hiding (rule, rule2, rule3, rule4)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
 import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivation, Derivation(..))
 import TypedRedex.Utils.Type (quote0, quote1, quote2)
-import TypedRedex.Utils.Define (rule2, rule3)
+import TypedRedex.Utils.Define (rule2, rule3, rule4)
 
 import Syntax
 
@@ -57,107 +57,217 @@ lookupTm = judgment3 "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
       prem  $ lookupTm rest n ty
 
 --------------------------------------------------------------------------------
--- Type substitution (using old relation style for comparison)
+-- Addition on natural numbers
 --------------------------------------------------------------------------------
 
-substTy :: (Redex rel) => L Nat rel -> L Ty rel -> L Ty rel -> L Ty rel -> Relation rel
-substTy = relation4 "substTy" $ \depth subTy ty result ->
-  conde
-    [ do ty <=> tunit; result <=> tunit
-    , fresh $ \n -> do
-        ty <=> tvar n
-        call $ substTyVar depth subTy n result
-    , fresh4 $ \a b a' b' -> do
-        ty <=> tarr a b
-        call $ substTy depth subTy a a'
-        call $ substTy depth subTy b b'
-        result <=> tarr a' b'
-    , fresh3 $ \body body' depth' -> do
-        ty <=> tall body
-        depth' <=> suc depth
-        call $ substTy depth' subTy body body'
-        result <=> tall body'
-    ]
+-- ───────────────────── [add-zero]
+-- addNat 0 m m
+--
+-- addNat n m sum
+-- ────────────────────────────── [add-succ]
+-- addNat (S n) m (S sum)
 
-substTyVar :: (Redex rel) => L Nat rel -> L Ty rel -> L Nat rel -> L Ty rel -> Relation rel
-substTyVar = relation4 "substTyVar" $ \depth subTy n result ->
-  conde
-    [ do prem $ natEq n depth; result <=> subTy
-    , do prem $ natLt n depth; result <=> tvar n
-    , fresh $ \n' -> do
-        prem $ natLt depth n
-        n <=> suc n'
-        result <=> tvar n'
-    ]
+addNat :: (Redex rel) => L Nat rel -> L Nat rel -> L Nat rel -> Applied3 rel Nat Nat Nat
+addNat = judgment3 "addNat" [addZero, addSucc]
+  where
+    addZero = rule3 "add-zero" $ fresh $ \m ->
+      concl $ addNat zro m m
 
-addNat :: (Redex rel) => L Nat rel -> L Nat rel -> L Nat rel -> Relation rel
-addNat = relation3 "addNat" $ \n m sum' ->
-  conde
-    [ do n <=> zro; sum' <=> m
-    , fresh2 $ \n' sum'' -> do
-        n <=> suc n'
-        sum' <=> suc sum''
-        call $ addNat n' m sum''
-    ]
-
-shiftTy :: (Redex rel) => L Nat rel -> L Nat rel -> L Ty rel -> L Ty rel -> Relation rel
-shiftTy = relation4 "shiftTy" $ \cutoff amount ty result ->
-  conde
-    [ do ty <=> tunit; result <=> tunit
-    , fresh $ \n -> do
-        ty <=> tvar n
-        call $ shiftTyVar cutoff amount n result
-    , fresh4 $ \a b a' b' -> do
-        ty <=> tarr a b
-        call $ shiftTy cutoff amount a a'
-        call $ shiftTy cutoff amount b b'
-        result <=> tarr a' b'
-    , fresh3 $ \body body' cutoff' -> do
-        ty <=> tall body
-        cutoff' <=> suc cutoff
-        call $ shiftTy cutoff' amount body body'
-        result <=> tall body'
-    ]
-
-shiftTyVar :: (Redex rel) => L Nat rel -> L Nat rel -> L Nat rel -> L Ty rel -> Relation rel
-shiftTyVar = relation4 "shiftTyVar" $ \cutoff amount n result ->
-  conde
-    [ do prem $ natLt n cutoff; result <=> tvar n
-    , fresh $ \n' -> do
-        conde [ prem $ natEq n cutoff, prem $ natLt cutoff n ]
-        call $ addNat n amount n'
-        result <=> tvar n'
-    ]
+    addSucc = rule3 "add-succ" $ fresh3 $ \n' m sum' -> do
+      concl $ addNat (suc n') m (suc sum')
+      prem  $ addNat n' m sum'
 
 --------------------------------------------------------------------------------
--- Type checking (using old relation style)
+-- Type substitution (substTy depth subTy ty result)
 --------------------------------------------------------------------------------
 
-typeof :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Relation rel
-typeof = relation3 "typeof" $ \ctx e ty ->
-  conde
-    [ do e <=> unit'; ty <=> tunit
-    , fresh $ \n -> do
-        e <=> var n
-        prem $ lookupTm ctx n ty
-    , fresh3 $ \tyA body tyB -> do
-        e <=> lam tyA body
-        ty <=> tarr tyA tyB
-        call $ typeof (tmBind tyA ctx) body tyB
-    , fresh3 $ \e1 e2 tyA -> do
-        e <=> app e1 e2
-        call $ typeof ctx e1 (tarr tyA ty)
-        call $ typeof ctx e2 tyA
-    , fresh2 $ \body tyA -> do
-        e <=> tlam body
-        ty <=> tall tyA
-        call $ typeof (tyBind ctx) body tyA
-    , fresh4 $ \e' tyB tyA tyA' -> do
-        e <=> tapp e' tyB
-        call $ typeof ctx e' (tall tyA)
-        call $ substTy zro tyB tyA tyA'
-        ty <=> tyA'
-    ]
+-- [subst-unit]
+-- substTy depth subTy Unit Unit
+--
+-- substTyVar depth subTy n result
+-- ─────────────────────────────────── [subst-var]
+-- substTy depth subTy (TVar n) result
+--
+-- substTy depth subTy a a'   substTy depth subTy b b'
+-- ───────────────────────────────────────────────────── [subst-arr]
+-- substTy depth subTy (a → b) (a' → b')
+--
+-- substTy (S depth) subTy body body'
+-- ─────────────────────────────────────────── [subst-all]
+-- substTy depth subTy (∀.body) (∀.body')
+
+substTy :: (Redex rel) => L Nat rel -> L Ty rel -> L Ty rel -> L Ty rel -> Applied4 rel Nat Ty Ty Ty
+substTy = judgment4 "substTy" [substUnit, substVar, substArr, substAll]
+  where
+    substUnit = rule4 "subst-unit" $ fresh2 $ \depth subTy ->
+      concl $ substTy depth subTy tunit tunit
+
+    substVar = rule4 "subst-var" $ fresh3 $ \depth subTy n -> fresh $ \result -> do
+      concl $ substTy depth subTy (tvar n) result
+      prem  $ substTyVar depth subTy n result
+
+    substArr = rule4 "subst-arr" $ fresh4 $ \depth subTy a b -> fresh2 $ \a' b' -> do
+      concl $ substTy depth subTy (tarr a b) (tarr a' b')
+      prem  $ substTy depth subTy a a'
+      prem  $ substTy depth subTy b b'
+
+    substAll = rule4 "subst-all" $ fresh3 $ \depth subTy body -> fresh $ \body' -> do
+      concl $ substTy depth subTy (tall body) (tall body')
+      prem  $ substTy (suc depth) subTy body body'
+
+--------------------------------------------------------------------------------
+-- Type substitution variable case (substTyVar depth subTy n result)
+--------------------------------------------------------------------------------
+
+-- n = depth
+-- ────────────────────────────── [subst-var-eq]
+-- substTyVar depth subTy n subTy
+--
+-- n < depth
+-- ──────────────────────────────────── [subst-var-lt]
+-- substTyVar depth subTy n (TVar n)
+--
+-- depth < n
+-- ──────────────────────────────────────────── [subst-var-gt]
+-- substTyVar depth subTy (S n') (TVar n')
+
+substTyVar :: (Redex rel) => L Nat rel -> L Ty rel -> L Nat rel -> L Ty rel -> Applied4 rel Nat Ty Nat Ty
+substTyVar = judgment4 "substTyVar" [substVarEq, substVarLt, substVarGt]
+  where
+    substVarEq = rule4 "subst-var-eq" $ fresh2 $ \depth subTy -> do
+      concl $ substTyVar depth subTy depth subTy
+
+    substVarLt = rule4 "subst-var-lt" $ fresh3 $ \depth subTy n -> do
+      concl $ substTyVar depth subTy n (tvar n)
+      prem  $ natLt n depth
+
+    substVarGt = rule4 "subst-var-gt" $ fresh3 $ \depth subTy n' -> do
+      concl $ substTyVar depth subTy (suc n') (tvar n')
+      prem  $ natLt depth (suc n')
+
+--------------------------------------------------------------------------------
+-- Type shifting (shiftTy cutoff amount ty result)
+--------------------------------------------------------------------------------
+
+-- ─────────────────────────────── [shift-unit]
+-- shiftTy cutoff amount Unit Unit
+--
+-- shiftTyVar cutoff amount n result
+-- ────────────────────────────────────── [shift-var]
+-- shiftTy cutoff amount (TVar n) result
+--
+-- shiftTy cutoff amount a a'   shiftTy cutoff amount b b'
+-- ────────────────────────────────────────────────────────── [shift-arr]
+-- shiftTy cutoff amount (a → b) (a' → b')
+--
+-- shiftTy (S cutoff) amount body body'
+-- ─────────────────────────────────────────────── [shift-all]
+-- shiftTy cutoff amount (∀.body) (∀.body')
+
+shiftTy :: (Redex rel) => L Nat rel -> L Nat rel -> L Ty rel -> L Ty rel -> Applied4 rel Nat Nat Ty Ty
+shiftTy = judgment4 "shiftTy" [shiftUnit, shiftVar, shiftArr, shiftAll]
+  where
+    shiftUnit = rule4 "shift-unit" $ fresh2 $ \cutoff amount ->
+      concl $ shiftTy cutoff amount tunit tunit
+
+    shiftVar = rule4 "shift-var" $ fresh3 $ \cutoff amount n -> fresh $ \result -> do
+      concl $ shiftTy cutoff amount (tvar n) result
+      prem  $ shiftTyVar cutoff amount n result
+
+    shiftArr = rule4 "shift-arr" $ fresh4 $ \cutoff amount a b -> fresh2 $ \a' b' -> do
+      concl $ shiftTy cutoff amount (tarr a b) (tarr a' b')
+      prem  $ shiftTy cutoff amount a a'
+      prem  $ shiftTy cutoff amount b b'
+
+    shiftAll = rule4 "shift-all" $ fresh3 $ \cutoff amount body -> fresh $ \body' -> do
+      concl $ shiftTy cutoff amount (tall body) (tall body')
+      prem  $ shiftTy (suc cutoff) amount body body'
+
+--------------------------------------------------------------------------------
+-- Type shifting variable case (shiftTyVar cutoff amount n result)
+--------------------------------------------------------------------------------
+
+-- n < cutoff
+-- ────────────────────────────────────── [shift-var-lt]
+-- shiftTyVar cutoff amount n (TVar n)
+--
+-- n >= cutoff   addNat n amount n'
+-- ─────────────────────────────────────── [shift-var-ge]
+-- shiftTyVar cutoff amount n (TVar n')
+
+shiftTyVar :: (Redex rel) => L Nat rel -> L Nat rel -> L Nat rel -> L Ty rel -> Applied4 rel Nat Nat Nat Ty
+shiftTyVar = judgment4 "shiftTyVar" [shiftVarLt, shiftVarGeEq, shiftVarGeGt]
+  where
+    -- n < cutoff: keep variable unchanged
+    shiftVarLt = rule4 "shift-var-lt" $ fresh3 $ \cutoff amount n -> do
+      concl $ shiftTyVar cutoff amount n (tvar n)
+      prem  $ natLt n cutoff
+
+    -- n = cutoff: shift by amount
+    shiftVarGeEq = rule4 "shift-var-eq" $ fresh3 $ \cutoff amount n' -> do
+      concl $ shiftTyVar cutoff amount cutoff (tvar n')
+      prem  $ addNat cutoff amount n'
+
+    -- n > cutoff: shift by amount
+    shiftVarGeGt = rule4 "shift-var-gt" $ fresh4 $ \cutoff amount n n' -> do
+      concl $ shiftTyVar cutoff amount n (tvar n')
+      prem  $ natLt cutoff n
+      prem  $ addNat n amount n'
+
+--------------------------------------------------------------------------------
+-- Type checking (typeof ctx e ty)
+--------------------------------------------------------------------------------
+
+-- ─────────────────────── [typeof-unit]
+-- typeof ctx () Unit
+--
+-- lookupTm ctx n ty
+-- ─────────────────────── [typeof-var]
+-- typeof ctx (var n) ty
+--
+-- typeof (tmBind tyA ctx) body tyB
+-- ──────────────────────────────────────────── [typeof-lam]
+-- typeof ctx (λ:tyA. body) (tyA → tyB)
+--
+-- typeof ctx e1 (tyA → ty)   typeof ctx e2 tyA
+-- ──────────────────────────────────────────── [typeof-app]
+-- typeof ctx (e1 e2) ty
+--
+-- typeof (tyBind ctx) body tyA
+-- ──────────────────────────────────── [typeof-tlam]
+-- typeof ctx (Λ. body) (∀. tyA)
+--
+-- typeof ctx e (∀. tyA)   substTy 0 tyB tyA tyA'
+-- ─────────────────────────────────────────────── [typeof-tapp]
+-- typeof ctx (e [tyB]) tyA'
+
+typeof :: (Redex rel) => L Ctx rel -> L Tm rel -> L Ty rel -> Applied3 rel Ctx Tm Ty
+typeof = judgment3 "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeofTLam, typeofTApp]
+  where
+    typeofUnit = rule3 "typeof-unit" $ fresh $ \ctx ->
+      concl $ typeof ctx unit' tunit
+
+    typeofVar = rule3 "typeof-var" $ fresh3 $ \ctx n ty -> do
+      concl $ typeof ctx (var n) ty
+      prem  $ lookupTm ctx n ty
+
+    typeofLam = rule3 "typeof-lam" $ fresh4 $ \ctx tyA body tyB -> do
+      concl $ typeof ctx (lam tyA body) (tarr tyA tyB)
+      prem  $ typeof (tmBind tyA ctx) body tyB
+
+    typeofApp = rule3 "typeof-app" $ fresh4 $ \ctx e1 e2 tyA -> fresh $ \ty -> do
+      concl $ typeof ctx (app e1 e2) ty
+      prem  $ typeof ctx e1 (tarr tyA ty)
+      prem  $ typeof ctx e2 tyA
+
+    typeofTLam = rule3 "typeof-tlam" $ fresh3 $ \ctx body tyA -> do
+      concl $ typeof ctx (tlam body) (tall tyA)
+      prem  $ typeof (tyBind ctx) body tyA
+
+    typeofTApp = rule3 "typeof-tapp" $ fresh4 $ \ctx e tyB tyA -> fresh $ \tyA' -> do
+      concl $ typeof ctx (tapp e tyB) tyA'
+      prem  $ typeof ctx e (tall tyA)
+      prem  $ substTy zro tyB tyA tyA'
 
 --------------------------------------------------------------------------------
 -- Running queries
@@ -165,18 +275,18 @@ typeof = relation3 "typeof" $ \ctx e ty ->
 
 typeofIO :: Ctx -> Tm -> Stream Ty
 typeofIO ctx0 e0 = runSubstRedex $ fresh $ \ty -> do
-  _ <- embed $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
+  app3Goal $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
 checkIII :: Ctx -> Tm -> Ty -> Stream ()
 checkIII ctx0 e0 ty0 = runSubstRedex $ do
-  _ <- embed $ typeof (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
+  app3Goal $ typeof (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 
 -- Run with derivation tracing
 typeofWithTrace :: Ctx -> Tm -> Stream (Ty, Derivation)
 typeofWithTrace ctx0 e0 = runWithDerivation $ fresh $ \ty -> do
-  _ <- embed $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
+  app3Goal $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
 -- Test natLt with derivation
