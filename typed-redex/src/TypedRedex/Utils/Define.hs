@@ -36,7 +36,7 @@ module TypedRedex.Utils.Define
   , Premise(..)
     -- * Named rules
   , Rule(..), Rule2(..), Rule3(..), Rule4(..), Rule5(..)
-  , rule
+  , rule, rule1, rule2, rule3, rule4, rule5
     -- * Judgment combinators (combine named rules)
   , judgment, judgment2, judgment3, judgment4, judgment5
   ) where
@@ -189,6 +189,26 @@ instance MkRule (Rule4 rel a b c d) where
 
 instance MkRule (Rule5 rel a b c d e) where
   rule name body = body { rule5Name = name }
+
+-- | Smart constructor for unary rules.
+rule1 :: String -> ((?concl :: L a rel -> rel ()) => rel ()) -> Rule rel a
+rule1 name body = Rule name body
+
+-- | Smart constructor for binary rules.
+rule2 :: String -> ((?concl :: (L a rel, L b rel) -> rel ()) => rel ()) -> Rule2 rel a b
+rule2 name body = Rule2 name body
+
+-- | Smart constructor for ternary rules.
+rule3 :: String -> ((?concl :: (L a rel, L b rel, L c rel) -> rel ()) => rel ()) -> Rule3 rel a b c
+rule3 name body = Rule3 name body
+
+-- | Smart constructor for quaternary rules.
+rule4 :: String -> ((?concl :: (L a rel, L b rel, L c rel, L d rel) -> rel ()) => rel ()) -> Rule4 rel a b c d
+rule4 name body = Rule4 name body
+
+-- | Smart constructor for 5-ary rules.
+rule5 :: String -> ((?concl :: (L a rel, L b rel, L c rel, L d rel, L e rel) -> rel ()) => rel ()) -> Rule5 rel a b c d e
+rule5 name body = Rule5 name body
 
 --------------------------------------------------------------------------------
 -- Judgment combinators

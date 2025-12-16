@@ -6,11 +6,12 @@
 module Main (main) where
 
 import Control.Applicative (empty)
-import TypedRedex.Core.Redex
+import TypedRedex.Core.Redex hiding (rule2, rule3)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
 import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivation, Derivation(..))
 import TypedRedex.Utils.Type (quote0, quote1, quote2)
+import TypedRedex.Utils.Define (rule2, rule3)
 
 import Syntax
 
@@ -22,10 +23,10 @@ import Syntax
 natEq :: (Redex rel) => L Nat rel -> L Nat rel -> Applied2 rel Nat Nat
 natEq = judgment2 "natEq" [natEqZero, natEqSucc]
   where
-    natEqZero = Rule2 "eq-zero" $
+    natEqZero = rule2 "eq-zero" $
       concl $ natEq zro zro
 
-    natEqSucc = Rule2 "eq-succ" $ fresh2 $ \n' m' -> do
+    natEqSucc = rule2 "eq-succ" $ fresh2 $ \n' m' -> do
       concl $ natEq (suc n') (suc m')
       prem  $ natEq n' m'
 
@@ -33,10 +34,10 @@ natEq = judgment2 "natEq" [natEqZero, natEqSucc]
 natLt :: (Redex rel) => L Nat rel -> L Nat rel -> Applied2 rel Nat Nat
 natLt = judgment2 "natLt" [natLtZero, natLtSucc]
   where
-    natLtZero = Rule2 "lt-zero" $ fresh $ \m' ->
+    natLtZero = rule2 "lt-zero" $ fresh $ \m' ->
       concl $ natLt zro (suc m')
 
-    natLtSucc = Rule2 "lt-succ" $ fresh2 $ \n' m' -> do
+    natLtSucc = rule2 "lt-succ" $ fresh2 $ \n' m' -> do
       concl $ natLt (suc n') (suc m')
       prem  $ natLt n' m'
 
@@ -44,14 +45,14 @@ natLt = judgment2 "natLt" [natLtZero, natLtSucc]
 lookupTm :: (Redex rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Applied3 rel Ctx Nat Ty
 lookupTm = judgment3 "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
   where
-    lookupTmHere = Rule3 "lookup-here" $ fresh2 $ \ty rest ->
+    lookupTmHere = rule3 "lookup-here" $ fresh2 $ \ty rest ->
       concl $ lookupTm (tmBind ty rest) zro ty
 
-    lookupTmThere = Rule3 "lookup-there" $ fresh4 $ \ty ty' rest n' -> do
+    lookupTmThere = rule3 "lookup-there" $ fresh4 $ \ty ty' rest n' -> do
       concl $ lookupTm (tmBind ty' rest) (suc n') ty
       prem  $ lookupTm rest n' ty
 
-    lookupTmSkip = Rule3 "lookup-skip" $ fresh3 $ \rest n ty -> do
+    lookupTmSkip = rule3 "lookup-skip" $ fresh3 $ \rest n ty -> do
       concl $ lookupTm (tyBind rest) n ty
       prem  $ lookupTm rest n ty
 

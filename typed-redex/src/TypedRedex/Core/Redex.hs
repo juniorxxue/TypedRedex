@@ -98,5 +98,5 @@ module TypedRedex.Core.Redex
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Utils.Redex
 import TypedRedex.Utils.Rule
-import TypedRedex.Utils.Define hiding (rule)
+import TypedRedex.Utils.Define hiding (rule, rule1, rule2, rule3, rule4, rule5)
 import TypedRedex.Core.Internal.Logic
