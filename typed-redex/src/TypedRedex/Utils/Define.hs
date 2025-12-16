@@ -9,28 +9,20 @@
 -- | Clean DSL syntax for defining relations using inference-rule style.
 --
 -- This module provides a cleaner alternative to the callback-based rule syntax.
--- Instead of:
 --
 -- @
--- natLt = rules2 "natLt" [natLtZero, natLtSucc]
+-- lookupTm = judgment3 "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
 --   where
---     natLtZero = rule2 "natLt-Zero" $ \\natLt' ->
---       fresh $ \\m' -> natLt' zro (suc m')
--- @
+--     lookupTmHere = rule "lookup-here" $ fresh2 $ \\ty rest ->
+--       concl $ lookupTm (tmBind ty rest) zro ty
 --
--- You can write:
---
--- @
--- natLt = define2 "natLt"
---   [ fresh $ \\m' ->
---       concl $ natLt zro (suc m')
---   , fresh2 $ \\n' m' -> do
---       concl $ natLt (suc n') (suc m')
---       prem  $ natLt n' m'
---   ]
+--     lookupTmThere = rule "lookup-there" $ fresh4 $ \\ty ty' rest n' -> do
+--       concl $ lookupTm (tmBind ty' rest) (suc n') ty
+--       prem  $ lookupTm rest n' ty
 -- @
 --
 -- Both 'concl' and 'prem' are overloaded and work for any arity.
+-- Rule names are tracked for derivation trees.
 
 module TypedRedex.Utils.Define
   ( -- * Applied relation types (store args + goal)
@@ -42,8 +34,11 @@ module TypedRedex.Utils.Define
     -- * Conclusion and Premise (overloaded)
   , Conclude(..)
   , Premise(..)
-    -- * Define combinators
-  , define, define2, define3, define4, define5
+    -- * Named rules
+  , Rule(..), Rule2(..), Rule3(..), Rule4(..), Rule5(..)
+  , rule
+    -- * Judgment combinators (combine named rules)
+  , judgment, judgment2, judgment3, judgment4, judgment5
   ) where
 
 import TypedRedex.Core.Internal.Redex
@@ -90,15 +85,8 @@ data Applied5 rel a b c d e = Applied5
 --------------------------------------------------------------------------------
 
 -- | Type class for extracting conclusion pattern and unifying.
---
--- The key trick: 'ConcludePat' is a type family that computes the pattern type,
--- and the implicit param @?concl@ uses this computed type. This avoids putting
--- implicit params in instance contexts (which GHC forbids).
 class Conclude app rel where
-  -- | The type of the pattern (arguments) stored in this applied relation.
   type ConcludePat app
-
-  -- | Extract pattern and unify with rule arguments via implicit @?concl@.
   concl :: (?concl :: ConcludePat app -> rel ()) => app -> rel ()
 
 instance Conclude (Applied rel a) rel where
@@ -130,75 +118,139 @@ class Premise app rel where
   prem :: app -> rel ()
 
 instance (Redex rel) => Premise (Applied rel a) rel where
-  prem (Applied _ g) = call $ Relation "" [] g
+  prem (Applied _ g) = g
 
 instance (Redex rel) => Premise (Applied2 rel a b) rel where
-  prem (Applied2 _ g) = call $ Relation "" [] g
+  prem (Applied2 _ g) = g
 
 instance (Redex rel) => Premise (Applied3 rel a b c) rel where
-  prem (Applied3 _ g) = call $ Relation "" [] g
+  prem (Applied3 _ g) = g
 
 instance (Redex rel) => Premise (Applied4 rel a b c d) rel where
-  prem (Applied4 _ g) = call $ Relation "" [] g
+  prem (Applied4 _ g) = g
 
 instance (Redex rel) => Premise (Applied5 rel a b c d e) rel where
-  prem (Applied5 _ g) = call $ Relation "" [] g
+  prem (Applied5 _ g) = g
 
 --------------------------------------------------------------------------------
--- Define combinators
+-- Named rules
 --------------------------------------------------------------------------------
 
--- | Define a unary relation from a list of rules.
-define :: (Redex rel, LogicType a)
-       => String
-       -> ((?concl :: L a rel -> rel ()) => [rel ()])
-       -> L a rel -> Applied rel a
-define name rules x = Applied x $ argument x $ \x' ->
-  let ?concl = \px -> x' <=> px
-  in asum rules
+-- | A named rule for a unary judgment.
+data Rule rel a = Rule
+  { rule1Name :: String
+  , rule1Body :: (?concl :: L a rel -> rel ()) => rel ()
+  }
 
--- | Define a binary relation from a list of rules.
+-- | A named rule for a binary judgment.
+data Rule2 rel a b = Rule2
+  { rule2Name :: String
+  , rule2Body :: (?concl :: (L a rel, L b rel) -> rel ()) => rel ()
+  }
+
+-- | A named rule for a ternary judgment.
+data Rule3 rel a b c = Rule3
+  { rule3Name :: String
+  , rule3Body :: (?concl :: (L a rel, L b rel, L c rel) -> rel ()) => rel ()
+  }
+
+-- | A named rule for a quaternary judgment.
+data Rule4 rel a b c d = Rule4
+  { rule4Name :: String
+  , rule4Body :: (?concl :: (L a rel, L b rel, L c rel, L d rel) -> rel ()) => rel ()
+  }
+
+-- | A named rule for a 5-ary judgment.
+data Rule5 rel a b c d e = Rule5
+  { rule5Name :: String
+  , rule5Body :: (?concl :: (L a rel, L b rel, L c rel, L d rel, L e rel) -> rel ()) => rel ()
+  }
+
+-- | Create a named rule. The name appears in derivation trees.
 --
 -- @
--- natLt = define2 "natLt"
---   [ fresh $ \\m' ->
+-- lookupHere = rule "lookup-here" $ fresh2 $ \\ty rest ->
+--   concl $ lookup (cons ty rest) zro ty
+-- @
+class MkRule r where
+  rule :: String -> r -> r
+
+instance MkRule (Rule rel a) where
+  rule name body = body { rule1Name = name }
+
+instance MkRule (Rule2 rel a b) where
+  rule name body = body { rule2Name = name }
+
+instance MkRule (Rule3 rel a b c) where
+  rule name body = body { rule3Name = name }
+
+instance MkRule (Rule4 rel a b c d) where
+  rule name body = body { rule4Name = name }
+
+instance MkRule (Rule5 rel a b c d e) where
+  rule name body = body { rule5Name = name }
+
+--------------------------------------------------------------------------------
+-- Judgment combinators
+--------------------------------------------------------------------------------
+
+-- | Define a unary judgment from a list of named rules.
+judgment :: (Redex rel, LogicType a)
+         => String
+         -> [Rule rel a]
+         -> L a rel -> Applied rel a
+judgment _ rules x = Applied x $ argument x $ \x' ->
+  let args = [prettyLogic x']
+  in let ?concl = \px -> x' <=> px
+  in asum [call $ Relation (rule1Name r) args (rule1Body r) | r <- rules]
+
+-- | Define a binary judgment from a list of named rules.
+--
+-- @
+-- natLt = judgment2 "natLt" [natLtZero, natLtSucc]
+--   where
+--     natLtZero = rule "lt-zero" $ fresh $ \\m' ->
 --       concl $ natLt zro (suc m')
---   , fresh2 $ \\n' m' -> do
+--
+--     natLtSucc = rule "lt-succ" $ fresh2 $ \\n' m' -> do
 --       concl $ natLt (suc n') (suc m')
 --       prem  $ natLt n' m'
---   ]
 -- @
-define2 :: (Redex rel, LogicType a, LogicType b)
-        => String
-        -> ((?concl :: (L a rel, L b rel) -> rel ()) => [rel ()])
-        -> L a rel -> L b rel -> Applied2 rel a b
-define2 name rules x y = Applied2 (x, y) $ argument2 x y $ \x' y' ->
-  let ?concl = \(px, py) -> x' <=> px >> y' <=> py
-  in asum rules
+judgment2 :: (Redex rel, LogicType a, LogicType b)
+          => String
+          -> [Rule2 rel a b]
+          -> L a rel -> L b rel -> Applied2 rel a b
+judgment2 _ rules x y = Applied2 (x, y) $ argument2 x y $ \x' y' ->
+  let args = [prettyLogic x', prettyLogic y']
+  in let ?concl = \(px, py) -> x' <=> px >> y' <=> py
+  in asum [call $ Relation (rule2Name r) args (rule2Body r) | r <- rules]
 
--- | Define a ternary relation from a list of rules.
-define3 :: (Redex rel, LogicType a, LogicType b, LogicType c)
-        => String
-        -> ((?concl :: (L a rel, L b rel, L c rel) -> rel ()) => [rel ()])
-        -> L a rel -> L b rel -> L c rel -> Applied3 rel a b c
-define3 name rules x y z = Applied3 (x, y, z) $ argument3 x y z $ \x' y' z' ->
-  let ?concl = \(px, py, pz) -> x' <=> px >> y' <=> py >> z' <=> pz
-  in asum rules
+-- | Define a ternary judgment from a list of named rules.
+judgment3 :: (Redex rel, LogicType a, LogicType b, LogicType c)
+          => String
+          -> [Rule3 rel a b c]
+          -> L a rel -> L b rel -> L c rel -> Applied3 rel a b c
+judgment3 _ rules x y z = Applied3 (x, y, z) $ argument3 x y z $ \x' y' z' ->
+  let args = [prettyLogic x', prettyLogic y', prettyLogic z']
+  in let ?concl = \(px, py, pz) -> x' <=> px >> y' <=> py >> z' <=> pz
+  in asum [call $ Relation (rule3Name r) args (rule3Body r) | r <- rules]
 
--- | Define a quaternary relation from a list of rules.
-define4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d)
-        => String
-        -> ((?concl :: (L a rel, L b rel, L c rel, L d rel) -> rel ()) => [rel ()])
-        -> L a rel -> L b rel -> L c rel -> L d rel -> Applied4 rel a b c d
-define4 name rules x y z w = Applied4 (x, y, z, w) $ argument4 x y z w $ \x' y' z' w' ->
-  let ?concl = \(px, py, pz, pw) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw
-  in asum rules
+-- | Define a quaternary judgment from a list of named rules.
+judgment4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d)
+          => String
+          -> [Rule4 rel a b c d]
+          -> L a rel -> L b rel -> L c rel -> L d rel -> Applied4 rel a b c d
+judgment4 _ rules x y z w = Applied4 (x, y, z, w) $ argument4 x y z w $ \x' y' z' w' ->
+  let args = [prettyLogic x', prettyLogic y', prettyLogic z', prettyLogic w']
+  in let ?concl = \(px, py, pz, pw) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw
+  in asum [call $ Relation (rule4Name r) args (rule4Body r) | r <- rules]
 
--- | Define a 5-ary relation from a list of rules.
-define5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
-        => String
-        -> ((?concl :: (L a rel, L b rel, L c rel, L d rel, L e rel) -> rel ()) => [rel ()])
-        -> L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> Applied5 rel a b c d e
-define5 name rules x y z w v = Applied5 (x, y, z, w, v) $ argument5 x y z w v $ \x' y' z' w' v' ->
-  let ?concl = \(px, py, pz, pw, pv) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw >> v' <=> pv
-  in asum rules
+-- | Define a 5-ary judgment from a list of named rules.
+judgment5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
+          => String
+          -> [Rule5 rel a b c d e]
+          -> L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> Applied5 rel a b c d e
+judgment5 _ rules x y z w v = Applied5 (x, y, z, w, v) $ argument5 x y z w v $ \x' y' z' w' v' ->
+  let args = [prettyLogic x', prettyLogic y', prettyLogic z', prettyLogic w', prettyLogic v']
+  in let ?concl = \(px, py, pz, pw, pv) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw >> v' <=> pv
+  in asum [call $ Relation (rule5Name r) args (rule5Body r) | r <- rules]

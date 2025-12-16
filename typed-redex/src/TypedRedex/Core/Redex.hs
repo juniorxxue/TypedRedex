@@ -87,15 +87,16 @@ module TypedRedex.Core.Redex
   -- * Negation
 , neg    -- ^ Constructive negation: succeed if goal has no solutions
 
-  -- * Clean DSL syntax (define/concl/prem)
+  -- * Clean DSL syntax (judgment/rule/concl/prem)
 , Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..)
 , Conclude(..)  -- concl method + ConcludePat type family
 , Premise(..)   -- prem method
-, define, define2, define3, define4, define5
+, Rule(..), Rule2(..), Rule3(..), Rule4(..), Rule5(..)
+, judgment, judgment2, judgment3, judgment4, judgment5
 ) where
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Utils.Redex
 import TypedRedex.Utils.Rule
-import TypedRedex.Utils.Define
+import TypedRedex.Utils.Define hiding (rule)
 import TypedRedex.Core.Internal.Logic

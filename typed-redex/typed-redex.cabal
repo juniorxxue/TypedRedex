@@ -89,6 +89,7 @@ executable pure-binding
 executable example-system-f
   hs-source-dirs:   examples/system-f
   main-is:          Main.hs
+  other-modules:    Syntax
   build-depends:
     base >=4.12 && <5,
     typed-redex,
