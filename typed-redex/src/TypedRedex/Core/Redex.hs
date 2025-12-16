@@ -38,6 +38,7 @@ module TypedRedex.Core.Redex
   Relation(..)          -- ^ Named logic relations with name, args, and body
 , Redex(RVar)           -- ^ Typeclass for logic programming monads
 , RedexEval             -- ^ Extract ground values from logic terms
+, RedexNeg              -- ^ Negation support
 , LogicType             -- ^ Types that can be used in logic programs
 , L                     -- ^ Logic terms: Free (variable) or Ground (value)
 
@@ -65,6 +66,7 @@ module TypedRedex.Core.Redex
 
   -- * Invoking relations
 , call   -- ^ Invoke a relation (goal call)
+, premise -- alias
 , embed  -- ^ Embed a monadic computation as a goal
 
   -- * Evaluation
@@ -81,6 +83,9 @@ module TypedRedex.Core.Redex
 
   -- * Disjunction
 , conde  -- ^ Disjunction: try multiple goal clauses
+
+  -- * Negation
+, neg    -- ^ Constructive negation: succeed if goal has no solutions
 ) where
 
 import TypedRedex.Core.Internal.Redex

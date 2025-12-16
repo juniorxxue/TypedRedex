@@ -5,7 +5,7 @@ module TypedRedex.Utils.Redex
 , fresh, fresh2, fresh3, fresh4, fresh5
 , argument, argument2, argument3, argument4, argument5
 , relation, relation2, relation3, relation4, relation5
-, call, embed
+, call, premise, embed
 , eval
 , run, run2, run3, run4, run5
 , (===), (<=>)
@@ -13,6 +13,7 @@ module TypedRedex.Utils.Redex
 , Var', L
 , occursCheck
 , prettyLogic
+, neg  -- re-export from Redex
 ) where
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
@@ -107,6 +108,9 @@ relation5 n f a_ b_ c_ d_ e_ = Relation n [prettyLogic a_, prettyLogic b_, prett
 
 call :: (Redex rel) => Relation rel -> rel ()
 call = call_ Opaque
+
+premise :: (Redex rel) => Relation rel -> rel ()
+premise = call
 
 embed :: (Redex rel) => Relation rel -> rel ()
 embed = call_ Transparent

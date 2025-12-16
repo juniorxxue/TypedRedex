@@ -16,6 +16,8 @@
 -- │      ↓                                                     │
 -- │    RedexEval       ← Extract ground values                 │
 -- │      ↓                                                     │
+-- │    RedexNeg        ← Disequality and negation              │
+-- │      ↓                                                     │
 -- │    RedexStructure  ← Derivation tree tracking              │
 -- │                                                            │
 -- ├─────────────────────────────────────────────────────────────┤
@@ -29,6 +31,8 @@
 -- Redex rel                    -- Core: fresh_, unify, suspend
 --   │
 --   ├── RedexEval rel          -- Evaluation: derefVar
+--   │
+--   ├── RedexNeg rel           -- Negation: diseq, neg
 --   │
 --   └── RedexStructure rel     -- Structure: onRuleEnter, onRuleExit
 -- @
@@ -49,6 +53,14 @@
 --   derefVar = ...
 -- @
 --
+-- **With negation**: Also implement 'RedexNeg'
+--
+-- @
+-- instance RedexNeg MyInterp where
+--   diseq = ...
+--   neg = ...
+-- @
+--
 -- **With derivations**: Also implement 'RedexStructure'
 --
 -- @
@@ -65,6 +77,7 @@ module TypedRedex.Core.Internal.Redex
     -- * Typeclass Hierarchy
   , Redex(..)
   , RedexEval(..)
+  , RedexNeg(..)
   , RedexStructure(..)
     -- * Variable Equality
   , EqVar(..)
@@ -232,6 +245,38 @@ class (Redex rel) => RedexEval rel where
   --
   -- Fails if variable remains unbound after solving.
   derefVar :: (LogicType a) => Var a (RVar rel) -> rel a
+
+--------------------------------------------------------------------------------
+-- RedexNeg: Negation
+--------------------------------------------------------------------------------
+
+-- | Negation-as-failure for logic programming.
+--
+-- Interpreters that support negation implement this.
+-- This extends core miniKanren with the ability to succeed when a goal fails.
+--
+-- == Example
+--
+-- @
+-- -- Succeed only if (x = zero) has no solutions
+-- neg (x \<=> zero)
+-- @
+--
+-- == Implementation Notes
+--
+-- Negation-as-failure runs the goal and succeeds if it produces no answers.
+-- This is sound for ground goals but may not terminate for goals with
+-- infinite answer streams.
+class (Redex rel) => RedexNeg rel where
+
+  -- | Negation-as-failure: succeed if a goal has no solutions.
+  --
+  -- @neg g@ succeeds if @g@ produces no answers under the current
+  -- substitution, and fails if @g@ has at least one answer.
+  --
+  -- WARNING: This will not terminate if @g@ diverges before producing
+  -- its first answer. Use with care on potentially infinite computations.
+  neg :: rel () -> rel ()
 
 --------------------------------------------------------------------------------
 -- RedexStructure: Derivation Tracking

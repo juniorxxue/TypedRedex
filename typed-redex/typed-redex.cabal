@@ -102,3 +102,12 @@ executable example-pcf-step-rule
     typed-redex,
     mtl  >=2.2  && <3
   default-language: Haskell2010
+
+executable example-negation-test
+  hs-source-dirs:   examples/negation-test
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
