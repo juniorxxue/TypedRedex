@@ -1,0 +1,104 @@
+cabal-version:      2.4
+name:               typed-redex
+version:            0.1.0.0
+license:            MIT
+author:             Migrated from uKanren_transformations (shallow-embedding)
+maintainer:         you@example.com
+build-type:         Simple
+
+library
+  hs-source-dirs:   src
+  exposed-modules:
+    Stream
+    TypedRedex.Core.Redex
+    TypedRedex.Core.Internal.Redex
+    TypedRedex.Core.Internal.Logic
+    TypedRedex.Interpreters.SubstRedex
+    TypedRedex.Interpreters.DeepRedex
+    TypedRedex.Interpreters.TracingRedex
+    TypedRedex.Utils.Redex
+    TypedRedex.Utils.Rule
+    TypedRedex.Utils.Type
+  build-depends:
+    base >=4.12 && <5,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-stlc-bidir
+  hs-source-dirs:   examples/stlc-bidir
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-hm-inference
+  hs-source-dirs:   examples/hm-inference
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-pcf-step
+  hs-source-dirs:   examples/pcf-step
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-poly-infer
+  hs-source-dirs:   examples/poly-infer
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable test-unbound
+  hs-source-dirs:   examples/test-unbound
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3,
+    unbound-generics >=0.4 && <0.5
+  default-language: Haskell2010
+  default-extensions:
+    DeriveGeneric
+    DeriveDataTypeable
+    FlexibleInstances
+    FlexibleContexts
+    MultiParamTypeClasses
+
+executable pure-binding
+  hs-source-dirs:   examples/pure-binding
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-system-f
+  hs-source-dirs:   examples/system-f
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-pcf-step-rule
+  hs-source-dirs:   examples/pcf-step-rule
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
