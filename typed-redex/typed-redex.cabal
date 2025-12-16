@@ -18,6 +18,7 @@ library
     TypedRedex.Interpreters.TracingRedex
     TypedRedex.Utils.Redex
     TypedRedex.Utils.Rule
+    TypedRedex.Utils.Define
     TypedRedex.Utils.Type
   build-depends:
     base >=4.12 && <5,

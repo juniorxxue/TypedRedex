@@ -1,6 +1,7 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ImplicitParams #-}
 
 module Main (main) where
 
@@ -12,52 +13,47 @@ import TypedRedex.Utils.Type (quote0, quote1, quote2)
 
 import Syntax
 
-prem = premise
-concl = id
+-- Aliases for binary relations (most common case)
+concl :: (?conclArgs :: (L a rel, L b rel), Redex rel, LogicType a, LogicType b)
+      => Applied2 rel a b -> rel ()
+concl = concl2
+
+-- Alias for ternary conclusion
+concl3' :: (?conclArgs :: (L a rel, L b rel, L c rel), Redex rel, LogicType a, LogicType b, LogicType c)
+        => Applied3 rel a b c -> rel ()
+concl3' = concl3
 
 -- Nat equality check
-natEq :: (Redex rel) => L Nat rel -> L Nat rel -> Relation rel
-natEq = rules2 "natEq" [natEqZero, natEqSucc]
-  where
-    natEqZero = rule2 "natEq-Zero" $ \natEq' -> 
-      concl $ natEq' zro zro
-
-    natEqSucc = rule2 "natEq-Succ" $ \natEq' ->
-      fresh2 $ \n' m' -> do
-        concl $ natEq' (suc n') (suc m')
-        prem  $ natEq n' m'
-
+natEq :: (Redex rel) => L Nat rel -> L Nat rel -> Applied2 rel Nat Nat
+natEq = define2 "natEq"
+  [ concl $ natEq zro zro
+  , fresh2 $ \n' m' -> do
+      concl $ natEq (suc n') (suc m')
+      prem  $ natEq n' m'
+  ]
 
 -- Less than check (strict)
-natLt :: (Redex rel) => L Nat rel -> L Nat rel -> Relation rel
-natLt = rules2 "natLt" [natLtZero, natLtSucc]
-  where
-    natLtZero = rule2 "natLt-Zero" $ \natLt' ->
-      fresh $ \m' -> do
-        concl $ natLt' zro (suc m')
-
-    natLtSucc = rule2 "natLt-Succ" $ \natLt' ->
-      fresh2 $ \n' m' -> do
-        concl $ natLt' (suc n') (suc m')
-        prem  $ natLt n' m'
+natLt :: (Redex rel) => L Nat rel -> L Nat rel -> Applied2 rel Nat Nat
+natLt = define2 "natLt"
+  [ fresh $ \m' ->
+      concl $ natLt zro (suc m')
+  , fresh2 $ \n' m' -> do
+      concl $ natLt (suc n') (suc m')
+      prem  $ natLt n' m'
+  ]
 
 
-lookupTm :: (Redex rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Relation rel
-lookupTm = rules3 "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
-  where 
-    lookupTmHere = rule3 "lookupTm-Here" $ \lookupTm' ->
-      fresh2 $ \ty rest -> do
-        concl $ lookupTm' (tmBind ty rest) zro ty
-
-    lookupTmThere = rule3 "lookupTm-There" $ \lookupTm' ->
-      fresh4 $ \ty ty' rest n' -> do
-        concl $ lookupTm' (tmBind ty' rest) (suc n') ty
-        prem  $ lookupTm rest n' ty
-        
-    lookupTmSkip = rule3 "lookupTm-Skip" $ \lookupTm' ->
-      fresh3 $ \rest n ty -> do
-        concl $ lookupTm' (tyBind rest) n ty        
-        prem  $ lookupTm rest n ty
+lookupTm :: (Redex rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Applied3 rel Ctx Nat Ty
+lookupTm = define3 "lookupTm"
+  [ fresh2 $ \ty rest ->
+      concl3' $ lookupTm (tmBind ty rest) zro ty
+  , fresh4 $ \ty ty' rest n' -> do
+      concl3' $ lookupTm (tmBind ty' rest) (suc n') ty
+      prem    $ lookupTm rest n' ty
+  , fresh3 $ \rest n ty -> do
+      concl3' $ lookupTm (tyBind rest) n ty
+      prem    $ lookupTm rest n ty
+  ]
         
 -- Type substitution: substTy depth subTy ty result
 -- Substitutes type variable at index 'depth' with 'subTy' in 'ty'
@@ -98,17 +94,17 @@ substTyVar = relation4 "substTyVar" $ \depth subTy n result ->
   conde
     [ -- n == depth: substitute
       do
-        call $ natEq n depth
+        prem $ natEq n depth
         result <=> subTy
         pure ()
     , -- n < depth: free variable, keep unchanged
       do
-        call $ natLt n depth
+        prem $ natLt n depth
         result <=> tvar n
         pure ()
     , -- n > depth: bound variable from outer scope, decrement
       fresh $ \n' -> do
-        call $ natLt depth n
+        prem $ natLt depth n
         n <=> suc n'
         result <=> tvar n'
         pure ()
@@ -165,7 +161,7 @@ shiftTyVar = relation4 "shiftTyVar" $ \cutoff amount n result ->
   conde
     [ -- n < cutoff: bound variable, keep
       do
-        call $ natLt n cutoff
+        prem $ natLt n cutoff
         result <=> tvar n
         pure ()
     , -- n >= cutoff: free variable, shift
@@ -173,8 +169,8 @@ shiftTyVar = relation4 "shiftTyVar" $ \cutoff amount n result ->
         -- n >= cutoff means not (n < cutoff)
         -- We check by: either n == cutoff or n > cutoff
         conde
-          [ call $ natEq n cutoff
-          , call $ natLt cutoff n
+          [ prem $ natEq n cutoff
+          , prem $ natLt cutoff n
           ]
         call $ addNat n amount n'
         result <=> tvar n'
@@ -194,7 +190,7 @@ typeof = relation3 "typeof" $ \ctx e ty ->
     , -- Var: Γ(x) = A ⟹ Γ ⊢ x : A
       fresh $ \n -> do
         e <=> var n
-        call $ lookupTm ctx n ty
+        prem $ lookupTm ctx n ty
         pure ()
     , -- Lam: Γ, x:A ⊢ e : B ⟹ Γ ⊢ λx:A.e : A → B
       fresh3 $ \tyA body tyB -> do

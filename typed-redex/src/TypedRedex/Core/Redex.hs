@@ -86,9 +86,16 @@ module TypedRedex.Core.Redex
 
   -- * Negation
 , neg    -- ^ Constructive negation: succeed if goal has no solutions
+
+  -- * Clean DSL syntax (define/concl/prem)
+, Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..)
+, concl1, concl2, concl3, concl4, concl5
+, Premise(..)  -- prem method, overloaded for all arities
+, define, define2, define3, define4, define5
 ) where
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Utils.Redex
 import TypedRedex.Utils.Rule
+import TypedRedex.Utils.Define
 import TypedRedex.Core.Internal.Logic
