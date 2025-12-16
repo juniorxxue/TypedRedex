@@ -9,6 +9,7 @@ module TypedRedex.Interpreters.DeepRedex
   , extractRule
   , extractAllRules
   , formatAsRule
+  , formatAsRuleWithJudgment
   , deepVar  -- Helper to create logic variables for extraction
   ) where
 
@@ -46,9 +47,10 @@ data DeepState = DeepState
 initState :: DeepState
 initState = DeepState 0 [] 0
 
--- Maximum depth for expanding calls (0 = expand top level only, 1 = one level of calls, 2 = two levels)
+-- Maximum depth for expanding calls (0 = just record calls, don't expand bodies)
+-- Set to 1 for rule extraction with premises visible
 maxDepth :: Int
-maxDepth = 2
+maxDepth = 1
 
 --------------------------------------------------------------------------------
 -- Deep Redex Interpreter
@@ -161,18 +163,49 @@ prettyLogicAny (Ground r) = prettyReified r
 
 -- | Format constructor application nicely (customizable per type)
 formatCon :: String -> [String] -> String
+-- Terms (System F has annotated lambda, PCF has unannotated)
 formatCon "App" [f, a] = "(" ++ f ++ " " ++ a ++ ")"
-formatCon "Lam" [b] = "(λ." ++ b ++ ")"
-formatCon "Var" [n] = "var(" ++ n ++ ")"
+formatCon "Lam" [ty, b] = "(λ:" ++ ty ++ ". " ++ b ++ ")"  -- System F: annotated lambda
+formatCon "Lam" [b] = "(λ." ++ b ++ ")"                     -- PCF: unannotated lambda
+formatCon "Var" [n] = if all isSubscriptOrDigit n then "x" ++ subscriptNum n else n
+  where isSubscriptOrDigit c = c `elem` "0123456789₀₁₂₃₄₅₆₇₈₉"
 formatCon "Zero" [] = "0"
-formatCon "Succ" [e] = "succ(" ++ e ++ ")"
+formatCon "Succ" [e] = "S(" ++ e ++ ")"
 formatCon "Pred" [e] = "pred(" ++ e ++ ")"
 formatCon "Ifz" [c, t, f] = "ifz(" ++ c ++ ", " ++ t ++ ", " ++ f ++ ")"
 formatCon "Fix" [e] = "fix(" ++ e ++ ")"
+-- Natural numbers
 formatCon "Z" [] = "0"
 formatCon "S" [n] = "S(" ++ n ++ ")"
+-- System F Types
+formatCon "TUnit" [] = "Unit"
+formatCon "TVar" [n] = "α" ++ subscriptNum n
+formatCon "TArr" [a, b] = "(" ++ a ++ " → " ++ b ++ ")"
+formatCon "TAll" [ty] = "(∀. " ++ ty ++ ")"
+-- System F Terms
+formatCon "Unit" [] = "()"
+formatCon "TLam" [b] = "(Λ." ++ b ++ ")"
+formatCon "TApp" [e, ty] = "(" ++ e ++ " [" ++ ty ++ "])"
+-- STLC Bidir Types
+formatCon "→" [a, b] = "(" ++ a ++ " → " ++ b ++ ")"
+-- Contexts
+formatCon "Nil" [] = "·"
+formatCon "·" [] = "·"
+formatCon "TmBind" [ty, ctx] = ctx ++ ", x:" ++ ty
+formatCon "TyBind" [ctx] = ctx ++ ", α"
+formatCon "Cons" [ty, ctx] = ctx ++ ", " ++ ty
+formatCon "," [ty, ctx] = ctx ++ ", " ++ ty
+-- Default
 formatCon n [] = n
 formatCon n args = n ++ "(" ++ intercalate ", " args ++ ")"
+
+-- | Convert a number string to subscript
+subscriptNum :: String -> String
+subscriptNum = concatMap toSub
+  where
+    toSub '0' = "₀"; toSub '1' = "₁"; toSub '2' = "₂"; toSub '3' = "₃"
+    toSub '4' = "₄"; toSub '5' = "₅"; toSub '6' = "₆"; toSub '7' = "₇"
+    toSub '8' = "₈"; toSub '9' = "₉"; toSub c = [c]
 
 intercalate :: String -> [String] -> String
 intercalate _ [] = ""
@@ -242,50 +275,145 @@ extractAllRules goal = case findConde goal of
     findFirstCall _ = Nothing
 
 -- | Extract premises and conclusion from a Goal
--- Returns (premises, conclusion_lhs, conclusion_rhs)
--- For a binary relation like step, the first two unifications set up:
---   input_var = input_pattern   (LHS of conclusion = input_pattern)
---   output_var = output_pattern (RHS of conclusion = output_pattern)
-extractRule :: Goal -> ([String], String, String)
+-- Returns (judgment_name, conclusion_patterns, premises)
+-- The conclusion patterns come from GUnify statements that bind the relation arguments
+extractRule :: Goal -> (String, [String], [String])
 extractRule goal =
-  let (prems, concls) = collectParts True goal  -- True = skip first GCall (relation name)
-  in case concls of
-       [] -> (prems, "?", "?")
-       [(_, r)] -> (prems, r, "?")  -- Only one unify, use its RHS as LHS
-       ((_, lhs):(_, rhs):_) -> (prems, lhs, rhs)  -- First two unifications give patterns
+  let (ruleName, unifs, prems) = collectParts 0 [] goal  -- 0=Initial, 1=InConclusion, 2=InPremises
+      -- Extract the RHS of unifications (the actual patterns)
+      patterns = map snd unifs
+  in (ruleName, patterns, prems)
   where
-    collectParts :: Bool -> Goal -> ([String], [(String, String)])
-    collectParts _ GTrue = ([], [])
-    collectParts _ (GUnify l r) = ([], [(l, r)])
-    collectParts skipFirst (GCall name args)
-      | skipFirst = ([], [])  -- Skip the first GCall (the relation name)
-      | otherwise = ([formatCall name args], [])
-    collectParts skipFirst (GSeq g1 g2) =
-      let (p1, c1) = collectParts skipFirst g1
-          -- After first element, don't skip anymore
-          (p2, c2) = collectParts False g2
-      in (p1 ++ p2, c1 ++ c2)
-    collectParts _ (GConde _) = ([], [])  -- conde is top-level, not a premise
-    collectParts skipFirst (GFresh _ g) = collectParts skipFirst g
+    -- Phase: 0=Initial (looking for rule name), 1=InConclusion (collecting unifs), 2=InPremises
+    collectParts :: Int -> [(String, String)] -> Goal -> (String, [(String, String)], [String])
+    collectParts _ unifs GTrue = ("", unifs, [])
+    collectParts 1 unifs (GUnify l r) = ("", unifs ++ [(l, r)], [])  -- Collect unifications in conclusion phase
+    collectParts _ unifs (GUnify _ _) = ("", unifs, [])  -- Skip other unifications
+    collectParts 0 unifs (GCall name _) = (name, unifs, [])  -- First GCall is the rule name
+    collectParts _ unifs (GCall name args) = ("", unifs, [formatCall name args])  -- Premise as direct call
+    -- GConde after conclusion (phases 1 or 2): extract premise from first branch
+    collectParts phase unifs (GConde branches) | phase >= 1 =
+      case branches of
+        (b:_) -> let prem = extractPremiseFromBranch b
+                 in ("", unifs, if null prem then [] else [prem])
+        _ -> ("", unifs, [])
+    collectParts _ unifs (GConde _) = ("", unifs, [])  -- Skip GConde in phase 0
+    collectParts phase unifs (GSeq g1 g2) =
+      let (r1, u1, p1) = collectParts phase unifs g1
+          -- Compute next phase based on what we found in g1
+          foundRuleName = not (null r1)
+          foundPremise = not (null p1)
+          nextPhase = case phase of
+            0 -> if foundRuleName then 1 else 0
+            1 -> if foundPremise then 2 else 1
+            _ -> 2
+          (r2, u2, p2) = collectParts nextPhase u1 g2
+          rname = if null r1 then r2 else r1
+      in (rname, u2, p1 ++ p2)
+    collectParts phase unifs (GFresh _ g) = collectParts phase unifs g
+
+    -- Extract premise from a GConde branch (which is typically a GCall for a specific rule)
+    extractPremiseFromBranch :: Goal -> String
+    extractPremiseFromBranch (GCall name args) =
+      -- Try to infer judgment name from rule name (e.g., "value-lam" -> "value")
+      let judgmentName = takeWhile (/= '-') name
+      in if null judgmentName || judgmentName == name
+         then formatCall name args  -- No "-" found, use full name
+         else formatCall judgmentName args
+    extractPremiseFromBranch (GSeq g _) = extractPremiseFromBranch g
+    extractPremiseFromBranch (GConde (b:_)) = extractPremiseFromBranch b
+    extractPremiseFromBranch _ = ""
 
     formatCall :: String -> [String] -> String
+    -- Typing judgments
+    formatCall "typeof" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
+    formatCall "synth" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
+    formatCall "check" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇐ " ++ ty
+    -- Context lookup
+    formatCall "lookup" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
+    formatCall "lookupTm" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
+    -- Step relation (both judgment name and common rule names)
     formatCall "step" [a, b] = a ++ " ⟶ " ++ b
+    formatCall "β" [a, b] = a ++ " ⟶ " ++ b
+    formatCall "app" [a, b] = a ++ " ⟶ " ++ b
+    -- Value predicate
     formatCall "value" [a] = "value(" ++ a ++ ")"
+    -- Substitution
     formatCall "subst0" [body, arg, result] = "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
+    formatCall "subst" [depth, subTy, ty, result] = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
+    formatCall "substTy" [depth, subTy, ty, result] = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
+    formatCall "substTyVar" [depth, subTy, n, result] = "[" ++ subTy ++ "/" ++ depth ++ "](TVar " ++ n ++ ") = " ++ result
+    -- Shifting
+    formatCall "shiftTy" [cutoff, amount, ty, result] = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " " ++ ty ++ " = " ++ result
+    formatCall "shiftTyVar" [cutoff, amount, n, result] = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " (TVar " ++ n ++ ") = " ++ result
+    -- Arithmetic on naturals
+    formatCall "natEq" [n, m] = n ++ " = " ++ m
+    formatCall "natLt" [n, m] = n ++ " < " ++ m
+    formatCall "addNat" [n, m, s] = n ++ " + " ++ m ++ " = " ++ s
+    -- Default: function-style
     formatCall n args = n ++ "(" ++ intercalate ", " args ++ ")"
 
+    superscript :: String -> String
+    superscript = map toSuper
+      where
+        toSuper '0' = '⁰'; toSuper '1' = '¹'; toSuper '2' = '²'; toSuper '3' = '³'
+        toSuper '4' = '⁴'; toSuper '5' = '⁵'; toSuper '6' = '⁶'; toSuper '7' = '⁷'
+        toSuper '8' = '⁸'; toSuper '9' = '⁹'; toSuper c = c
+
+-- | Format a conclusion based on judgment name and arguments
+formatConclusion :: String -> [String] -> String
+-- Typing judgments
+formatConclusion "typeof" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
+formatConclusion "synth" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
+formatConclusion "check" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇐ " ++ ty
+-- Context lookup
+formatConclusion "lookup" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
+formatConclusion "lookupTm" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
+-- Step relation
+formatConclusion "step" [a, b] = a ++ " ⟶ " ++ b
+-- Value predicate
+formatConclusion "value" [a] = "value(" ++ a ++ ")"
+-- Substitution
+formatConclusion "subst0" [body, arg, result] = "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
+formatConclusion "substTy" [depth, subTy, ty, result] = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
+formatConclusion "substTyVar" [depth, subTy, n, result] = "[" ++ subTy ++ "/" ++ depth ++ "](TVar " ++ n ++ ") = " ++ result
+-- Shifting
+formatConclusion "shiftTy" [cutoff, amount, ty, result] = "↑" ++ toSuper cutoff ++ "·" ++ toSuper amount ++ " " ++ ty ++ " = " ++ result
+  where toSuper = map (\c -> case c of '0'->'⁰';'1'->'¹';'2'->'²';'3'->'³';'4'->'⁴';'5'->'⁵';'6'->'⁶';'7'->'⁷';'8'->'⁸';'9'->'⁹';x->x)
+formatConclusion "shiftTyVar" [cutoff, amount, n, result] = "↑" ++ toSuper cutoff ++ "·" ++ toSuper amount ++ " (TVar " ++ n ++ ") = " ++ result
+  where toSuper = map (\c -> case c of '0'->'⁰';'1'->'¹';'2'->'²';'3'->'³';'4'->'⁴';'5'->'⁵';'6'->'⁶';'7'->'⁷';'8'->'⁸';'9'->'⁹';x->x)
+-- Arithmetic on naturals
+formatConclusion "natEq" [n, m] = n ++ " = " ++ m
+formatConclusion "natLt" [n, m] = n ++ " < " ++ m
+formatConclusion "addNat" [n, m, s] = n ++ " + " ++ m ++ " = " ++ s
+-- Default: function-style
+formatConclusion name args = name ++ "(" ++ intercalate ", " args ++ ")"
+
 -- | Format extracted rule as ASCII inference rule
+-- Takes the judgment name (for formatting conclusion) and rule name (for labeling)
 formatAsRule :: String -> Goal -> String
-formatAsRule ruleName goal =
-  let (prems, lhs, rhs) = extractRule goal
+formatAsRule = formatAsRuleWithJudgment ""
+
+-- | Format extracted rule with explicit judgment name for conclusion formatting
+-- If judgment name is empty, falls back to rule name
+formatAsRuleWithJudgment :: String -> String -> Goal -> String
+formatAsRuleWithJudgment judgmentName ruleName goal =
+  let (_, patterns, prems) = extractRule goal
+      -- Use judgment name if provided, otherwise use rule name for formatting
+      jname = if null judgmentName then ruleName else judgmentName
       -- Renumber variables to start from 1
-      allVars = collectVars (prems ++ [lhs, rhs])
+      allVars = collectVars (prems ++ patterns)
       renumberMap = zip allVars [1..]
-      renumber s = foldr (\(old, new) acc -> replace (freshName old) (freshName new) acc) s renumberMap
+      -- Two-pass renumbering to avoid chain replacement:
+      -- First pass: rename to temporary names (e₂ -> __tmp_2__)
+      -- Second pass: rename temps to final names (__tmp_2__ -> e₁)
+      toTemp old = "__tmp_" ++ show old ++ "__"
+      pass1 s = foldr (\(old, _) acc -> replace (freshName old) (toTemp old) acc) s renumberMap
+      pass2 s = foldr (\(old, new) acc -> replace (toTemp old) (freshName new) acc) s renumberMap
+      renumber = pass2 . pass1
       prems' = map renumber prems
-      lhs' = renumber lhs
-      rhs' = renumber rhs
-      conclusion = lhs' ++ " ⟶ " ++ rhs'
+      patterns' = map renumber patterns
+      conclusion = formatConclusion jname patterns'
       maxLen = maximum $ length conclusion : map length prems'
       line = replicate (maxLen + 4) '─'
   in (if null prems' then "" else unlines (map ("  " ++) prems')) ++

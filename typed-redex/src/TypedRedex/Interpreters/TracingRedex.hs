@@ -135,16 +135,60 @@ prettyDerivation d = unlines $ renderDeriv d
     padRight n s = s ++ replicate (n - length s) ' '
 
     formatConclusion :: String -> [String] -> String
-    formatConclusion "step" [a, b] = a ++ " ⟶ " ++ b
-    formatConclusion "value" [a] = "value(" ++ a ++ ")"
-    formatConclusion "subst0" [body, arg, result] = "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
+    -- Typing judgments (by judgment name)
+    formatConclusion "typeof" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
     formatConclusion "synth" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
     formatConclusion "check" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇐ " ++ ty
+    -- Typing rules (by rule name - match prefix)
+    formatConclusion name [ctx, e, ty] | "typeof-" `isPrefixOf` name = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
+    formatConclusion name [ctx, e, ty] | "synth" `isPrefixOf` name = ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
+    formatConclusion name [ctx, e, ty] | "check" `isPrefixOf` name = ctx ++ " ⊢ " ++ e ++ " ⇐ " ++ ty
+    -- Context lookup (by judgment or rule name)
     formatConclusion "lookup" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
+    formatConclusion "lookupTm" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
+    formatConclusion name [ctx, n, ty] | "lookup" `isPrefixOf` name = ctx ++ "(" ++ n ++ ") = " ++ ty
+    -- Step relation
+    formatConclusion "step" [a, b] = a ++ " ⟶ " ++ b
+    -- Value predicate
+    formatConclusion "value" [a] = "value(" ++ a ++ ")"
+    formatConclusion name [a] | "value-" `isPrefixOf` name = "value(" ++ a ++ ")"
+    -- Substitution
+    formatConclusion "subst0" [body, arg, result] = "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
+    formatConclusion name [body, arg, result] | "subst0-" `isPrefixOf` name = "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
+    formatConclusion "substTy" [depth, subTy, ty, result] = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
+    formatConclusion name [depth, subTy, ty, result] | "subst-" `isPrefixOf` name = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
+    formatConclusion "substTyVar" [depth, subTy, n, result] = "[" ++ subTy ++ "/" ++ depth ++ "](TVar " ++ n ++ ") = " ++ result
+    -- Shifting
+    formatConclusion "shiftTy" [cutoff, amount, ty, result] = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " " ++ ty ++ " = " ++ result
+    formatConclusion name [cutoff, amount, ty, result] | "shift-" `isPrefixOf` name = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " " ++ ty ++ " = " ++ result
+    formatConclusion "shiftTyVar" [cutoff, amount, n, result] = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " (TVar " ++ n ++ ") = " ++ result
+    -- Arithmetic on naturals
+    formatConclusion "natEq" [n, m] = n ++ " = " ++ m
+    formatConclusion name [n, m] | "eq-" `isPrefixOf` name = n ++ " = " ++ m
+    formatConclusion "natLt" [n, m] = n ++ " < " ++ m
+    formatConclusion name [n, m] | "lt-" `isPrefixOf` name = n ++ " < " ++ m
+    formatConclusion "addNat" [n, m, s] = n ++ " + " ++ m ++ " = " ++ s
+    formatConclusion name [n, m, s] | "add-" `isPrefixOf` name = n ++ " + " ++ m ++ " = " ++ s
+    -- Axioms (no args)
     formatConclusion name [] = name
+    -- Step rules (various named rules that are step reductions)
     formatConclusion name [a, b] | name `elem` ["β", "app-L", "app-R", "succ", "pred", "pred-zero", "pred-succ", "ifz", "ifz-zero", "ifz-succ", "fix"] =
       a ++ " ⟶ " ++ b
+    -- Default: function-style
     formatConclusion name args = name ++ "(" ++ intercalate ", " args ++ ")"
+
+    isPrefixOf :: String -> String -> Bool
+    isPrefixOf [] _ = True
+    isPrefixOf _ [] = False
+    isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
+
+    -- Convert a string to superscript (for shift notation)
+    superscript :: String -> String
+    superscript = map toSuper
+      where
+        toSuper '0' = '⁰'; toSuper '1' = '¹'; toSuper '2' = '²'; toSuper '3' = '³'
+        toSuper '4' = '⁴'; toSuper '5' = '⁵'; toSuper '6' = '⁶'; toSuper '7' = '⁷'
+        toSuper '8' = '⁸'; toSuper '9' = '⁹'; toSuper c = c
 
     intercalate :: String -> [String] -> String
     intercalate _ [] = ""

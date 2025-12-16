@@ -10,6 +10,7 @@ import TypedRedex.Core.Redex hiding (rule, rule2, rule3, rule4)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
 import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivation, Derivation(..))
+import TypedRedex.Interpreters.DeepRedex (DeepRedex, runDeep, formatAsRuleWithJudgment, extractAllRules, deepVar)
 import TypedRedex.Utils.Type (quote0, quote1, quote2)
 import TypedRedex.Utils.Define (rule2, rule3, rule4)
 
@@ -295,6 +296,22 @@ natLtWithTrace n m = runWithDerivation $ do
   app2Goal $ natLt (Ground $ project n) (Ground $ project m)
   pure ()
 
+--------------------------------------------------------------------------------
+-- Rule extraction helpers
+--------------------------------------------------------------------------------
+
+-- | Print all rules for a ternary relation (like typeof)
+printRules3 :: (LogicType a, LogicType b, LogicType c)
+            => String
+            -> (L a DeepRedex -> L b DeepRedex -> L c DeepRedex -> Applied3 DeepRedex a b c)
+            -> IO ()
+printRules3 judgmentName rel = do
+  let goal = runDeep $ app3Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
+    putStrLn "") rules
+
 -- Test lookupTm with derivation
 lookupWithTrace :: Ctx -> Nat -> Stream (Ty, Derivation)
 lookupWithTrace ctx0 n0 = runWithDerivation $ fresh $ \ty -> do
@@ -307,7 +324,7 @@ lookupWithTrace ctx0 n0 = runWithDerivation $ fresh $ \ty -> do
 
 main :: IO ()
 main = do
-  putStrLn "=== System F Type Checking with Derivation Trees ==="
+  putStrLn "=== System F Type Checking ==="
   putStrLn ""
 
   -- Test 1: Simple type check
@@ -321,7 +338,11 @@ main = do
   print $ takeS 1 (typeofIO Nil polyId)
   putStrLn ""
 
-  putStrLn "=== Derivation Trees (new judgment/rule syntax) ==="
+  putStrLn "=== Extracted Typing Rules (DeepRedex) ==="
+  putStrLn ""
+  printRules3 "typeof" typeof
+
+  putStrLn "=== Derivation Trees (TracingRedex) ==="
   putStrLn ""
 
   -- Test 3: natLt derivation
