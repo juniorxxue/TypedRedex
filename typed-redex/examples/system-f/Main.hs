@@ -13,16 +13,6 @@ import TypedRedex.Utils.Type (quote0, quote1, quote2)
 
 import Syntax
 
--- Aliases for binary relations (most common case)
-concl :: (?conclArgs :: (L a rel, L b rel), Redex rel, LogicType a, LogicType b)
-      => Applied2 rel a b -> rel ()
-concl = concl2
-
--- Alias for ternary conclusion
-concl3' :: (?conclArgs :: (L a rel, L b rel, L c rel), Redex rel, LogicType a, LogicType b, LogicType c)
-        => Applied3 rel a b c -> rel ()
-concl3' = concl3
-
 -- Nat equality check
 natEq :: (Redex rel) => L Nat rel -> L Nat rel -> Applied2 rel Nat Nat
 natEq = define2 "natEq"
@@ -42,17 +32,17 @@ natLt = define2 "natLt"
       prem  $ natLt n' m'
   ]
 
-
+-- Context lookup
 lookupTm :: (Redex rel) => L Ctx rel -> L Nat rel -> L Ty rel -> Applied3 rel Ctx Nat Ty
 lookupTm = define3 "lookupTm"
   [ fresh2 $ \ty rest ->
-      concl3' $ lookupTm (tmBind ty rest) zro ty
+      concl $ lookupTm (tmBind ty rest) zro ty
   , fresh4 $ \ty ty' rest n' -> do
-      concl3' $ lookupTm (tmBind ty' rest) (suc n') ty
-      prem    $ lookupTm rest n' ty
+      concl $ lookupTm (tmBind ty' rest) (suc n') ty
+      prem  $ lookupTm rest n' ty
   , fresh3 $ \rest n ty -> do
-      concl3' $ lookupTm (tyBind rest) n ty
-      prem    $ lookupTm rest n ty
+      concl $ lookupTm (tyBind rest) n ty
+      prem  $ lookupTm rest n ty
   ]
         
 -- Type substitution: substTy depth subTy ty result

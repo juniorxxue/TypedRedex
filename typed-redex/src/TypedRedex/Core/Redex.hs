@@ -89,8 +89,8 @@ module TypedRedex.Core.Redex
 
   -- * Clean DSL syntax (define/concl/prem)
 , Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..)
-, concl1, concl2, concl3, concl4, concl5
-, Premise(..)  -- prem method, overloaded for all arities
+, Conclude(..)  -- concl method + ConcludePat type family
+, Premise(..)   -- prem method
 , define, define2, define3, define4, define5
 ) where
 

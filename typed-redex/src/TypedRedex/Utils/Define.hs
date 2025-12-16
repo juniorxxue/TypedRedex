@@ -1,9 +1,10 @@
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Clean DSL syntax for defining relations using inference-rule style.
 --
@@ -27,11 +28,9 @@
 --       concl $ natLt (suc n') (suc m')
 --       prem  $ natLt n' m'
 --   ]
---   where concl = concl2; prem = prem2
 -- @
 --
--- The key insight: relations return 'Applied2' which stores both arguments
--- and goal. 'concl2' extracts the arguments and unifies with implicit rule args.
+-- Both 'concl' and 'prem' are overloaded and work for any arity.
 
 module TypedRedex.Utils.Define
   ( -- * Applied relation types (store args + goal)
@@ -40,9 +39,8 @@ module TypedRedex.Utils.Define
   , Applied3(..)
   , Applied4(..)
   , Applied5(..)
-    -- * Conclusion (extract pattern, unify with rule args)
-  , concl1, concl2, concl3, concl4, concl5
-    -- * Premise (run the goal) - overloaded via type class
+    -- * Conclusion and Premise (overloaded)
+  , Conclude(..)
   , Premise(..)
     -- * Define combinators
   , define, define2, define3, define4, define5
@@ -88,53 +86,46 @@ data Applied5 rel a b c d e = Applied5
   }
 
 --------------------------------------------------------------------------------
--- Conclusion: extract pattern args and unify with rule args
+-- Conclude: type class with type family for pattern type
 --------------------------------------------------------------------------------
 
--- | Conclusion for unary relations.
-concl1 :: (Redex rel, LogicType a, ?conclArg :: L a rel)
-       => Applied rel a -> rel ()
-concl1 (Applied px _) = ?conclArg <=> px
-
--- | Conclusion for binary relations.
+-- | Type class for extracting conclusion pattern and unifying.
 --
--- @
--- concl2 $ natLt zro (suc m')
--- @
-concl2 :: (Redex rel, LogicType a, LogicType b, ?conclArgs :: (L a rel, L b rel))
-       => Applied2 rel a b -> rel ()
-concl2 (Applied2 (px, py) _) =
-  let (x, y) = ?conclArgs
-  in x <=> px >> y <=> py
+-- The key trick: 'ConcludePat' is a type family that computes the pattern type,
+-- and the implicit param @?concl@ uses this computed type. This avoids putting
+-- implicit params in instance contexts (which GHC forbids).
+class Conclude app rel where
+  -- | The type of the pattern (arguments) stored in this applied relation.
+  type ConcludePat app
 
--- | Conclusion for ternary relations.
-concl3 :: (Redex rel, LogicType a, LogicType b, LogicType c, ?conclArgs :: (L a rel, L b rel, L c rel))
-       => Applied3 rel a b c -> rel ()
-concl3 (Applied3 (px, py, pz) _) =
-  let (x, y, z) = ?conclArgs
-  in x <=> px >> y <=> py >> z <=> pz
+  -- | Extract pattern and unify with rule arguments via implicit @?concl@.
+  concl :: (?concl :: ConcludePat app -> rel ()) => app -> rel ()
 
--- | Conclusion for quaternary relations.
-concl4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, ?conclArgs :: (L a rel, L b rel, L c rel, L d rel))
-       => Applied4 rel a b c d -> rel ()
-concl4 (Applied4 (px, py, pz, pw) _) =
-  let (x, y, z, w) = ?conclArgs
-  in x <=> px >> y <=> py >> z <=> pz >> w <=> pw
+instance Conclude (Applied rel a) rel where
+  type ConcludePat (Applied rel a) = L a rel
+  concl (Applied px _) = ?concl px
 
--- | Conclusion for 5-ary relations.
-concl5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e, ?conclArgs :: (L a rel, L b rel, L c rel, L d rel, L e rel))
-       => Applied5 rel a b c d e -> rel ()
-concl5 (Applied5 (px, py, pz, pw, pv) _) =
-  let (x, y, z, w, v) = ?conclArgs
-  in x <=> px >> y <=> py >> z <=> pz >> w <=> pw >> v <=> pv
+instance Conclude (Applied2 rel a b) rel where
+  type ConcludePat (Applied2 rel a b) = (L a rel, L b rel)
+  concl (Applied2 pat _) = ?concl pat
+
+instance Conclude (Applied3 rel a b c) rel where
+  type ConcludePat (Applied3 rel a b c) = (L a rel, L b rel, L c rel)
+  concl (Applied3 pat _) = ?concl pat
+
+instance Conclude (Applied4 rel a b c d) rel where
+  type ConcludePat (Applied4 rel a b c d) = (L a rel, L b rel, L c rel, L d rel)
+  concl (Applied4 pat _) = ?concl pat
+
+instance Conclude (Applied5 rel a b c d e) rel where
+  type ConcludePat (Applied5 rel a b c d e) = (L a rel, L b rel, L c rel, L d rel, L e rel)
+  concl (Applied5 pat _) = ?concl pat
 
 --------------------------------------------------------------------------------
 -- Premise: type class for running applied relations
 --------------------------------------------------------------------------------
 
 -- | Type class for running an applied relation as a premise.
---
--- Overloaded for all arities, so you can just write @prem $ rel args...@
 class Premise app rel where
   prem :: app -> rel ()
 
@@ -158,14 +149,12 @@ instance (Redex rel) => Premise (Applied5 rel a b c d e) rel where
 --------------------------------------------------------------------------------
 
 -- | Define a unary relation from a list of rules.
---
--- The list is constructed inside the implicit param context.
 define :: (Redex rel, LogicType a)
        => String
-       -> ((?conclArg :: L a rel) => [rel ()])
+       -> ((?concl :: L a rel -> rel ()) => [rel ()])
        -> L a rel -> Applied rel a
 define name rules x = Applied x $ argument x $ \x' ->
-  let ?conclArg = x'
+  let ?concl = \px -> x' <=> px
   in asum rules
 
 -- | Define a binary relation from a list of rules.
@@ -173,43 +162,43 @@ define name rules x = Applied x $ argument x $ \x' ->
 -- @
 -- natLt = define2 "natLt"
 --   [ fresh $ \\m' ->
---       concl2 $ natLt zro (suc m')
+--       concl $ natLt zro (suc m')
 --   , fresh2 $ \\n' m' -> do
---       concl2 $ natLt (suc n') (suc m')
---       prem2  $ natLt n' m'
+--       concl $ natLt (suc n') (suc m')
+--       prem  $ natLt n' m'
 --   ]
 -- @
 define2 :: (Redex rel, LogicType a, LogicType b)
         => String
-        -> ((?conclArgs :: (L a rel, L b rel)) => [rel ()])
+        -> ((?concl :: (L a rel, L b rel) -> rel ()) => [rel ()])
         -> L a rel -> L b rel -> Applied2 rel a b
 define2 name rules x y = Applied2 (x, y) $ argument2 x y $ \x' y' ->
-  let ?conclArgs = (x', y')
+  let ?concl = \(px, py) -> x' <=> px >> y' <=> py
   in asum rules
 
 -- | Define a ternary relation from a list of rules.
 define3 :: (Redex rel, LogicType a, LogicType b, LogicType c)
         => String
-        -> ((?conclArgs :: (L a rel, L b rel, L c rel)) => [rel ()])
+        -> ((?concl :: (L a rel, L b rel, L c rel) -> rel ()) => [rel ()])
         -> L a rel -> L b rel -> L c rel -> Applied3 rel a b c
 define3 name rules x y z = Applied3 (x, y, z) $ argument3 x y z $ \x' y' z' ->
-  let ?conclArgs = (x', y', z')
+  let ?concl = \(px, py, pz) -> x' <=> px >> y' <=> py >> z' <=> pz
   in asum rules
 
 -- | Define a quaternary relation from a list of rules.
 define4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d)
         => String
-        -> ((?conclArgs :: (L a rel, L b rel, L c rel, L d rel)) => [rel ()])
+        -> ((?concl :: (L a rel, L b rel, L c rel, L d rel) -> rel ()) => [rel ()])
         -> L a rel -> L b rel -> L c rel -> L d rel -> Applied4 rel a b c d
 define4 name rules x y z w = Applied4 (x, y, z, w) $ argument4 x y z w $ \x' y' z' w' ->
-  let ?conclArgs = (x', y', z', w')
+  let ?concl = \(px, py, pz, pw) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw
   in asum rules
 
 -- | Define a 5-ary relation from a list of rules.
 define5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
         => String
-        -> ((?conclArgs :: (L a rel, L b rel, L c rel, L d rel, L e rel)) => [rel ()])
+        -> ((?concl :: (L a rel, L b rel, L c rel, L d rel, L e rel) -> rel ()) => [rel ()])
         -> L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> Applied5 rel a b c d e
 define5 name rules x y z w v = Applied5 (x, y, z, w, v) $ argument5 x y z w v $ \x' y' z' w' v' ->
-  let ?conclArgs = (x', y', z', w', v')
+  let ?concl = \(px, py, pz, pw, pv) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw >> v' <=> pv
   in asum rules
