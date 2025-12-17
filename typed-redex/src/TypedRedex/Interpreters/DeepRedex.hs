@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies, GeneralisedNewtypeDeriving, DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, FlexibleContexts #-}
-{-# LANGUAGE GADTs, RankNTypes #-}
+{-# LANGUAGE GADTs, RankNTypes, TypeApplications, ScopedTypeVariables #-}
 module TypedRedex.Interpreters.DeepRedex
   ( DeepRedex
   , Goal(..)
@@ -11,11 +11,15 @@ module TypedRedex.Interpreters.DeepRedex
   , formatAsRule
   , formatAsRuleWithJudgment
   , deepVar  -- Helper to create logic variables for extraction
+    -- * Pretty-printing extracted rules
+  , printRules, printRules2, printRules3, printRules4, printRules5
   ) where
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.Redex (formatCon, subscriptNum, intercalate)
+import TypedRedex.Utils.Redex (L, formatCon, intercalate)
+import TypedRedex.Utils.PrettyPrint (VarNaming(..), namingByTag, subscriptNum)
+import TypedRedex.Utils.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..))
 import Control.Applicative
 import Control.Monad (when)
 import Control.Monad.State
@@ -92,20 +96,7 @@ recordGoal g = modify $ \s -> s { dsGoals = g : dsGoals s }
 
 -- | Generate fresh variable name using subscript indices
 freshName :: Int -> String
-freshName n = "e" ++ subscript n
-  where
-    subscript i = map toSubscript (show i)
-    toSubscript '0' = '₀'
-    toSubscript '1' = '₁'
-    toSubscript '2' = '₂'
-    toSubscript '3' = '₃'
-    toSubscript '4' = '₄'
-    toSubscript '5' = '₅'
-    toSubscript '6' = '₆'
-    toSubscript '7' = '₇'
-    toSubscript '8' = '₈'
-    toSubscript '9' = '₉'
-    toSubscript c   = c
+freshName n = "e" ++ subscriptNum n
 
 --------------------------------------------------------------------------------
 -- Redex Instance
@@ -115,7 +106,13 @@ instance Redex DeepRedex where
   newtype RVar DeepRedex t = DVar Int
     deriving (Functor)
 
-  fresh_ _ k = do
+  -- For rule extraction: reuse variables from ArgVar instead of creating new ones
+  fresh_ FreshVar k = do
+    n <- gets dsVarCounter
+    modify $ \s -> s { dsVarCounter = n + 1 }
+    k (DVar n)
+  fresh_ (ArgVar (Free (DVar n))) k = k (DVar n)  -- Reuse existing variable
+  fresh_ (ArgVar (Ground _)) k = do  -- Ground term: create fresh var (shouldn't happen often)
     n <- gets dsVarCounter
     modify $ \s -> s { dsVarCounter = n + 1 }
     k (DVar n)
@@ -151,8 +148,9 @@ instance EqVar DeepRedex where
 -- Pretty-printing Logic terms (local version for DeepRedex)
 --------------------------------------------------------------------------------
 
-prettyL :: LogicType a => Logic a (RVar DeepRedex) -> String
-prettyL (Free (DVar n)) = freshName n
+-- | Pretty-print a logic term. Outputs variable markers «TAG:ID» for later renumbering.
+prettyL :: forall a. LogicType a => Logic a (RVar DeepRedex) -> String
+prettyL (Free (DVar n)) = "«" ++ vnTag (varNaming @a) ++ ":" ++ show n ++ "»"
 prettyL (Ground r) = prettyReified r
 
 prettyReified :: LogicType a => Reified a (RVar DeepRedex) -> String
@@ -163,8 +161,9 @@ prettyReified r =
 prettyField :: Field a (RVar DeepRedex) -> String
 prettyField (Field _ logic) = prettyLogicAny logic
 
-prettyLogicAny :: LogicType t => Logic t (RVar DeepRedex) -> String
-prettyLogicAny (Free (DVar n)) = freshName n
+-- | Pretty-print any logic term with variable markers for later renumbering.
+prettyLogicAny :: forall t. LogicType t => Logic t (RVar DeepRedex) -> String
+prettyLogicAny (Free (DVar n)) = "«" ++ vnTag (varNaming @t) ++ ":" ++ show n ++ "»"
 prettyLogicAny (Ground r) = prettyReified r
 
 --------------------------------------------------------------------------------
@@ -192,6 +191,75 @@ prettyGoal (GCall name args) =
   then name
   else name ++ "(" ++ intercalate ", " args ++ ")"
 prettyGoal (GSeq g1 g2) = prettyGoal g1 ++ ", " ++ prettyGoal g2
+
+--------------------------------------------------------------------------------
+-- Variable renumbering for readable rule output
+--------------------------------------------------------------------------------
+
+-- | Parse all variable markers «TAG:ID» from a string
+parseVarMarkers :: String -> [(String, Int, String)]  -- (tag, id, full marker)
+parseVarMarkers [] = []
+parseVarMarkers ('«':rest) =
+  case break (== ':') rest of
+    (tag, ':':rest2) ->
+      case break (== '»') rest2 of
+        (idStr, '»':rest3) ->
+          case reads idStr of
+            [(n, "")] -> (tag, n, "«" ++ tag ++ ":" ++ idStr ++ "»") : parseVarMarkers rest3
+            _ -> parseVarMarkers rest3
+        _ -> parseVarMarkers rest2
+    _ -> parseVarMarkers rest
+parseVarMarkers (_:rest) = parseVarMarkers rest
+
+-- | Build a renumbering map: (tag, oldId) -> newLocalId
+buildRenumberMap :: [(String, Int, String)] -> [((String, Int), Int)]
+buildRenumberMap markers =
+  let -- Group by tag, preserving first-occurrence order
+      grouped = groupByTag markers
+      -- Assign local IDs within each group (0, 1, 2, ...)
+      numbered = concatMap numberGroup grouped
+  in numbered
+  where
+    groupByTag :: [(String, Int, String)] -> [(String, [Int])]
+    groupByTag ms =
+      let tags = nub [t | (t, _, _) <- ms]
+          getIds t = nub [i | (t', i, _) <- ms, t == t']
+      in [(t, getIds t) | t <- tags]
+
+    numberGroup :: (String, [Int]) -> [((String, Int), Int)]
+    numberGroup (tag, ids) = [((tag, oldId), newId) | (oldId, newId) <- zip ids [0..]]
+
+    nub :: Eq a => [a] -> [a]
+    nub [] = []
+    nub (x:xs) = x : nub (filter (/= x) xs)
+
+-- | Get variable name by tag and local index (delegates to PrettyPrint)
+varNameByTag :: String -> Int -> String
+varNameByTag tag = vnName (namingByTag tag)
+
+-- | Renumber all variable markers in a string with local per-rule numbering
+renumberVars :: String -> String
+renumberVars s =
+  let markers = parseVarMarkers s
+      renumberMap = buildRenumberMap markers
+      lookupNew tag oldId = case lookup (tag, oldId) renumberMap of
+        Just newId -> varNameByTag tag newId
+        Nothing -> "?" ++ tag ++ show oldId
+  in substituteMarkers lookupNew s
+
+substituteMarkers :: (String -> Int -> String) -> String -> String
+substituteMarkers _ [] = []
+substituteMarkers lookupNew ('«':rest) =
+  case break (== ':') rest of
+    (tag, ':':rest2) ->
+      case break (== '»') rest2 of
+        (idStr, '»':rest3) ->
+          case reads idStr of
+            [(n, "")] -> lookupNew tag n ++ substituteMarkers lookupNew rest3
+            _ -> '«' : substituteMarkers lookupNew rest
+        _ -> '«' : substituteMarkers lookupNew rest
+    _ -> '«' : substituteMarkers lookupNew rest
+substituteMarkers lookupNew (c:rest) = c : substituteMarkers lookupNew rest
 
 --------------------------------------------------------------------------------
 -- Extract and format as inference rule
@@ -351,78 +419,19 @@ formatAsRule = formatAsRuleWithJudgment ""
 
 -- | Format extracted rule with explicit judgment name for conclusion formatting
 -- If judgment name is empty, falls back to rule name
+-- Applies per-rule variable renumbering for readable output
 formatAsRuleWithJudgment :: String -> String -> Goal -> String
 formatAsRuleWithJudgment judgmentName ruleName goal =
   let (_, patterns, prems) = extractRule goal
       -- Use judgment name if provided, otherwise use rule name for formatting
       jname = if null judgmentName then ruleName else judgmentName
-      -- Renumber variables to start from 1
-      allVars = collectVars (prems ++ patterns)
-      renumberMap = zip allVars [1..]
-      -- Two-pass renumbering to avoid chain replacement:
-      -- First pass: rename to temporary names (e₂ -> __tmp_2__)
-      -- Second pass: rename temps to final names (__tmp_2__ -> e₁)
-      toTemp old = "__tmp_" ++ show old ++ "__"
-      pass1 s = foldr (\(old, _) acc -> replace (freshName old) (toTemp old) acc) s renumberMap
-      pass2 s = foldr (\(old, new) acc -> replace (toTemp old) (freshName new) acc) s renumberMap
-      renumber = pass2 . pass1
-      prems' = map renumber prems
-      patterns' = map renumber patterns
-      conclusion = formatConclusion jname patterns'
-      maxLen = maximum $ length conclusion : map length prems'
+      conclusion = formatConclusion jname patterns
+      maxLen = maximum $ length conclusion : map length prems
       line = replicate (maxLen + 4) '─'
-  in (if null prems' then "" else unlines (map ("  " ++) prems')) ++
-     "  " ++ line ++ " [" ++ ruleName ++ "]\n" ++
-     "  " ++ conclusion
-
--- | Collect all variable indices from strings
-collectVars :: [String] -> [Int]
-collectVars strs = unique $ concatMap findVars strs
-  where
-    findVars :: String -> [Int]
-    findVars [] = []
-    findVars ('e':rest) = case parseSubscript rest of
-      Just (n, rest') -> n : findVars rest'
-      Nothing -> findVars rest
-    findVars (_:rest) = findVars rest
-
-    parseSubscript :: String -> Maybe (Int, String)
-    parseSubscript s =
-      let (digits, rest) = span isSubscript s
-      in if null digits then Nothing else Just (subscriptToInt digits, rest)
-
-    isSubscript c = c `elem` "₀₁₂₃₄₅₆₇₈₉"
-
-    subscriptToInt :: String -> Int
-    subscriptToInt = read . map fromSubscript
-      where
-        fromSubscript '₀' = '0'
-        fromSubscript '₁' = '1'
-        fromSubscript '₂' = '2'
-        fromSubscript '₃' = '3'
-        fromSubscript '₄' = '4'
-        fromSubscript '₅' = '5'
-        fromSubscript '₆' = '6'
-        fromSubscript '₇' = '7'
-        fromSubscript '₈' = '8'
-        fromSubscript '₉' = '9'
-        fromSubscript c   = c
-
-    unique :: [Int] -> [Int]
-    unique [] = []
-    unique (x:xs) = x : unique (filter (/= x) xs)
-
--- | Replace all occurrences of a substring
-replace :: String -> String -> String -> String
-replace _ _ [] = []
-replace old new s@(c:cs)
-  | old `isPrefixOf` s = new ++ replace old new (drop (length old) s)
-  | otherwise = c : replace old new cs
-
-isPrefixOf :: String -> String -> Bool
-isPrefixOf [] _ = True
-isPrefixOf _ [] = False
-isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
+      raw = (if null prems then "" else unlines (map ("  " ++) prems)) ++
+            "  " ++ line ++ " [" ++ ruleName ++ "]\n" ++
+            "  " ++ conclusion
+  in renumberVars raw  -- Apply per-rule variable renumbering
 
 --------------------------------------------------------------------------------
 -- Helper for creating variables in extraction
@@ -432,3 +441,67 @@ isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
 -- Use deepVar 0, deepVar 1, etc. for different variables.
 deepVar :: Int -> Logic a (RVar DeepRedex)
 deepVar n = Free (DVar n)
+
+--------------------------------------------------------------------------------
+-- Pretty-printing extracted rules
+--------------------------------------------------------------------------------
+
+-- | Print all rules for a unary relation.
+printRules :: (LogicType a)
+           => String
+           -> (L a DeepRedex -> Applied DeepRedex a)
+           -> IO ()
+printRules judgmentName rel = do
+  let goal = runDeep $ app1Goal $ rel (deepVar 0)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
+    putStrLn "") rules
+
+-- | Print all rules for a binary relation.
+printRules2 :: (LogicType a, LogicType b)
+            => String
+            -> (L a DeepRedex -> L b DeepRedex -> Applied2 DeepRedex a b)
+            -> IO ()
+printRules2 judgmentName rel = do
+  let goal = runDeep $ app2Goal $ rel (deepVar 0) (deepVar 1)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
+    putStrLn "") rules
+
+-- | Print all rules for a ternary relation.
+printRules3 :: (LogicType a, LogicType b, LogicType c)
+            => String
+            -> (L a DeepRedex -> L b DeepRedex -> L c DeepRedex -> Applied3 DeepRedex a b c)
+            -> IO ()
+printRules3 judgmentName rel = do
+  let goal = runDeep $ app3Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
+    putStrLn "") rules
+
+-- | Print all rules for a quaternary relation.
+printRules4 :: (LogicType a, LogicType b, LogicType c, LogicType d)
+            => String
+            -> (L a DeepRedex -> L b DeepRedex -> L c DeepRedex -> L d DeepRedex -> Applied4 DeepRedex a b c d)
+            -> IO ()
+printRules4 judgmentName rel = do
+  let goal = runDeep $ app4Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
+    putStrLn "") rules
+
+-- | Print all rules for a 5-ary relation.
+printRules5 :: (LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
+            => String
+            -> (L a DeepRedex -> L b DeepRedex -> L c DeepRedex -> L d DeepRedex -> L e DeepRedex -> Applied5 DeepRedex a b c d e)
+            -> IO ()
+printRules5 judgmentName rel = do
+  let goal = runDeep $ app5Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3) (deepVar 4)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
+    putStrLn "") rules

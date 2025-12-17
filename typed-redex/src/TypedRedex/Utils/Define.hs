@@ -215,12 +215,14 @@ rule5 name body = Rule5 name body
 --------------------------------------------------------------------------------
 
 -- | Define a unary judgment from a list of named rules.
+-- Note: CapturedTerm captures original terms (x, y, z) for better rule extraction.
+-- For SubstRedex, these resolve after unification. For DeepRedex, ground terms print as-is.
 judgment :: (Redex rel, LogicType a)
          => String
          -> [Rule rel a]
          -> L a rel -> Applied rel a
 judgment _ rules x = Applied x $ argument x $ \x' ->
-  let terms = [CapturedTerm x']
+  let terms = [CapturedTerm x]  -- Capture original term
   in let ?concl = \px -> x' <=> px
   in asum [call $ Relation (rule1Name r) terms (rule1Body r) | r <- rules]
 
@@ -241,7 +243,7 @@ judgment2 :: (Redex rel, LogicType a, LogicType b)
           -> [Rule2 rel a b]
           -> L a rel -> L b rel -> Applied2 rel a b
 judgment2 _ rules x y = Applied2 (x, y) $ argument2 x y $ \x' y' ->
-  let terms = [CapturedTerm x', CapturedTerm y']
+  let terms = [CapturedTerm x, CapturedTerm y]  -- Capture original terms
   in let ?concl = \(px, py) -> x' <=> px >> y' <=> py
   in asum [call $ Relation (rule2Name r) terms (rule2Body r) | r <- rules]
 
@@ -251,7 +253,7 @@ judgment3 :: (Redex rel, LogicType a, LogicType b, LogicType c)
           -> [Rule3 rel a b c]
           -> L a rel -> L b rel -> L c rel -> Applied3 rel a b c
 judgment3 _ rules x y z = Applied3 (x, y, z) $ argument3 x y z $ \x' y' z' ->
-  let terms = [CapturedTerm x', CapturedTerm y', CapturedTerm z']
+  let terms = [CapturedTerm x, CapturedTerm y, CapturedTerm z]  -- Capture original terms
   in let ?concl = \(px, py, pz) -> x' <=> px >> y' <=> py >> z' <=> pz
   in asum [call $ Relation (rule3Name r) terms (rule3Body r) | r <- rules]
 
@@ -261,7 +263,7 @@ judgment4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d)
           -> [Rule4 rel a b c d]
           -> L a rel -> L b rel -> L c rel -> L d rel -> Applied4 rel a b c d
 judgment4 _ rules x y z w = Applied4 (x, y, z, w) $ argument4 x y z w $ \x' y' z' w' ->
-  let terms = [CapturedTerm x', CapturedTerm y', CapturedTerm z', CapturedTerm w']
+  let terms = [CapturedTerm x, CapturedTerm y, CapturedTerm z, CapturedTerm w]  -- Capture original
   in let ?concl = \(px, py, pz, pw) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw
   in asum [call $ Relation (rule4Name r) terms (rule4Body r) | r <- rules]
 
@@ -271,6 +273,6 @@ judgment5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, Log
           -> [Rule5 rel a b c d e]
           -> L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> Applied5 rel a b c d e
 judgment5 _ rules x y z w v = Applied5 (x, y, z, w, v) $ argument5 x y z w v $ \x' y' z' w' v' ->
-  let terms = [CapturedTerm x', CapturedTerm y', CapturedTerm z', CapturedTerm w', CapturedTerm v']
+  let terms = [CapturedTerm x, CapturedTerm y, CapturedTerm z, CapturedTerm w, CapturedTerm v]
   in let ?concl = \(px, py, pz, pw, pv) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw >> v' <=> pv
   in asum [call $ Relation (rule5Name r) terms (rule5Body r) | r <- rules]

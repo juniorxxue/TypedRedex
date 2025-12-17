@@ -15,14 +15,19 @@ module TypedRedex.Utils.Redex
 , prettyLogic
   -- * Term formatting (shared by interpreters)
 , formatCon
-, subscriptNum
+, subscriptNum  -- re-export from PrettyPrint (String -> String version)
 , intercalate
 , neg  -- re-export from Redex
 ) where
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
+import TypedRedex.Utils.PrettyPrint (subscriptStr)
 import Control.Applicative (asum)
 import Data.Maybe (fromMaybe)
+
+-- | Re-export subscriptStr as subscriptNum for backward compatibility
+subscriptNum :: String -> String
+subscriptNum = subscriptStr
 
 type Var' a rel = Var a (RVar rel)
 type L a rel = Logic a (RVar rel)
@@ -85,14 +90,6 @@ formatCon "," [ty, ctx] = ctx ++ ", " ++ ty
 -- Default
 formatCon n [] = n
 formatCon n args = n ++ "(" ++ intercalate ", " args ++ ")"
-
--- | Convert a number string to subscript
-subscriptNum :: String -> String
-subscriptNum = concatMap toSub
-  where
-    toSub '0' = "₀"; toSub '1' = "₁"; toSub '2' = "₂"; toSub '3' = "₃"
-    toSub '4' = "₄"; toSub '5' = "₅"; toSub '6' = "₆"; toSub '7' = "₇"
-    toSub '8' = "₈"; toSub '9' = "₉"; toSub c = [c]
 
 intercalate :: String -> [String] -> String
 intercalate _ [] = ""

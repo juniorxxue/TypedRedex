@@ -16,6 +16,7 @@ library
     TypedRedex.Interpreters.SubstRedex
     TypedRedex.Interpreters.DeepRedex
     TypedRedex.Interpreters.TracingRedex
+    TypedRedex.Utils.PrettyPrint
     TypedRedex.Utils.Redex
     TypedRedex.Utils.Rule
     TypedRedex.Utils.Define

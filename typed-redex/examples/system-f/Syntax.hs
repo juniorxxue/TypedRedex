@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Syntax where
 
@@ -8,6 +9,7 @@ import TypedRedex.Core.Redex
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
 import TypedRedex.Utils.Type (quote0, quote1, quote2)
+import TypedRedex.Utils.PrettyPrint (VarNaming(..), natNaming, tyNaming, ctxNaming, subscriptNum)
 
 -- System F Type Checking
 -- Uses de Bruijn indices for both term and type variables
@@ -53,6 +55,8 @@ instance LogicType Nat where
 
   derefVal _ ZR = pure Z
   derefVal deref (SR n) = S <$> deref n
+
+  varNaming = natNaming
 
 zro :: Logic Nat var
 zro = Ground ZR
@@ -102,6 +106,8 @@ instance LogicType Ty where
   derefVal deref (TVarR n) = TVar <$> deref n
   derefVal deref (TArrR a b) = TArr <$> deref a <*> deref b
   derefVal deref (TAllR ty) = TAll <$> deref ty
+
+  varNaming = tyNaming
 
 tunit :: Logic Ty var
 tunit = Ground TUnitR
@@ -171,6 +177,9 @@ instance LogicType Tm where
   derefVal deref (TLamR b) = TLam <$> deref b
   derefVal deref (TAppR e ty) = TApp <$> deref e <*> deref ty
 
+  -- Terms use: e₁, e₂, e₃, ... (starting from 1, not 0)
+  varNaming = VarNaming "E" (\i -> "e" ++ subscriptNum (i + 1))
+
 unit' :: Logic Tm var
 unit' = Ground UnitR
 
@@ -225,6 +234,8 @@ instance LogicType Ctx where
   derefVal _ NilR = pure Nil
   derefVal deref (TmBindR ty ctx) = TmBind <$> deref ty <*> deref ctx
   derefVal deref (TyBindR ctx) = TyBind <$> deref ctx
+
+  varNaming = ctxNaming
 
 nil :: Logic Ctx var
 nil = Ground NilR

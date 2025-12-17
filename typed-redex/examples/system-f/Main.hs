@@ -10,7 +10,7 @@ import TypedRedex.Core.Redex hiding (rule, rule2, rule3, rule4)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
 import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
-import TypedRedex.Interpreters.DeepRedex (DeepRedex, runDeep, formatAsRuleWithJudgment, extractAllRules, deepVar)
+import TypedRedex.Interpreters.DeepRedex (printRules3)
 import TypedRedex.Utils.Type (quote0, quote1, quote2)
 import TypedRedex.Utils.Define (rule2, rule3, rule4)
 
@@ -304,9 +304,9 @@ typeof = judgment3 "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeof
       concl $ typeof ctx (lam tyA body) (tarr tyA tyB)
       prem  $ typeof (tmBind tyA ctx) body tyB
 
-    typeofApp = rule3 "typeof-app" $ fresh4 $ \ctx e1 e2 tyA -> fresh $ \ty -> do
-      concl $ typeof ctx (app e1 e2) ty
-      prem  $ typeof ctx e1 (tarr tyA ty)
+    typeofApp = rule3 "typeof-app" $ fresh5 $ \ctx e1 e2 tyA tyB -> do
+      concl $ typeof ctx (app e1 e2) tyB
+      prem  $ typeof ctx e1 (tarr tyA tyB)
       prem  $ typeof ctx e2 tyA
 
     typeofTLam = rule3 "typeof-tlam" $ fresh3 $ \ctx body tyA -> do
@@ -343,22 +343,6 @@ natLtWithTrace :: Nat -> Nat -> Stream ((), Derivation)
 natLtWithTrace n m = runWithDerivation $ do
   app2Goal $ natLt (Ground $ project n) (Ground $ project m)
   pure ()
-
---------------------------------------------------------------------------------
--- Rule extraction helpers
---------------------------------------------------------------------------------
-
--- | Print all rules for a ternary relation (like typeof)
-printRules3 :: (LogicType a, LogicType b, LogicType c)
-            => String
-            -> (L a DeepRedex -> L b DeepRedex -> L c DeepRedex -> Applied3 DeepRedex a b c)
-            -> IO ()
-printRules3 judgmentName rel = do
-  let goal = runDeep $ app3Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2)
-  let rules = extractAllRules goal
-  mapM_ (\(name, ruleGoal) -> do
-    putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
-    putStrLn "") rules
 
 -- Test lookupTm with derivation
 lookupWithTrace :: Ctx -> Nat -> Stream (Ty, Derivation)

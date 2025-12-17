@@ -8,7 +8,7 @@ import Control.Applicative (empty)
 import TypedRedex.Core.Redex hiding (rule, rule2, rule3)
 import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
-import TypedRedex.Interpreters.DeepRedex (DeepRedex, runDeep, formatAsRuleWithJudgment, extractAllRules, deepVar)
+import TypedRedex.Interpreters.DeepRedex (printRules2)
 import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Utils.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.Utils.Define (rule1, rule2, rule3)
@@ -409,23 +409,13 @@ stepWithTrace t0 = runWithDerivation $ fresh $ \t' -> do
   app2Goal $ step (Ground $ project t0) t'
   eval t'
 
--- Helper to extract all rules from a binary relation
-printAllRules :: String -> (L Tm DeepRedex -> L Tm DeepRedex -> Applied2 DeepRedex Tm Tm) -> IO ()
-printAllRules judgmentName rel = do
-  let goal = runDeep $ app2Goal $ rel (deepVar 0) (deepVar 1)
-  let rules = extractAllRules goal
-  -- Print all rules
-  mapM_ (\(name, ruleGoal) -> do
-    putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
-    putStrLn "") rules
-
 main :: IO ()
 main = do
   putStrLn "=== Automatic Rule Extraction (DeepRedex) ==="
   putStrLn ""
 
   -- Extract all step rules automatically
-  printAllRules "step" step
+  printRules2 "step" step
 
   putStrLn "=== PCF Small-Step Semantics (Execution) ==="
   putStrLn ""
