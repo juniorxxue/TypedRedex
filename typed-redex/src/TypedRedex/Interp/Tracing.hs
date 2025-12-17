@@ -42,15 +42,18 @@
 module TypedRedex.Interp.Tracing
   ( -- * Running with Derivations
     runTracingRedex
+  , runTracingRedexWith
   , runWithDerivation
+  , runWithDerivationWith
     -- * Derivation Trees
   , Derivation(..)
   , prettyDerivation
   , prettyDerivationWith
   , substInDerivation
-    -- * Judgment Formatting
+    -- * Judgment Formatting (re-exported from Format)
   , JudgmentFormatter(..)
-  , DefaultFormatter(..)
+  , defaultFormatJudgment
+    -- * Legacy alias
   , defaultFormatConclusion
     -- * The Monad (for advanced use)
   , TracingRedex
@@ -61,11 +64,15 @@ import TypedRedex.Core.Internal.Logic
 import TypedRedex.Core.Internal.Unify (flatteningUnify, occursCheck)
 import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
 import TypedRedex.DSL.Fresh (LTerm, LVar)
-import TypedRedex.Interp.Format (formatCon, intercalate)
+import TypedRedex.Interp.Format (formatCon, formatConWith, intercalate, TermFormatter(..), DefaultTermFormatter(..), JudgmentFormatter(..), defaultFormatJudgment)
 import TypedRedex.Interp.Stream
 import Control.Monad.State
 import Control.Applicative
 import Unsafe.Coerce (unsafeCoerce)
+
+-- | Legacy alias for backward compatibility
+defaultFormatConclusion :: String -> [String] -> String
+defaultFormatConclusion = defaultFormatJudgment
 
 --------------------------------------------------------------------------------
 -- Derivation Trees
@@ -91,48 +98,12 @@ data Derivation
   deriving (Show, Eq)
 
 --------------------------------------------------------------------------------
--- Judgment Formatter (user-definable)
---------------------------------------------------------------------------------
-
--- | Typeclass for formatting judgment conclusions.
---
--- Users implement this in their examples to control how judgments are displayed.
---
--- @
--- data SystemFStyle
---
--- instance JudgmentFormatter SystemFStyle where
---   formatConclusion _ "typeof" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
---   formatConclusion _ "step" [a, b] = a ++ " ⟶ " ++ b
---   formatConclusion _ name args = defaultFormatConclusion name args
--- @
-class JudgmentFormatter fmt where
-  formatConclusion :: fmt -> String -> [String] -> String
-  formatConclusion _ = defaultFormatConclusion
-
--- | Default formatting: function-style @name(arg1, arg2, ...)@
---
--- This is the simplest possible formatting. Users should define their own
--- 'JudgmentFormatter' instances in their examples for domain-specific
--- formatting (e.g., typing judgments, step relations).
-defaultFormatConclusion :: String -> [String] -> String
-defaultFormatConclusion name [] = name
-defaultFormatConclusion name args = name ++ "(" ++ intercalate ", " args ++ ")"
-
--- | Unit formatter that uses default application-style formatting.
--- Use this when you don't need custom formatting.
-data DefaultFormatter = DefaultFormatter
-
-instance JudgmentFormatter DefaultFormatter where
-  formatConclusion _ = defaultFormatConclusion
-
---------------------------------------------------------------------------------
 -- Pretty-printing Derivations
 --------------------------------------------------------------------------------
 
 -- | Pretty-print a derivation tree using the default formatter.
 prettyDerivation :: Derivation -> String
-prettyDerivation = prettyDerivationWith DefaultFormatter
+prettyDerivation = prettyDerivationWith DefaultTermFormatter
 
 -- | Pretty-print a derivation tree with a custom formatter.
 --
@@ -153,7 +124,7 @@ prettyDerivationWith fmt d = unlines $ renderDeriv d
         [c] -> renderDeriv c
         cs -> concatMap renderDeriv cs
     renderDeriv (Deriv name args children) =
-      let conclusion = formatConclusion fmt name args
+      let conclusion = formatJudgment fmt name args
           childBlocks = map renderDeriv children
       in if null childBlocks
          then -- Axiom: just the line and conclusion
@@ -216,13 +187,18 @@ data TracingState s = TracingState
   { tsSubst      :: forall t. V s t -> Maybe t  -- ^ Substitution
   , tsNextVar    :: VarRepr                      -- ^ Fresh var counter
   , tsDerivStack :: [DerivFrame s]               -- ^ Derivation stack
+  , tsFormatter  :: String -> [String] -> String -- ^ Term formatter function
   }
 
 emptyState :: TracingState s
-emptyState = TracingState
+emptyState = emptyStateWith formatCon
+
+emptyStateWith :: (String -> [String] -> String) -> TracingState s
+emptyStateWith fmt = TracingState
   { tsSubst = \v -> error $ "Invalid variable " ++ show (varToInt v)
   , tsNextVar = 0
   , tsDerivStack = [DerivFrame "top" [] []]  -- Start with top-level frame
+  , tsFormatter = fmt
   }
 
 varToInt :: V s t -> Int
@@ -340,9 +316,10 @@ prettyResolved (Free v) = do
     Nothing -> pure $ displayVar v  -- Still unbound, show variable name
     Just x  -> prettyResolved x     -- Bound, resolve and recurse
 prettyResolved (Ground r) = do
+  fmt <- gets tsFormatter
   let (con, fields) = quote r
   fieldStrs <- mapM prettyField fields
-  pure $ formatCon (name con) fieldStrs
+  pure $ fmt (name con) fieldStrs
   where
     prettyField :: Field a (RVar (TracingRedex s)) -> TracingRedex s String
     prettyField (Field _ logic) = prettyResolvedAny logic
@@ -354,9 +331,10 @@ prettyResolved (Ground r) = do
         Nothing -> pure $ displayVar v
         Just x  -> prettyResolvedAny x
     prettyResolvedAny (Ground r') = do
+      fmt <- gets tsFormatter
       let (con', fields') = quote r'
       fieldStrs' <- mapM prettyField fields'
-      pure $ formatCon (name con') fieldStrs'
+      pure $ fmt (name con') fieldStrs'
 
 --------------------------------------------------------------------------------
 -- RedexStructure Instance (Derivation Tracking)
@@ -402,7 +380,11 @@ instance RedexEval (TracingRedex s) where
 -- -- Returns: Stream [(inferredType, derivationTree)]
 -- @
 runTracingRedex :: (forall s. TracingRedex s a) -> Stream (a, Derivation)
-runTracingRedex (TracingRedex r) = fmap extractDeriv $ runStateT r emptyState
+runTracingRedex = runTracingRedexWith DefaultTermFormatter
+
+-- | Run a tracing computation with a custom term formatter.
+runTracingRedexWith :: TermFormatter fmt => fmt -> (forall s. TracingRedex s a) -> Stream (a, Derivation)
+runTracingRedexWith fmt (TracingRedex r) = fmap extractDeriv $ runStateT r (emptyStateWith (formatConWith fmt))
   where
     extractDeriv (result, st) =
       let deriv = case tsDerivStack st of
@@ -416,3 +398,7 @@ runTracingRedex (TracingRedex r) = fmap extractDeriv $ runStateT r emptyState
 -- | Alias for 'runTracingRedex'.
 runWithDerivation :: (forall s. TracingRedex s a) -> Stream (a, Derivation)
 runWithDerivation = runTracingRedex
+
+-- | Alias for 'runTracingRedexWith'.
+runWithDerivationWith :: TermFormatter fmt => fmt -> (forall s. TracingRedex s a) -> Stream (a, Derivation)
+runWithDerivationWith = runTracingRedexWith

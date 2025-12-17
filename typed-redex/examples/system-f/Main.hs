@@ -9,8 +9,9 @@ import Control.Applicative (empty)
 import TypedRedex hiding (rule, rule2, rule3, rule4)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
-import TypedRedex.Interp.Tracing (runWithDerivation, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
-import TypedRedex.Interp.Deep (printRules3)
+import TypedRedex.Interp.Tracing (runWithDerivation, runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
+import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
+import TypedRedex.Interp.Deep (printRules3, printRules3With)
 import TypedRedex.DSL.Type (quote0, quote1, quote2)
 import TypedRedex.DSL.Define (rule2, rule3, rule4)
 
@@ -24,12 +25,13 @@ import Syntax
 data SystemFFormatter = SystemFFormatter
 
 instance JudgmentFormatter SystemFFormatter where
-  formatConclusion _ name args = case (name, args) of
+  formatJudgment _ name args = case (name, args) of
     -- Typing judgment
     ("typeof", [ctx, e, ty]) -> ctx ++ " ⊢ " ++ e ++ " : " ++ ty
     (n, [ctx, e, ty]) | "typeof-" `isPrefixOf` n -> ctx ++ " ⊢ " ++ e ++ " : " ++ ty
     -- Context lookup
     ("lookupTm", [ctx, n, ty]) -> ctx ++ "(" ++ n ++ ") = " ++ ty
+    ("lookup", [ctx, idx, ty]) -> ctx ++ "(" ++ idx ++ ") = " ++ ty
     (n, [ctx, idx, ty]) | "lookup" `isPrefixOf` n -> ctx ++ "(" ++ idx ++ ") = " ++ ty
     -- Nat comparison
     ("natLt", [n, m]) -> n ++ " < " ++ m
@@ -38,13 +40,16 @@ instance JudgmentFormatter SystemFFormatter where
     (n, [a, b]) | "eq-" `isPrefixOf` n -> a ++ " = " ++ b
     -- Addition
     ("addNat", [n, m, s]) -> n ++ " + " ++ m ++ " = " ++ s
+    ("add", [a, b, c]) -> a ++ " + " ++ b ++ " = " ++ c
     (n, [a, b, c]) | "add-" `isPrefixOf` n -> a ++ " + " ++ b ++ " = " ++ c
-    -- Type substitution
+    -- Type substitution (handles both "substTy" and "subst")
     ("substTy", [d, s, t, r]) -> "[" ++ s ++ "/" ++ d ++ "]" ++ t ++ " = " ++ r
+    ("subst", [d, s, t, r]) -> "[" ++ s ++ "/" ++ d ++ "]" ++ t ++ " = " ++ r
     (n, [d, s, t, r]) | "subst-" `isPrefixOf` n -> "[" ++ s ++ "/" ++ d ++ "]" ++ t ++ " = " ++ r
     ("substTyVar", [d, s, v, r]) -> "[" ++ s ++ "/" ++ d ++ "](TVar " ++ v ++ ") = " ++ r
     -- Type shifting
     ("shiftTy", [c, a, t, r]) -> "↑" ++ superscript c ++ "·" ++ superscript a ++ " " ++ t ++ " = " ++ r
+    ("shift", [c, a, t, r]) -> "↑" ++ superscript c ++ "·" ++ superscript a ++ " " ++ t ++ " = " ++ r
     (n, [c, a, t, r]) | "shift-" `isPrefixOf` n -> "↑" ++ superscript c ++ "·" ++ superscript a ++ " " ++ t ++ " = " ++ r
     ("shiftTyVar", [c, a, v, r]) -> "↑" ++ superscript c ++ "·" ++ superscript a ++ " (TVar " ++ v ++ ") = " ++ r
     -- Default
@@ -59,6 +64,41 @@ instance JudgmentFormatter SystemFFormatter where
           toSuper '0' = '⁰'; toSuper '1' = '¹'; toSuper '2' = '²'; toSuper '3' = '³'
           toSuper '4' = '⁴'; toSuper '5' = '⁵'; toSuper '6' = '⁶'; toSuper '7' = '⁷'
           toSuper '8' = '⁸'; toSuper '9' = '⁹'; toSuper c = c
+
+-- | TermFormatter for nice System F term display (for future use)
+instance TermFormatter SystemFFormatter where
+  formatTerm _ name args = case (name, args) of
+    -- Terms
+    ("App", [f, a]) -> Just $ "(" ++ f ++ " " ++ a ++ ")"
+    ("Lam", [ty, b]) -> Just $ "(λ:" ++ ty ++ ". " ++ b ++ ")"
+    ("Var", [n]) -> Just $ parseAndShowVar n
+    ("Unit", []) -> Just "()"
+    ("TLam", [b]) -> Just $ "(Λ." ++ b ++ ")"
+    ("TApp", [e, ty]) -> Just $ "(" ++ e ++ " [" ++ ty ++ "])"
+    -- Types
+    ("TUnit", []) -> Just "Unit"
+    ("TVar", [n]) -> Just $ "α" ++ subscriptNum n
+    ("TArr", [a, b]) -> Just $ "(" ++ a ++ " → " ++ b ++ ")"
+    ("TAll", [ty]) -> Just $ "(∀. " ++ ty ++ ")"
+    -- Contexts
+    ("Nil", []) -> Just "·"
+    ("TmBind", [ty, ctx]) -> Just $ ctx ++ ", x:" ++ ty
+    ("TyBind", [ctx]) -> Just $ ctx ++ ", α"
+    -- Naturals
+    ("Z", []) -> Just "0"
+    ("S", [n]) -> Just $ "S(" ++ n ++ ")"
+    _ -> Nothing
+    where
+      parseAndShowVar n = case parseNat n of
+        Just k  -> "x" ++ subscriptNum (show k)
+        Nothing -> n
+      parseNat "0" = Just 0
+      parseNat ('S':'(':rest) = case parseNat (init rest) of
+        Just k -> Just (k + 1)
+        Nothing -> Nothing
+      parseNat s | all isDigit s = Just (read s)
+      parseNat _ = Nothing
+      isDigit c = c `elem` "0123456789"
 
 -- | Pretty-print derivation with System F formatting
 prettyDerivation :: Derivation -> String
@@ -332,21 +372,21 @@ checkIII ctx0 e0 ty0 = runSubstRedex $ do
   app3Goal $ typeof (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 
--- Run with derivation tracing
+-- Run with derivation tracing using custom formatter
 typeofWithTrace :: Ctx -> Tm -> Stream (Ty, Derivation)
-typeofWithTrace ctx0 e0 = runWithDerivation $ fresh $ \ty -> do
+typeofWithTrace ctx0 e0 = runWithDerivationWith SystemFFormatter $ fresh $ \ty -> do
   app3Goal $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
 -- Test natLt with derivation
 natLtWithTrace :: Nat -> Nat -> Stream ((), Derivation)
-natLtWithTrace n m = runWithDerivation $ do
+natLtWithTrace n m = runWithDerivationWith SystemFFormatter $ do
   app2Goal $ natLt (Ground $ project n) (Ground $ project m)
   pure ()
 
 -- Test lookupTm with derivation
 lookupWithTrace :: Ctx -> Nat -> Stream (Ty, Derivation)
-lookupWithTrace ctx0 n0 = runWithDerivation $ fresh $ \ty -> do
+lookupWithTrace ctx0 n0 = runWithDerivationWith SystemFFormatter $ fresh $ \ty -> do
   app3Goal $ lookupTm (Ground $ project ctx0) (Ground $ project n0) ty
   eval ty
 
@@ -372,7 +412,7 @@ main = do
 
   putStrLn "=== Extracted Typing Rules (DeepRedex) ==="
   putStrLn ""
-  printRules3 "typeof" typeof
+  printRules3With SystemFFormatter "typeof" typeof
 
   putStrLn "=== Derivation Trees (TracingRedex) ==="
   putStrLn ""

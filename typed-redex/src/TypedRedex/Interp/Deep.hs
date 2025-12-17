@@ -10,6 +10,7 @@ module TypedRedex.Interp.Deep
   ( DeepRedex
   , Goal(..)
   , runDeep
+  , runDeepWith
   , prettyGoal
   , extractRule
   , extractAllRules
@@ -18,12 +19,14 @@ module TypedRedex.Interp.Deep
   , deepVar  -- Helper to create logic variables for extraction
     -- * Pretty-printing extracted rules
   , printRules, printRules2, printRules3, printRules4, printRules5
+    -- * Pretty-printing with custom formatters
+  , printRulesWith, printRules2With, printRules3With, printRules4With, printRules5With
   ) where
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
 import TypedRedex.DSL.Fresh (LTerm)
-import TypedRedex.Interp.Format (formatCon, intercalate)
+import TypedRedex.Interp.Format (formatCon, formatConWith, intercalate, TermFormatter(..), DefaultTermFormatter(..), JudgmentFormatter(..), defaultFormatJudgment)
 import TypedRedex.Interp.PrettyPrint (VarNaming(..), namingByTag, subscriptNum)
 import TypedRedex.DSL.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..))
 import Control.Applicative
@@ -53,15 +56,19 @@ data DeepState = DeepState
   { dsVarCounter :: Int
   , dsGoals      :: [Goal]  -- accumulated goals (in reverse order)
   , dsDepth      :: Int     -- recursion depth for limiting expansion
+  , dsFormatter  :: String -> [String] -> String  -- term formatter function
   }
 
 initState :: DeepState
-initState = DeepState 0 [] 0
+initState = initStateWith formatCon
+
+initStateWith :: (String -> [String] -> String) -> DeepState
+initStateWith fmt = DeepState 0 [] 0 fmt
 
 -- Maximum depth for expanding calls (0 = just record calls, don't expand bodies)
--- Set to 1 for rule extraction with premises visible
+-- Set to 2 for rule extraction: level 1 expands judgment to rules, level 2 expands rule bodies
 maxDepth :: Int
-maxDepth = 1
+maxDepth = 2
 
 --------------------------------------------------------------------------------
 -- Deep Redex Interpreter
@@ -124,7 +131,8 @@ instance Redex DeepRedex where
     k (DVar n)
 
   unify x y = do
-    recordGoal $ GUnify (prettyL x) (prettyL y)
+    fmt <- gets dsFormatter
+    recordGoal $ GUnify (prettyLFmt fmt x) (prettyLFmt fmt y)
 
   -- | No interleaving for rule extraction
   suspend = id
@@ -132,7 +140,7 @@ instance Redex DeepRedex where
   -- | Capture relation calls for rule extraction
   call_ _ rel = do
     -- Record this call with its arguments (resolve CapturedTerms to strings)
-    let args = map prettyCaptured (relTerms rel)
+    args <- mapM prettyCaptured (relTerms rel)
     recordGoal $ GCall (relName rel) args
     -- Optionally expand the body up to max depth
     depth <- gets dsDepth
@@ -144,8 +152,10 @@ instance Redex DeepRedex where
   displayVar (DVar n) = freshName n
 
 -- | Pretty-print a CapturedTerm for DeepRedex (no substitution to apply)
-prettyCaptured :: CapturedTerm DeepRedex -> String
-prettyCaptured (CapturedTerm term) = prettyL term
+prettyCaptured :: CapturedTerm DeepRedex -> DeepRedex String
+prettyCaptured (CapturedTerm term) = do
+  fmt <- gets dsFormatter
+  pure $ prettyLFmt fmt term
 
 instance EqVar DeepRedex where
   varEq (DVar a) (DVar b) = a == b
@@ -155,22 +165,51 @@ instance EqVar DeepRedex where
 --------------------------------------------------------------------------------
 
 -- | Pretty-print a logic term. Outputs variable markers «TAG:ID» for later renumbering.
+-- Uses default term formatting.
 prettyL :: forall a. LogicType a => Logic a (RVar DeepRedex) -> String
-prettyL (Free (DVar n)) = "«" ++ vnTag (varNaming @a) ++ ":" ++ show n ++ "»"
-prettyL (Ground r) = prettyReified r
+prettyL = prettyLFmt formatCon
 
-prettyReified :: LogicType a => Reified a (RVar DeepRedex) -> String
-prettyReified r =
+-- | Pretty-print a logic term with a formatter function.
+prettyLFmt :: forall a. LogicType a => (String -> [String] -> String) -> Logic a (RVar DeepRedex) -> String
+prettyLFmt _ (Free (DVar n)) = "«" ++ vnTag (varNaming @a) ++ ":" ++ show n ++ "»"
+prettyLFmt fmt (Ground r) = prettyReifiedFmt fmt r
+
+-- | Pretty-print a logic term with a custom term formatter (typeclass version).
+prettyLWith :: forall a fmt. (LogicType a, TermFormatter fmt) => fmt -> Logic a (RVar DeepRedex) -> String
+prettyLWith fmt = prettyLFmt (formatConWith fmt)
+
+prettyReifiedFmt :: LogicType a => (String -> [String] -> String) -> Reified a (RVar DeepRedex) -> String
+prettyReifiedFmt fmt r =
   let (con, fields) = quote r
-  in formatCon (name con) (map prettyField fields)
+  in fmt (name con) (map (prettyFieldFmt fmt) fields)
 
-prettyField :: Field a (RVar DeepRedex) -> String
-prettyField (Field _ logic) = prettyLogicAny logic
+prettyFieldFmt :: (String -> [String] -> String) -> Field a (RVar DeepRedex) -> String
+prettyFieldFmt fmt (Field _ logic) = prettyLogicAnyFmt fmt logic
 
 -- | Pretty-print any logic term with variable markers for later renumbering.
+prettyLogicAnyFmt :: forall t. LogicType t => (String -> [String] -> String) -> Logic t (RVar DeepRedex) -> String
+prettyLogicAnyFmt _ (Free (DVar n)) = "«" ++ vnTag (varNaming @t) ++ ":" ++ show n ++ "»"
+prettyLogicAnyFmt fmt (Ground r) = prettyReifiedFmt fmt r
+
+-- Typeclass-based versions for backward compatibility
+prettyReifiedWith :: (LogicType a, TermFormatter fmt) => fmt -> Reified a (RVar DeepRedex) -> String
+prettyReifiedWith fmt = prettyReifiedFmt (formatConWith fmt)
+
+prettyFieldWith :: TermFormatter fmt => fmt -> Field a (RVar DeepRedex) -> String
+prettyFieldWith fmt = prettyFieldFmt (formatConWith fmt)
+
+prettyLogicAnyWith :: forall t fmt. (LogicType t, TermFormatter fmt) => fmt -> Logic t (RVar DeepRedex) -> String
+prettyLogicAnyWith fmt = prettyLogicAnyFmt (formatConWith fmt)
+
+-- Keep old names for backward compatibility within this module
+prettyReified :: LogicType a => Reified a (RVar DeepRedex) -> String
+prettyReified = prettyReifiedFmt formatCon
+
+prettyField :: Field a (RVar DeepRedex) -> String
+prettyField = prettyFieldFmt formatCon
+
 prettyLogicAny :: forall t. LogicType t => Logic t (RVar DeepRedex) -> String
-prettyLogicAny (Free (DVar n)) = "«" ++ vnTag (varNaming @t) ++ ":" ++ show n ++ "»"
-prettyLogicAny (Ground r) = prettyReified r
+prettyLogicAny = prettyLogicAnyFmt formatCon
 
 --------------------------------------------------------------------------------
 -- Running and extracting
@@ -178,8 +217,12 @@ prettyLogicAny (Ground r) = prettyReified r
 
 -- | Run a DeepRedex computation and extract the Goal AST
 runDeep :: DeepRedex () -> Goal
-runDeep (DeepRedex m) =
-  let finalState = execState m initState
+runDeep = runDeepWith DefaultTermFormatter
+
+-- | Run a DeepRedex computation with a custom formatter
+runDeepWith :: TermFormatter fmt => fmt -> DeepRedex () -> Goal
+runDeepWith fmt (DeepRedex m) =
+  let finalState = execState m (initStateWith (formatConWith fmt))
   in seqGoals (reverse $ dsGoals finalState)
 
 --------------------------------------------------------------------------------
@@ -304,9 +347,9 @@ extractAllRules goal = case findConde goal of
     findFirstCall _ = Nothing
 
 -- | Extract premises and conclusion from a Goal
--- Returns (judgment_name, conclusion_patterns, premises)
--- The conclusion patterns come from GUnify statements that bind the relation arguments
-extractRule :: Goal -> (String, [String], [String])
+-- Returns (rule_name, conclusion_patterns, premises)
+-- where premises are (judgment_name, args) tuples for later formatting
+extractRule :: Goal -> (String, [String], [(String, [String])])
 extractRule goal =
   let (ruleName, unifs, prems) = collectParts 0 [] goal  -- 0=Initial, 1=InConclusion, 2=InPremises
       -- Extract the RHS of unifications (the actual patterns)
@@ -314,17 +357,19 @@ extractRule goal =
   in (ruleName, patterns, prems)
   where
     -- Phase: 0=Initial (looking for rule name), 1=InConclusion (collecting unifs), 2=InPremises
-    collectParts :: Int -> [(String, String)] -> Goal -> (String, [(String, String)], [String])
+    collectParts :: Int -> [(String, String)] -> Goal -> (String, [(String, String)], [(String, [String])])
     collectParts _ unifs GTrue = ("", unifs, [])
     collectParts 1 unifs (GUnify l r) = ("", unifs ++ [(l, r)], [])  -- Collect unifications in conclusion phase
     collectParts _ unifs (GUnify _ _) = ("", unifs, [])  -- Skip other unifications
     collectParts 0 unifs (GCall name _) = (name, unifs, [])  -- First GCall is the rule name
-    collectParts _ unifs (GCall name args) = ("", unifs, [formatCall name args])  -- Premise as direct call
-    -- GConde after conclusion (phases 1 or 2): extract premise from first branch
+    collectParts _ unifs (GCall name args) = ("", unifs, [(name, args)])  -- Premise as (name, args) tuple
+    -- GConde after conclusion: this represents a judgment call (prem $ judgment args)
+    -- Extract premise from first branch, using judgment name (not rule name)
     collectParts phase unifs (GConde branches) | phase >= 1 =
       case branches of
-        (b:_) -> let prem = extractPremiseFromBranch b
-                 in ("", unifs, if null prem then [] else [prem])
+        (b:_) -> case extractPremiseFromBranch b of
+                   Just prem -> ("", unifs, [prem])
+                   Nothing -> ("", unifs, [])
         _ -> ("", unifs, [])
     collectParts _ unifs (GConde _) = ("", unifs, [])  -- Skip GConde in phase 0
     collectParts phase unifs (GSeq g1 g2) =
@@ -342,96 +387,40 @@ extractRule goal =
     collectParts phase unifs (GFresh _ g) = collectParts phase unifs g
 
     -- Extract premise from a GConde branch (which is typically a GCall for a specific rule)
-    extractPremiseFromBranch :: Goal -> String
+    -- Returns (judgment_name, args) tuple where judgment_name is inferred from rule name
+    extractPremiseFromBranch :: Goal -> Maybe (String, [String])
     extractPremiseFromBranch (GCall name args) =
-      -- Try to infer judgment name from rule name (e.g., "value-lam" -> "value")
+      -- Infer judgment name from rule name (e.g., "typeof-lam" -> "typeof", "substTy" stays "substTy")
       let judgmentName = takeWhile (/= '-') name
-      in if null judgmentName || judgmentName == name
-         then formatCall name args  -- No "-" found, use full name
-         else formatCall judgmentName args
+      in Just (if null judgmentName then name else judgmentName, args)
     extractPremiseFromBranch (GSeq g _) = extractPremiseFromBranch g
     extractPremiseFromBranch (GConde (b:_)) = extractPremiseFromBranch b
-    extractPremiseFromBranch _ = ""
-
-    formatCall :: String -> [String] -> String
-    -- Typing judgments
-    formatCall "typeof" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
-    formatCall "synth" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
-    formatCall "check" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇐ " ++ ty
-    -- Context lookup
-    formatCall "lookup" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
-    formatCall "lookupTm" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
-    -- Step relation (both judgment name and common rule names)
-    formatCall "step" [a, b] = a ++ " ⟶ " ++ b
-    formatCall "β" [a, b] = a ++ " ⟶ " ++ b
-    formatCall "app" [a, b] = a ++ " ⟶ " ++ b
-    -- Value predicate
-    formatCall "value" [a] = "value(" ++ a ++ ")"
-    -- Substitution
-    formatCall "subst0" [body, arg, result] = "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
-    formatCall "subst" [depth, subTy, ty, result] = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
-    formatCall "substTy" [depth, subTy, ty, result] = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
-    formatCall "substTyVar" [depth, subTy, n, result] = "[" ++ subTy ++ "/" ++ depth ++ "](TVar " ++ n ++ ") = " ++ result
-    -- Shifting
-    formatCall "shiftTy" [cutoff, amount, ty, result] = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " " ++ ty ++ " = " ++ result
-    formatCall "shiftTyVar" [cutoff, amount, n, result] = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " (TVar " ++ n ++ ") = " ++ result
-    -- Arithmetic on naturals
-    formatCall "natEq" [n, m] = n ++ " = " ++ m
-    formatCall "natLt" [n, m] = n ++ " < " ++ m
-    formatCall "addNat" [n, m, s] = n ++ " + " ++ m ++ " = " ++ s
-    -- Default: function-style
-    formatCall n args = n ++ "(" ++ intercalate ", " args ++ ")"
-
-    superscript :: String -> String
-    superscript = map toSuper
-      where
-        toSuper '0' = '⁰'; toSuper '1' = '¹'; toSuper '2' = '²'; toSuper '3' = '³'
-        toSuper '4' = '⁴'; toSuper '5' = '⁵'; toSuper '6' = '⁶'; toSuper '7' = '⁷'
-        toSuper '8' = '⁸'; toSuper '9' = '⁹'; toSuper c = c
-
--- | Format a conclusion based on judgment name and arguments
-formatConclusion :: String -> [String] -> String
--- Typing judgments
-formatConclusion "typeof" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
-formatConclusion "synth" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
-formatConclusion "check" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇐ " ++ ty
--- Context lookup
-formatConclusion "lookup" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
-formatConclusion "lookupTm" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
--- Step relation
-formatConclusion "step" [a, b] = a ++ " ⟶ " ++ b
--- Value predicate
-formatConclusion "value" [a] = "value(" ++ a ++ ")"
--- Substitution
-formatConclusion "subst0" [body, arg, result] = "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
-formatConclusion "substTy" [depth, subTy, ty, result] = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
-formatConclusion "substTyVar" [depth, subTy, n, result] = "[" ++ subTy ++ "/" ++ depth ++ "](TVar " ++ n ++ ") = " ++ result
--- Shifting
-formatConclusion "shiftTy" [cutoff, amount, ty, result] = "↑" ++ toSuper cutoff ++ "·" ++ toSuper amount ++ " " ++ ty ++ " = " ++ result
-  where toSuper = map (\c -> case c of '0'->'⁰';'1'->'¹';'2'->'²';'3'->'³';'4'->'⁴';'5'->'⁵';'6'->'⁶';'7'->'⁷';'8'->'⁸';'9'->'⁹';x->x)
-formatConclusion "shiftTyVar" [cutoff, amount, n, result] = "↑" ++ toSuper cutoff ++ "·" ++ toSuper amount ++ " (TVar " ++ n ++ ") = " ++ result
-  where toSuper = map (\c -> case c of '0'->'⁰';'1'->'¹';'2'->'²';'3'->'³';'4'->'⁴';'5'->'⁵';'6'->'⁶';'7'->'⁷';'8'->'⁸';'9'->'⁹';x->x)
--- Arithmetic on naturals
-formatConclusion "natEq" [n, m] = n ++ " = " ++ m
-formatConclusion "natLt" [n, m] = n ++ " < " ++ m
-formatConclusion "addNat" [n, m, s] = n ++ " + " ++ m ++ " = " ++ s
--- Default: function-style
-formatConclusion name args = name ++ "(" ++ intercalate ", " args ++ ")"
+    extractPremiseFromBranch _ = Nothing
 
 -- | Format extracted rule as ASCII inference rule
 -- Takes the judgment name (for formatting conclusion) and rule name (for labeling)
 formatAsRule :: String -> Goal -> String
-formatAsRule = formatAsRuleWithJudgment ""
+formatAsRule = formatAsRuleWith DefaultTermFormatter
+
+-- | Format extracted rule with a custom formatter
+formatAsRuleWith :: JudgmentFormatter fmt => fmt -> String -> Goal -> String
+formatAsRuleWith fmt = formatAsRuleWithJudgmentWith fmt ""
 
 -- | Format extracted rule with explicit judgment name for conclusion formatting
 -- If judgment name is empty, falls back to rule name
 -- Applies per-rule variable renumbering for readable output
 formatAsRuleWithJudgment :: String -> String -> Goal -> String
-formatAsRuleWithJudgment judgmentName ruleName goal =
-  let (_, patterns, prems) = extractRule goal
+formatAsRuleWithJudgment = formatAsRuleWithJudgmentWith DefaultTermFormatter
+
+-- | Format extracted rule with custom formatter and explicit judgment name
+formatAsRuleWithJudgmentWith :: JudgmentFormatter fmt => fmt -> String -> String -> Goal -> String
+formatAsRuleWithJudgmentWith fmt judgmentName ruleName goal =
+  let (_, patterns, premTuples) = extractRule goal
       -- Use judgment name if provided, otherwise use rule name for formatting
       jname = if null judgmentName then ruleName else judgmentName
-      conclusion = formatConclusion jname patterns
+      conclusion = formatJudgment fmt jname patterns
+      -- Format premises using the formatter
+      prems = map (\(pname, pargs) -> formatJudgment fmt pname pargs) premTuples
       maxLen = maximum $ length conclusion : map length prems
       line = replicate (maxLen + 4) '─'
       raw = (if null prems then "" else unlines (map ("  " ++) prems)) ++
@@ -510,4 +499,73 @@ printRules5 judgmentName rel = do
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
+    putStrLn "") rules
+
+--------------------------------------------------------------------------------
+-- Pretty-printing extracted rules with custom formatter
+--------------------------------------------------------------------------------
+
+-- | Print all rules for a unary relation with custom formatter.
+printRulesWith :: (LogicType a, TermFormatter fmt, JudgmentFormatter fmt)
+               => fmt
+               -> String
+               -> (LTerm a DeepRedex -> Applied DeepRedex a)
+               -> IO ()
+printRulesWith fmt judgmentName rel = do
+  let goal = runDeepWith fmt $ app1Goal $ rel (deepVar 0)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal
+    putStrLn "") rules
+
+-- | Print all rules for a binary relation with custom formatter.
+printRules2With :: (LogicType a, LogicType b, TermFormatter fmt, JudgmentFormatter fmt)
+                => fmt
+                -> String
+                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> Applied2 DeepRedex a b)
+                -> IO ()
+printRules2With fmt judgmentName rel = do
+  let goal = runDeepWith fmt $ app2Goal $ rel (deepVar 0) (deepVar 1)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal
+    putStrLn "") rules
+
+-- | Print all rules for a ternary relation with custom formatter.
+printRules3With :: (LogicType a, LogicType b, LogicType c, TermFormatter fmt, JudgmentFormatter fmt)
+                => fmt
+                -> String
+                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> Applied3 DeepRedex a b c)
+                -> IO ()
+printRules3With fmt judgmentName rel = do
+  let goal = runDeepWith fmt $ app3Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal
+    putStrLn "") rules
+
+-- | Print all rules for a quaternary relation with custom formatter.
+printRules4With :: (LogicType a, LogicType b, LogicType c, LogicType d, TermFormatter fmt, JudgmentFormatter fmt)
+                => fmt
+                -> String
+                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> Applied4 DeepRedex a b c d)
+                -> IO ()
+printRules4With fmt judgmentName rel = do
+  let goal = runDeepWith fmt $ app4Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal
+    putStrLn "") rules
+
+-- | Print all rules for a 5-ary relation with custom formatter.
+printRules5With :: (LogicType a, LogicType b, LogicType c, LogicType d, LogicType e, TermFormatter fmt, JudgmentFormatter fmt)
+                => fmt
+                -> String
+                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> LTerm e DeepRedex -> Applied5 DeepRedex a b c d e)
+                -> IO ()
+printRules5With fmt judgmentName rel = do
+  let goal = runDeepWith fmt $ app5Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3) (deepVar 4)
+  let rules = extractAllRules goal
+  mapM_ (\(name, ruleGoal) -> do
+    putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal
     putStrLn "") rules

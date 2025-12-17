@@ -8,7 +8,8 @@ import Control.Applicative (empty)
 import TypedRedex hiding (rule, rule3)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
-import TypedRedex.Interp.Tracing (runWithDerivation, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
+import TypedRedex.Interp.Tracing (runWithDerivation, runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
+import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.DSL.Type (quote0, quote1, quote2)
 import TypedRedex.DSL.Define (rule3)
 
@@ -26,7 +27,7 @@ import TypedRedex.DSL.Define (rule3)
 data BidirFormatter = BidirFormatter
 
 instance JudgmentFormatter BidirFormatter where
-  formatConclusion _ name args = case (name, args) of
+  formatJudgment _ name args = case (name, args) of
     -- Synthesis rules (start with ⇒)
     (n, [ctx, e, ty]) | isSynthRule n -> ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
     -- Checking rules (start with ⇐)
@@ -44,6 +45,43 @@ instance JudgmentFormatter BidirFormatter where
       isPrefixOf [] _ = True
       isPrefixOf _ [] = False
       isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
+
+-- | TermFormatter for nice term display
+instance TermFormatter BidirFormatter where
+  formatTerm _ name args = case (name, args) of
+    -- Application
+    ("App", [f, a]) -> Just $ "(" ++ f ++ " " ++ a ++ ")"
+    -- Lambda (unannotated)
+    ("λ", [b]) -> Just $ "(λ." ++ b ++ ")"
+    -- Lambda (annotated)
+    ("λ:", [ty, b]) -> Just $ "(λ:" ++ ty ++ ". " ++ b ++ ")"
+    -- Annotation
+    (":", [e, ty]) -> Just $ "(" ++ e ++ " : " ++ ty ++ ")"
+    -- Variables
+    ("Var", [n]) -> Just $ parseAndShowVar n
+    -- Unit
+    ("()", []) -> Just "()"
+    -- Types
+    ("Unit", []) -> Just "Unit"
+    ("→", [a, b]) -> Just $ "(" ++ a ++ " → " ++ b ++ ")"
+    -- Contexts
+    ("·", []) -> Just "·"
+    (",", [ty, ctx]) -> Just $ ctx ++ ", " ++ ty
+    -- Naturals
+    ("Z", []) -> Just "0"
+    ("S", [n]) -> Just $ "S(" ++ n ++ ")"
+    _ -> Nothing
+    where
+      parseAndShowVar n = case parseNat n of
+        Just k  -> "x" ++ subscriptNum (show k)
+        Nothing -> n
+      parseNat "0" = Just 0
+      parseNat ('S':'(':rest) = case parseNat (init rest) of
+        Just k -> Just (k + 1)
+        Nothing -> Nothing
+      parseNat s | all isDigit s = Just (read s)
+      parseNat _ = Nothing
+      isDigit c = c `elem` "0123456789"
 
 -- | Pretty-print derivation with bidirectional typing formatting
 prettyDerivation :: Derivation -> String
@@ -339,15 +377,15 @@ checkIII ctx0 e0 ty0 = runSubstRedex $ do
   app3Goal $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 
--- Run synthesis with derivation tracing
+-- Run synthesis with derivation tracing using custom formatter
 synthWithTrace :: Ctx -> Tm -> Stream (Ty, Derivation)
-synthWithTrace ctx0 e0 = runWithDerivation $ fresh $ \ty -> do
+synthWithTrace ctx0 e0 = runWithDerivationWith BidirFormatter $ fresh $ \ty -> do
   app3Goal $ synth (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
--- Run checking with derivation tracing
+-- Run checking with derivation tracing using custom formatter
 checkWithTrace :: Ctx -> Tm -> Ty -> Stream ((), Derivation)
-checkWithTrace ctx0 e0 ty0 = runWithDerivation $ do
+checkWithTrace ctx0 e0 ty0 = runWithDerivationWith BidirFormatter $ do
   app3Goal $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 

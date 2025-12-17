@@ -96,15 +96,23 @@ Refactoring Plan
   - More portable, less extension-heavy
 
   ---
-  Phase 5: Format/Pretty-Print Consolidation
+  Phase 5: Format/Pretty-Print Consolidation ✅ DONE
 
-  5.1 Move domain-specific formatCon cases to examples
-  - Keep only generic Con name args → "name(arg1, arg2, ...)" in library
-  - Each example provides its own FormatConfig or custom formatter
+  5.1 Move domain-specific formatCon cases to examples ✅
+  - formatCon now only has generic "name(arg1, arg2, ...)" formatting
+  - Created TermFormatter typeclass for custom term formatting
+  - Created JudgmentFormatter typeclass for custom judgment formatting (moved from Tracing.hs)
+  - Each example provides its own formatter instances (PCFFormatter, BidirFormatter, SystemFFormatter)
 
-  5.2 Unify pretty-printing
-  - Consolidate prettyLogic (Utils), prettyL/prettyReified (DeepRedex), prettyResolved (TracingRedex)
-  - Create single parametric pretty-printer taking a variable lookup function
+  5.2 Unify pretty-printing ✅
+  - Added formatConWith for parametric term formatting
+  - Added prettyLogicWith for parametric logic term pretty-printing
+  - Deep.hs uses formatConWith via dsFormatter in state (maxDepth=2 for rule+premise expansion)
+  - Tracing.hs uses tsFormatter in state for term formatting
+  - Added runDeepWith, runWithDerivationWith for custom formatters
+  - printRules*With functions support both TermFormatter and JudgmentFormatter
+  - Premises in extracted rules are also formatted via JudgmentFormatter
+  - All formatting typeclasses consolidated in Format.hs
 
   ---
   Phase 6: Optional Cleanup
@@ -132,5 +140,5 @@ Refactoring Plan
   | 8       | 3.3 + 3.4 Call variants + operators    | callDirect, deprecate (===)              | ✅     |
   | 9       | 4.1 Remove ImplicitParams              | Explicit RuleEnv or ReaderT              |        |
   | 10      | 4.2 + 4.3 Extension cleanup            | ApplicativeDo, TypeApplications          |        |
-  | 11      | 5.1 + 5.2 Format consolidation         | Unified pretty-printing                  |        |
+  | 11      | 5.1 + 5.2 Format consolidation         | Unified pretty-printing                  | ✅     |
   | 12      | 6.1 + 6.2 Optional cleanup             | Applied family, Logic rename             |        |

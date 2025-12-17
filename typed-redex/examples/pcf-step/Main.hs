@@ -10,6 +10,7 @@ import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Deep (printRules2)
 import TypedRedex.Interp.Tracing (runWithDerivation, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
+import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.DSL.Define (rule1, rule2, rule3)
 
@@ -26,7 +27,7 @@ import TypedRedex.DSL.Define (rule1, rule2, rule3)
 data PCFFormatter = PCFFormatter
 
 instance JudgmentFormatter PCFFormatter where
-  formatConclusion _ name args = case (name, args) of
+  formatJudgment _ name args = case (name, args) of
     -- Step relation
     ("step", [a, b]) -> a ++ " ⟶ " ++ b
     -- Step rules (all binary step rules)
@@ -45,6 +46,36 @@ instance JudgmentFormatter PCFFormatter where
       isPrefixOf [] _ = True
       isPrefixOf _ [] = False
       isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
+
+-- | TermFormatter for nice PCF term display (for future use)
+instance TermFormatter PCFFormatter where
+  formatTerm _ name args = case (name, args) of
+    -- Application
+    ("App", [f, a]) -> Just $ "(" ++ f ++ " " ++ a ++ ")"
+    -- Lambda
+    ("Lam", [b]) -> Just $ "(λ." ++ b ++ ")"
+    -- Variables
+    ("Var", [n]) -> Just $ parseAndShowVar n
+    -- Naturals
+    ("Zero", []) -> Just "0"
+    ("Succ", [e]) -> Just $ "S(" ++ e ++ ")"
+    ("Pred", [e]) -> Just $ "pred(" ++ e ++ ")"
+    ("Ifz", [c, t, f]) -> Just $ "ifz(" ++ c ++ ", " ++ t ++ ", " ++ f ++ ")"
+    ("Fix", [e]) -> Just $ "fix(" ++ e ++ ")"
+    ("Z", []) -> Just "0"
+    ("S", [n]) -> Just $ "S(" ++ n ++ ")"
+    _ -> Nothing
+    where
+      parseAndShowVar n = case parseNat n of
+        Just k  -> "x" ++ subscriptNum (show k)
+        Nothing -> n
+      parseNat "0" = Just 0
+      parseNat ('S':'(':rest) = case parseNat (init rest) of
+        Just k -> Just (k + 1)
+        Nothing -> Nothing
+      parseNat s | all isDigit s = Just (read s)
+      parseNat _ = Nothing
+      isDigit c = c `elem` "0123456789"
 
 -- | Pretty-print derivation with PCF formatting
 prettyDerivation :: Derivation -> String
