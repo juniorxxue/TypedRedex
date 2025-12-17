@@ -9,12 +9,60 @@ import Control.Applicative (empty)
 import TypedRedex.Core.Redex hiding (rule, rule2, rule3, rule4)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
-import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivation, Derivation(..))
+import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interpreters.DeepRedex (DeepRedex, runDeep, formatAsRuleWithJudgment, extractAllRules, deepVar)
 import TypedRedex.Utils.Type (quote0, quote1, quote2)
 import TypedRedex.Utils.Define (rule2, rule3, rule4)
 
 import Syntax
+
+--------------------------------------------------------------------------------
+-- Judgment Formatter for System F
+--------------------------------------------------------------------------------
+
+-- | Custom formatter for System F derivations
+data SystemFFormatter = SystemFFormatter
+
+instance JudgmentFormatter SystemFFormatter where
+  formatConclusion _ name args = case (name, args) of
+    -- Typing judgment
+    ("typeof", [ctx, e, ty]) -> ctx ++ " ⊢ " ++ e ++ " : " ++ ty
+    (n, [ctx, e, ty]) | "typeof-" `isPrefixOf` n -> ctx ++ " ⊢ " ++ e ++ " : " ++ ty
+    -- Context lookup
+    ("lookupTm", [ctx, n, ty]) -> ctx ++ "(" ++ n ++ ") = " ++ ty
+    (n, [ctx, idx, ty]) | "lookup" `isPrefixOf` n -> ctx ++ "(" ++ idx ++ ") = " ++ ty
+    -- Nat comparison
+    ("natLt", [n, m]) -> n ++ " < " ++ m
+    (n, [a, b]) | "lt-" `isPrefixOf` n -> a ++ " < " ++ b
+    ("natEq", [n, m]) -> n ++ " = " ++ m
+    (n, [a, b]) | "eq-" `isPrefixOf` n -> a ++ " = " ++ b
+    -- Addition
+    ("addNat", [n, m, s]) -> n ++ " + " ++ m ++ " = " ++ s
+    (n, [a, b, c]) | "add-" `isPrefixOf` n -> a ++ " + " ++ b ++ " = " ++ c
+    -- Type substitution
+    ("substTy", [d, s, t, r]) -> "[" ++ s ++ "/" ++ d ++ "]" ++ t ++ " = " ++ r
+    (n, [d, s, t, r]) | "subst-" `isPrefixOf` n -> "[" ++ s ++ "/" ++ d ++ "]" ++ t ++ " = " ++ r
+    ("substTyVar", [d, s, v, r]) -> "[" ++ s ++ "/" ++ d ++ "](TVar " ++ v ++ ") = " ++ r
+    -- Type shifting
+    ("shiftTy", [c, a, t, r]) -> "↑" ++ superscript c ++ "·" ++ superscript a ++ " " ++ t ++ " = " ++ r
+    (n, [c, a, t, r]) | "shift-" `isPrefixOf` n -> "↑" ++ superscript c ++ "·" ++ superscript a ++ " " ++ t ++ " = " ++ r
+    ("shiftTyVar", [c, a, v, r]) -> "↑" ++ superscript c ++ "·" ++ superscript a ++ " (TVar " ++ v ++ ") = " ++ r
+    -- Default
+    _ -> defaultFormatConclusion name args
+    where
+      isPrefixOf [] _ = True
+      isPrefixOf _ [] = False
+      isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
+
+      superscript = map toSuper
+        where
+          toSuper '0' = '⁰'; toSuper '1' = '¹'; toSuper '2' = '²'; toSuper '3' = '³'
+          toSuper '4' = '⁴'; toSuper '5' = '⁵'; toSuper '6' = '⁶'; toSuper '7' = '⁷'
+          toSuper '8' = '⁸'; toSuper '9' = '⁹'; toSuper c = c
+
+-- | Pretty-print derivation with System F formatting
+prettyDerivation :: Derivation -> String
+prettyDerivation = prettyDerivationWith SystemFFormatter
 
 --------------------------------------------------------------------------------
 -- Relations using the new judgment/rule syntax

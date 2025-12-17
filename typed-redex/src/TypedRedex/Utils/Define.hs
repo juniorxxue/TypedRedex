@@ -43,7 +43,7 @@ module TypedRedex.Utils.Define
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.Redex
+import TypedRedex.Utils.Redex (L, argument, argument2, argument3, argument4, argument5, call, (<=>))
 import Control.Applicative (asum)
 
 --------------------------------------------------------------------------------
@@ -220,9 +220,9 @@ judgment :: (Redex rel, LogicType a)
          -> [Rule rel a]
          -> L a rel -> Applied rel a
 judgment _ rules x = Applied x $ argument x $ \x' ->
-  let args = [prettyLogic x']
+  let terms = [CapturedTerm x']
   in let ?concl = \px -> x' <=> px
-  in asum [call $ Relation (rule1Name r) args (rule1Body r) | r <- rules]
+  in asum [call $ Relation (rule1Name r) terms (rule1Body r) | r <- rules]
 
 -- | Define a binary judgment from a list of named rules.
 --
@@ -241,9 +241,9 @@ judgment2 :: (Redex rel, LogicType a, LogicType b)
           -> [Rule2 rel a b]
           -> L a rel -> L b rel -> Applied2 rel a b
 judgment2 _ rules x y = Applied2 (x, y) $ argument2 x y $ \x' y' ->
-  let args = [prettyLogic x', prettyLogic y']
+  let terms = [CapturedTerm x', CapturedTerm y']
   in let ?concl = \(px, py) -> x' <=> px >> y' <=> py
-  in asum [call $ Relation (rule2Name r) args (rule2Body r) | r <- rules]
+  in asum [call $ Relation (rule2Name r) terms (rule2Body r) | r <- rules]
 
 -- | Define a ternary judgment from a list of named rules.
 judgment3 :: (Redex rel, LogicType a, LogicType b, LogicType c)
@@ -251,9 +251,9 @@ judgment3 :: (Redex rel, LogicType a, LogicType b, LogicType c)
           -> [Rule3 rel a b c]
           -> L a rel -> L b rel -> L c rel -> Applied3 rel a b c
 judgment3 _ rules x y z = Applied3 (x, y, z) $ argument3 x y z $ \x' y' z' ->
-  let args = [prettyLogic x', prettyLogic y', prettyLogic z']
+  let terms = [CapturedTerm x', CapturedTerm y', CapturedTerm z']
   in let ?concl = \(px, py, pz) -> x' <=> px >> y' <=> py >> z' <=> pz
-  in asum [call $ Relation (rule3Name r) args (rule3Body r) | r <- rules]
+  in asum [call $ Relation (rule3Name r) terms (rule3Body r) | r <- rules]
 
 -- | Define a quaternary judgment from a list of named rules.
 judgment4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d)
@@ -261,9 +261,9 @@ judgment4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d)
           -> [Rule4 rel a b c d]
           -> L a rel -> L b rel -> L c rel -> L d rel -> Applied4 rel a b c d
 judgment4 _ rules x y z w = Applied4 (x, y, z, w) $ argument4 x y z w $ \x' y' z' w' ->
-  let args = [prettyLogic x', prettyLogic y', prettyLogic z', prettyLogic w']
+  let terms = [CapturedTerm x', CapturedTerm y', CapturedTerm z', CapturedTerm w']
   in let ?concl = \(px, py, pz, pw) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw
-  in asum [call $ Relation (rule4Name r) args (rule4Body r) | r <- rules]
+  in asum [call $ Relation (rule4Name r) terms (rule4Body r) | r <- rules]
 
 -- | Define a 5-ary judgment from a list of named rules.
 judgment5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
@@ -271,6 +271,6 @@ judgment5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, Log
           -> [Rule5 rel a b c d e]
           -> L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> Applied5 rel a b c d e
 judgment5 _ rules x y z w v = Applied5 (x, y, z, w, v) $ argument5 x y z w v $ \x' y' z' w' v' ->
-  let args = [prettyLogic x', prettyLogic y', prettyLogic z', prettyLogic w', prettyLogic v']
+  let terms = [CapturedTerm x', CapturedTerm y', CapturedTerm z', CapturedTerm w', CapturedTerm v']
   in let ?concl = \(px, py, pz, pw, pv) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw >> v' <=> pv
-  in asum [call $ Relation (rule5Name r) args (rule5Body r) | r <- rules]
+  in asum [call $ Relation (rule5Name r) terms (rule5Body r) | r <- rules]

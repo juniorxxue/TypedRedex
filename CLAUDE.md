@@ -2,6 +2,10 @@
 
 A typed shallow embedding of PLT Redex in Haskell using miniKanren-style logic programming.
 
+## Claude Rules
+
+**No backward compatibility** - Break old formats freely.
+
 ## Project Goal
 
 Provide a type-safe alternative to PLT Redex (Racket) for experimenting with operational semantics and type systems. The key insight: use Haskell's type system to catch errors that PLT Redex allows at runtime.

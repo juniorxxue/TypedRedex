@@ -35,7 +35,8 @@
 module TypedRedex.Core.Redex
 (
   -- * Core types
-  Relation(..)          -- ^ Named logic relations with name, args, and body
+  Relation(..)          -- ^ Named logic relations with name, terms, and body
+, CapturedTerm(..)      -- ^ Existentially wrapped logic terms for deferred resolution
 , Redex(RVar)           -- ^ Typeclass for logic programming monads
 , RedexEval             -- ^ Extract ground values from logic terms
 , RedexNeg              -- ^ Negation support

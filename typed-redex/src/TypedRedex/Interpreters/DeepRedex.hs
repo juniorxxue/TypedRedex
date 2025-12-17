@@ -15,6 +15,7 @@ module TypedRedex.Interpreters.DeepRedex
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
+import TypedRedex.Utils.Redex (formatCon, subscriptNum, intercalate)
 import Control.Applicative
 import Control.Monad (when)
 import Control.Monad.State
@@ -127,8 +128,9 @@ instance Redex DeepRedex where
 
   -- | Capture relation calls for rule extraction
   call_ _ rel = do
-    -- Record this call with its arguments
-    recordGoal $ GCall (relName rel) (relArgs rel)
+    -- Record this call with its arguments (resolve CapturedTerms to strings)
+    let args = map prettyCaptured (relTerms rel)
+    recordGoal $ GCall (relName rel) args
     -- Optionally expand the body up to max depth
     depth <- gets dsDepth
     when (depth < maxDepth) $ do
@@ -137,6 +139,10 @@ instance Redex DeepRedex where
       modify $ \s -> s { dsDepth = depth }
 
   displayVar (DVar n) = freshName n
+
+-- | Pretty-print a CapturedTerm for DeepRedex (no substitution to apply)
+prettyCaptured :: CapturedTerm DeepRedex -> String
+prettyCaptured (CapturedTerm term) = prettyL term
 
 instance EqVar DeepRedex where
   varEq (DVar a) (DVar b) = a == b
@@ -160,57 +166,6 @@ prettyField (Field _ logic) = prettyLogicAny logic
 prettyLogicAny :: LogicType t => Logic t (RVar DeepRedex) -> String
 prettyLogicAny (Free (DVar n)) = freshName n
 prettyLogicAny (Ground r) = prettyReified r
-
--- | Format constructor application nicely (customizable per type)
-formatCon :: String -> [String] -> String
--- Terms (System F has annotated lambda, PCF has unannotated)
-formatCon "App" [f, a] = "(" ++ f ++ " " ++ a ++ ")"
-formatCon "Lam" [ty, b] = "(λ:" ++ ty ++ ". " ++ b ++ ")"  -- System F: annotated lambda
-formatCon "Lam" [b] = "(λ." ++ b ++ ")"                     -- PCF: unannotated lambda
-formatCon "Var" [n] = if all isSubscriptOrDigit n then "x" ++ subscriptNum n else n
-  where isSubscriptOrDigit c = c `elem` "0123456789₀₁₂₃₄₅₆₇₈₉"
-formatCon "Zero" [] = "0"
-formatCon "Succ" [e] = "S(" ++ e ++ ")"
-formatCon "Pred" [e] = "pred(" ++ e ++ ")"
-formatCon "Ifz" [c, t, f] = "ifz(" ++ c ++ ", " ++ t ++ ", " ++ f ++ ")"
-formatCon "Fix" [e] = "fix(" ++ e ++ ")"
--- Natural numbers
-formatCon "Z" [] = "0"
-formatCon "S" [n] = "S(" ++ n ++ ")"
--- System F Types
-formatCon "TUnit" [] = "Unit"
-formatCon "TVar" [n] = "α" ++ subscriptNum n
-formatCon "TArr" [a, b] = "(" ++ a ++ " → " ++ b ++ ")"
-formatCon "TAll" [ty] = "(∀. " ++ ty ++ ")"
--- System F Terms
-formatCon "Unit" [] = "()"
-formatCon "TLam" [b] = "(Λ." ++ b ++ ")"
-formatCon "TApp" [e, ty] = "(" ++ e ++ " [" ++ ty ++ "])"
--- STLC Bidir Types
-formatCon "→" [a, b] = "(" ++ a ++ " → " ++ b ++ ")"
--- Contexts
-formatCon "Nil" [] = "·"
-formatCon "·" [] = "·"
-formatCon "TmBind" [ty, ctx] = ctx ++ ", x:" ++ ty
-formatCon "TyBind" [ctx] = ctx ++ ", α"
-formatCon "Cons" [ty, ctx] = ctx ++ ", " ++ ty
-formatCon "," [ty, ctx] = ctx ++ ", " ++ ty
--- Default
-formatCon n [] = n
-formatCon n args = n ++ "(" ++ intercalate ", " args ++ ")"
-
--- | Convert a number string to subscript
-subscriptNum :: String -> String
-subscriptNum = concatMap toSub
-  where
-    toSub '0' = "₀"; toSub '1' = "₁"; toSub '2' = "₂"; toSub '3' = "₃"
-    toSub '4' = "₄"; toSub '5' = "₅"; toSub '6' = "₆"; toSub '7' = "₇"
-    toSub '8' = "₈"; toSub '9' = "₉"; toSub c = [c]
-
-intercalate :: String -> [String] -> String
-intercalate _ [] = ""
-intercalate _ [x] = x
-intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
 
 --------------------------------------------------------------------------------
 -- Running and extracting

@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeFamilies, DeriveFunctor, Rank2Types, GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 
 -- | TracingRedex: A derivation-tracking interpreter for TypedRedex
 --
@@ -26,18 +27,17 @@
 -- The derivation stack tracks nested rule applications:
 --
 -- @
--- 1. onRuleEnter "β" args  → push DerivFrame "β" args []
+-- 1. call_ pushes frame with CapturedTerms (not strings!)
 -- 2. (premise calls add children to current frame)
--- 3. onRuleExit "β"        → pop frame, create Derivation, add to parent
+-- 3. popFrame resolves terms using current substitution, builds Derivation
 -- @
 --
--- = Implementing Redex Hooks
+-- = Key Improvement: Deferred Resolution
 --
--- This interpreter uses all the structure tracking hooks:
---
--- * 'onRuleEnter': Push a new derivation frame
--- * 'onRuleExit': Pop frame, build derivation node, attach to parent
--- * 'suspend': Wrap in Immature for fair search (like SubstRedex)
+-- Unlike earlier versions that captured pre-computed strings, this version
+-- stores CapturedTerms (existentially wrapped logic terms). Resolution to
+-- strings happens at popFrame time, AFTER unification completes.
+-- This ensures derivations show actual values, not unresolved variables.
 
 module TypedRedex.Interpreters.TracingRedex
   ( -- * Running with Derivations
@@ -46,7 +46,12 @@ module TypedRedex.Interpreters.TracingRedex
     -- * Derivation Trees
   , Derivation(..)
   , prettyDerivation
+  , prettyDerivationWith
   , substInDerivation
+    -- * Judgment Formatting
+  , JudgmentFormatter(..)
+  , DefaultFormatter(..)
+  , defaultFormatConclusion
     -- * The Monad (for advanced use)
   , TracingRedex
   ) where
@@ -57,7 +62,7 @@ import Stream
 import Control.Monad.State
 import Control.Applicative
 import Unsafe.Coerce (unsafeCoerce)
-import TypedRedex.Utils.Redex (flatteningUnify, occursCheck, L, Var', prettyLogic)
+import TypedRedex.Utils.Redex (flatteningUnify, occursCheck, L, Var', formatCon, intercalate)
 
 --------------------------------------------------------------------------------
 -- Derivation Trees
@@ -76,13 +81,57 @@ import TypedRedex.Utils.Redex (flatteningUnify, occursCheck, L, Var', prettyLogi
 data Derivation
   = Deriv
       { derivRule :: String           -- ^ Rule name
-      , derivArgs :: [String]         -- ^ Arguments (pretty-printed)
+      , derivArgs :: [String]         -- ^ Arguments (pretty-printed after resolution)
       , derivChildren :: [Derivation] -- ^ Premises (sub-derivations)
       }
   | Leaf String [String]              -- ^ Axiom with arguments
   deriving (Show, Eq)
 
--- | Pretty-print a derivation tree in paper style.
+--------------------------------------------------------------------------------
+-- Judgment Formatter (user-definable)
+--------------------------------------------------------------------------------
+
+-- | Typeclass for formatting judgment conclusions.
+--
+-- Users implement this in their examples to control how judgments are displayed.
+--
+-- @
+-- data SystemFStyle
+--
+-- instance JudgmentFormatter SystemFStyle where
+--   formatConclusion _ "typeof" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
+--   formatConclusion _ "step" [a, b] = a ++ " ⟶ " ++ b
+--   formatConclusion _ name args = defaultFormatConclusion name args
+-- @
+class JudgmentFormatter fmt where
+  formatConclusion :: fmt -> String -> [String] -> String
+  formatConclusion _ = defaultFormatConclusion
+
+-- | Default formatting: function-style @name(arg1, arg2, ...)@
+--
+-- This is the simplest possible formatting. Users should define their own
+-- 'JudgmentFormatter' instances in their examples for domain-specific
+-- formatting (e.g., typing judgments, step relations).
+defaultFormatConclusion :: String -> [String] -> String
+defaultFormatConclusion name [] = name
+defaultFormatConclusion name args = name ++ "(" ++ intercalate ", " args ++ ")"
+
+-- | Unit formatter that uses default application-style formatting.
+-- Use this when you don't need custom formatting.
+data DefaultFormatter = DefaultFormatter
+
+instance JudgmentFormatter DefaultFormatter where
+  formatConclusion _ = defaultFormatConclusion
+
+--------------------------------------------------------------------------------
+-- Pretty-printing Derivations
+--------------------------------------------------------------------------------
+
+-- | Pretty-print a derivation tree using the default formatter.
+prettyDerivation :: Derivation -> String
+prettyDerivation = prettyDerivationWith DefaultFormatter
+
+-- | Pretty-print a derivation tree with a custom formatter.
 --
 -- Renders premises horizontally above the inference line:
 --
@@ -91,8 +140,8 @@ data Derivation
 -- ──────────────────────────── [⇒App]
 --        Γ ⊢ e1 e2 ⇒ B
 -- @
-prettyDerivation :: Derivation -> String
-prettyDerivation d = unlines $ renderDeriv d
+prettyDerivationWith :: JudgmentFormatter fmt => fmt -> Derivation -> String
+prettyDerivationWith fmt d = unlines $ renderDeriv d
   where
     renderDeriv :: Derivation -> [String]
     renderDeriv (Leaf name _) = [name]
@@ -101,7 +150,7 @@ prettyDerivation d = unlines $ renderDeriv d
         [c] -> renderDeriv c
         cs -> concatMap renderDeriv cs
     renderDeriv (Deriv name args children) =
-      let conclusion = formatConclusion name args
+      let conclusion = formatConclusion fmt name args
           childBlocks = map renderDeriv children
       in if null childBlocks
          then -- Axiom: just the line and conclusion
@@ -134,67 +183,6 @@ prettyDerivation d = unlines $ renderDeriv d
     padRight :: Int -> String -> String
     padRight n s = s ++ replicate (n - length s) ' '
 
-    formatConclusion :: String -> [String] -> String
-    -- Typing judgments (by judgment name)
-    formatConclusion "typeof" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
-    formatConclusion "synth" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
-    formatConclusion "check" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " ⇐ " ++ ty
-    -- Typing rules (by rule name - match prefix)
-    formatConclusion name [ctx, e, ty] | "typeof-" `isPrefixOf` name = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
-    formatConclusion name [ctx, e, ty] | "synth" `isPrefixOf` name = ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
-    formatConclusion name [ctx, e, ty] | "check" `isPrefixOf` name = ctx ++ " ⊢ " ++ e ++ " ⇐ " ++ ty
-    -- Context lookup (by judgment or rule name)
-    formatConclusion "lookup" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
-    formatConclusion "lookupTm" [ctx, n, ty] = ctx ++ "(" ++ n ++ ") = " ++ ty
-    formatConclusion name [ctx, n, ty] | "lookup" `isPrefixOf` name = ctx ++ "(" ++ n ++ ") = " ++ ty
-    -- Step relation
-    formatConclusion "step" [a, b] = a ++ " ⟶ " ++ b
-    -- Value predicate
-    formatConclusion "value" [a] = "value(" ++ a ++ ")"
-    formatConclusion name [a] | "value-" `isPrefixOf` name = "value(" ++ a ++ ")"
-    -- Substitution
-    formatConclusion "subst0" [body, arg, result] = "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
-    formatConclusion name [body, arg, result] | "subst0-" `isPrefixOf` name = "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
-    formatConclusion "substTy" [depth, subTy, ty, result] = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
-    formatConclusion name [depth, subTy, ty, result] | "subst-" `isPrefixOf` name = "[" ++ subTy ++ "/" ++ depth ++ "]" ++ ty ++ " = " ++ result
-    formatConclusion "substTyVar" [depth, subTy, n, result] = "[" ++ subTy ++ "/" ++ depth ++ "](TVar " ++ n ++ ") = " ++ result
-    -- Shifting
-    formatConclusion "shiftTy" [cutoff, amount, ty, result] = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " " ++ ty ++ " = " ++ result
-    formatConclusion name [cutoff, amount, ty, result] | "shift-" `isPrefixOf` name = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " " ++ ty ++ " = " ++ result
-    formatConclusion "shiftTyVar" [cutoff, amount, n, result] = "↑" ++ superscript cutoff ++ "·" ++ superscript amount ++ " (TVar " ++ n ++ ") = " ++ result
-    -- Arithmetic on naturals
-    formatConclusion "natEq" [n, m] = n ++ " = " ++ m
-    formatConclusion name [n, m] | "eq-" `isPrefixOf` name = n ++ " = " ++ m
-    formatConclusion "natLt" [n, m] = n ++ " < " ++ m
-    formatConclusion name [n, m] | "lt-" `isPrefixOf` name = n ++ " < " ++ m
-    formatConclusion "addNat" [n, m, s] = n ++ " + " ++ m ++ " = " ++ s
-    formatConclusion name [n, m, s] | "add-" `isPrefixOf` name = n ++ " + " ++ m ++ " = " ++ s
-    -- Axioms (no args)
-    formatConclusion name [] = name
-    -- Step rules (various named rules that are step reductions)
-    formatConclusion name [a, b] | name `elem` ["β", "app-L", "app-R", "succ", "pred", "pred-zero", "pred-succ", "ifz", "ifz-zero", "ifz-succ", "fix"] =
-      a ++ " ⟶ " ++ b
-    -- Default: function-style
-    formatConclusion name args = name ++ "(" ++ intercalate ", " args ++ ")"
-
-    isPrefixOf :: String -> String -> Bool
-    isPrefixOf [] _ = True
-    isPrefixOf _ [] = False
-    isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
-
-    -- Convert a string to superscript (for shift notation)
-    superscript :: String -> String
-    superscript = map toSuper
-      where
-        toSuper '0' = '⁰'; toSuper '1' = '¹'; toSuper '2' = '²'; toSuper '3' = '³'
-        toSuper '4' = '⁴'; toSuper '5' = '⁵'; toSuper '6' = '⁶'; toSuper '7' = '⁷'
-        toSuper '8' = '⁸'; toSuper '9' = '⁹'; toSuper c = c
-
-    intercalate :: String -> [String] -> String
-    intercalate _ [] = ""
-    intercalate _ [x] = x
-    intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
-
 -- | Substitute a variable name in a derivation with an actual value.
 substInDerivation :: String -> String -> Derivation -> Derivation
 substInDerivation var val (Leaf name args) = Leaf name (map subst args)
@@ -211,21 +199,20 @@ type VarRepr = Int
 
 -- | A frame in the derivation stack.
 --
--- When we enter a rule, we push a frame. As premises are proved,
--- their derivations are added to frameChildren. When the rule completes,
--- we pop the frame and build a Derivation node.
-data DerivFrame = DerivFrame
-  { frameName     :: String        -- ^ Rule name
-  , frameArgs     :: [String]      -- ^ Pretty-printed arguments
-  , frameChildren :: [Derivation]  -- ^ Accumulated premise derivations
+-- When we enter a rule, we push a frame with CapturedTerms. As premises
+-- are proved, their derivations are added to frameChildren. When the rule
+-- completes, we resolve the captured terms to strings and build a Derivation.
+data DerivFrame s = DerivFrame
+  { frameName     :: String                           -- ^ Rule name
+  , frameTerms    :: [CapturedTerm (TracingRedex s)]  -- ^ Captured terms (resolved at pop time)
+  , frameChildren :: [Derivation]                     -- ^ Accumulated premise derivations
   }
-  deriving (Show)
 
 -- | Complete state for the tracing interpreter.
 data TracingState s = TracingState
   { tsSubst      :: forall t. RVar (TracingRedex s) t -> Maybe t  -- ^ Substitution
   , tsNextVar    :: VarRepr                                        -- ^ Fresh var counter
-  , tsDerivStack :: [DerivFrame]                                   -- ^ Derivation stack
+  , tsDerivStack :: [DerivFrame s]                                 -- ^ Derivation stack
   }
 
 emptyState :: TracingState s
@@ -249,18 +236,9 @@ updateSubst v a s = s { tsSubst = \v' -> if varEq' v v' then unsafeCoerce a else
 succVar :: TracingState s -> TracingState s
 succVar s = s { tsNextVar = succ (tsNextVar s) }
 
--- | Push a new derivation frame onto the stack.
-pushFrame :: String -> [String] -> TracingState s -> TracingState s
-pushFrame name args s = s { tsDerivStack = DerivFrame name args [] : tsDerivStack s }
-
--- | Pop frame and create derivation, add to parent frame.
-popFrame :: TracingState s -> TracingState s
-popFrame s = case tsDerivStack s of
-  (current:parent:rest) ->
-    let deriv = Deriv (frameName current) (frameArgs current) (reverse $ frameChildren current)
-        parent' = parent { frameChildren = deriv : frameChildren parent }
-    in s { tsDerivStack = parent' : rest }
-  _ -> s  -- At top level, don't pop
+-- | Push a new derivation frame onto the stack with captured terms.
+pushFrame :: String -> [CapturedTerm (TracingRedex s)] -> TracingState s -> TracingState s
+pushFrame name terms s = s { tsDerivStack = DerivFrame name terms [] : tsDerivStack s }
 
 --------------------------------------------------------------------------------
 -- Tracing Redex Monad
@@ -316,18 +294,63 @@ instance Redex (TracingRedex s) where
 
   -- | Custom call_ that handles derivation frame management.
   --
-  -- 1. Push frame with relation name and args
+  -- 1. Push frame with captured terms
   -- 2. Execute body
-  -- 3. Pop frame and build derivation
+  -- 3. Pop frame, resolve terms, build derivation
   call_ Opaque rel = do
-    modify $ pushFrame (relName rel) (relArgs rel)
+    modify $ pushFrame (relName rel) (relTerms rel)
     suspend (relBody rel)
-    modify popFrame
+    popFrameAndResolve
 
   call_ Transparent rel = do
-    modify $ pushFrame (relName rel) (relArgs rel)
+    modify $ pushFrame (relName rel) (relTerms rel)
     relBody rel
-    modify popFrame
+    popFrameAndResolve
+
+-- | Pop frame, resolve captured terms to strings, build derivation.
+-- This is where deferred resolution happens - terms are resolved NOW,
+-- after unification has completed.
+popFrameAndResolve :: TracingRedex s ()
+popFrameAndResolve = do
+  st <- get
+  case tsDerivStack st of
+    (current:parent:rest) -> do
+      -- Resolve captured terms to strings using current substitution
+      args <- mapM resolveCaptured (frameTerms current)
+      let deriv = Deriv (frameName current) args (reverse $ frameChildren current)
+          parent' = parent { frameChildren = deriv : frameChildren parent }
+      put $ st { tsDerivStack = parent' : rest }
+    _ -> pure ()  -- At top level, don't pop
+
+-- | Resolve a captured term to a string using current substitution.
+resolveCaptured :: CapturedTerm (TracingRedex s) -> TracingRedex s String
+resolveCaptured (CapturedTerm term) = prettyResolved term
+
+-- | Pretty-print a logic term after resolving through substitution.
+prettyResolved :: LogicType a => L a (TracingRedex s) -> TracingRedex s String
+prettyResolved (Free v) = do
+  mx <- gets (readSubst v)
+  case mx of
+    Nothing -> pure $ displayVar v  -- Still unbound, show variable name
+    Just x  -> prettyResolved x     -- Bound, resolve and recurse
+prettyResolved (Ground r) = do
+  let (con, fields) = quote r
+  fieldStrs <- mapM prettyField fields
+  pure $ formatCon (name con) fieldStrs
+  where
+    prettyField :: Field a (RVar (TracingRedex s)) -> TracingRedex s String
+    prettyField (Field _ logic) = prettyResolvedAny logic
+
+    prettyResolvedAny :: LogicType t => Logic t (RVar (TracingRedex s)) -> TracingRedex s String
+    prettyResolvedAny (Free v) = do
+      mx <- gets (readSubst v)
+      case mx of
+        Nothing -> pure $ displayVar v
+        Just x  -> prettyResolvedAny x
+    prettyResolvedAny (Ground r') = do
+      let (con', fields') = quote r'
+      fieldStrs' <- mapM prettyField fields'
+      pure $ formatCon (name con') fieldStrs'
 
 --------------------------------------------------------------------------------
 -- RedexStructure Instance (Derivation Tracking)
@@ -335,13 +358,15 @@ instance Redex (TracingRedex s) where
 
 instance RedexStructure (TracingRedex s) where
   -- | Push a new derivation frame when entering a rule
-  onRuleEnter name args = modify $ pushFrame name args
+  -- Note: with CapturedTerm, we need the terms, but onRuleEnter only gets strings
+  -- This is mainly for backward compatibility - the real work is done in call_
+  onRuleEnter name args = modify $ \s ->
+    s { tsDerivStack = DerivFrame name [] [] : tsDerivStack s }
 
-  -- | Pop frame and build derivation when exiting a rule
-  onRuleExit _ = modify popFrame
+  -- | Pop frame when exiting a rule
+  onRuleExit _ = popFrameAndResolve
 
   -- | Wrap premise call (default: just run body)
-  -- Premises are tracked automatically via the call/popFrame mechanism
   withPremise _ _ = id
 
 instance EqVar (TracingRedex s) where
@@ -378,7 +403,7 @@ runTracingRedex (TracingRedex r) = fmap extractDeriv $ runStateT r emptyState
             [frame] -> case frameChildren frame of
               [d] -> d
               ds -> Deriv "top" [] (reverse ds)
-            (frame:_) -> Deriv (frameName frame) (frameArgs frame) (reverse $ frameChildren frame)
+            (frame:_) -> Deriv (frameName frame) [] (reverse $ frameChildren frame)
             [] -> Leaf "?" []
       in (result, deriv)
 

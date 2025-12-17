@@ -1,6 +1,54 @@
 # Derivation System Design
 
-## Current Limitations
+## ✅ Implementation Status (Completed)
+
+The recommended approach (Proposal 1 + 2) has been implemented:
+
+1. **CapturedTerm existential** (`Core/Internal/Redex.hs`): Logic terms are wrapped in `CapturedTerm` instead of being converted to strings immediately.
+
+2. **Deferred resolution** (`TracingRedex.hs`): Terms are resolved to strings at `popFrame` time, AFTER unification completes, ensuring derivations show actual values.
+
+3. **JudgmentFormatter typeclass** (`TracingRedex.hs`): Users define custom formatting in their examples. The library only provides:
+   - `JudgmentFormatter` typeclass
+   - `defaultFormatConclusion`: Simple application-style `name(arg1, arg2, ...)`
+   - `DefaultFormatter`: Uses application-style (no domain-specific patterns)
+
+### Key Changes
+
+```haskell
+-- Before: captured strings immediately (broken)
+data Relation rel = Relation { relName :: String, relArgs :: [String], ... }
+
+-- After: capture terms, resolve later (fixed)
+data CapturedTerm rel where
+  CapturedTerm :: LogicType a => Logic a (RVar rel) -> CapturedTerm rel
+
+data Relation rel = Relation { relName :: String, relTerms :: [CapturedTerm rel], ... }
+```
+
+### User-Defined Formatting (in examples, not library)
+
+```haskell
+-- In examples/system-f/Main.hs
+data SystemFFormatter = SystemFFormatter
+
+instance JudgmentFormatter SystemFFormatter where
+  formatConclusion _ "typeof" [ctx, e, ty] = ctx ++ " ⊢ " ++ e ++ " : " ++ ty
+  formatConclusion _ "natLt" [n, m] = n ++ " < " ++ m
+  formatConclusion _ name args = defaultFormatConclusion name args
+
+prettyDerivation = prettyDerivationWith SystemFFormatter
+```
+
+### Results
+
+Derivations now show actual values:
+- Before: `x0 < x1` (unresolved variables)
+- After: `S(Z) < S(S(S(Z)))` (resolved values)
+
+---
+
+## Original Limitations (Now Fixed)
 
 1. **Variables not resolved in derivations**: TracingRedex derivation trees show unresolved variable names (`x0`, `x1`, etc.) instead of actual values because arguments are pretty-printed BEFORE unification completes.
 

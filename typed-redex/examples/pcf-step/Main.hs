@@ -9,7 +9,7 @@ import TypedRedex.Core.Redex hiding (rule, rule2, rule3)
 import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
 import TypedRedex.Interpreters.DeepRedex (DeepRedex, runDeep, formatAsRuleWithJudgment, extractAllRules, deepVar)
-import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivation, substInDerivation, Derivation(..))
+import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Utils.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.Utils.Define (rule1, rule2, rule3)
 
@@ -17,6 +17,38 @@ import TypedRedex.Utils.Define (rule1, rule2, rule3)
 -- Small-step call-by-value operational semantics
 --
 -- Using the new judgment/rule syntax for clean definitions.
+
+--------------------------------------------------------------------------------
+-- Judgment Formatter for PCF
+--------------------------------------------------------------------------------
+
+-- | Custom formatter for PCF derivations
+data PCFFormatter = PCFFormatter
+
+instance JudgmentFormatter PCFFormatter where
+  formatConclusion _ name args = case (name, args) of
+    -- Step relation
+    ("step", [a, b]) -> a ++ " ⟶ " ++ b
+    -- Step rules (all binary step rules)
+    (n, [a, b]) | n `elem` stepRules -> a ++ " ⟶ " ++ b
+    -- Value predicate
+    ("value", [a]) -> "value(" ++ a ++ ")"
+    (n, [a]) | "value" `isPrefixOf` n -> "value(" ++ a ++ ")"
+    -- Substitution
+    ("subst0", [body, arg, result]) -> "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
+    (n, [body, arg, result]) | "subst0" `isPrefixOf` n -> "[" ++ arg ++ "/0]" ++ body ++ " = " ++ result
+    -- Default
+    _ -> defaultFormatConclusion name args
+    where
+      stepRules = ["β", "app-L", "app-R", "succ", "pred", "pred-zero", "pred-succ", "ifz", "ifz-zero", "ifz-succ", "fix"]
+
+      isPrefixOf [] _ = True
+      isPrefixOf _ [] = False
+      isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
+
+-- | Pretty-print derivation with PCF formatting
+prettyDerivation :: Derivation -> String
+prettyDerivation = prettyDerivationWith PCFFormatter
 
 -- Natural numbers for de Bruijn indices
 data Nat = Z | S Nat deriving (Eq, Show)

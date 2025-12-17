@@ -13,6 +13,10 @@ module TypedRedex.Utils.Redex
 , Var', L
 , occursCheck
 , prettyLogic
+  -- * Term formatting (shared by interpreters)
+, formatCon
+, subscriptNum
+, intercalate
 , neg  -- re-export from Redex
 ) where
 import TypedRedex.Core.Internal.Redex
@@ -22,6 +26,82 @@ import Data.Maybe (fromMaybe)
 
 type Var' a rel = Var a (RVar rel)
 type L a rel = Logic a (RVar rel)
+
+--------------------------------------------------------------------------------
+-- Term Pretty-Printing (shared by DeepRedex and TracingRedex)
+--------------------------------------------------------------------------------
+
+-- | Format constructor application nicely.
+--
+-- This provides consistent rendering of terms across all interpreters:
+-- - Lambda: @(λ:τ. e)@ or @(λ. e)@
+-- - Application: @(e₁ e₂)@
+-- - Types: @(τ₁ → τ₂)@, @(∀. τ)@
+-- - Contexts: @Γ, x:τ@
+formatCon :: String -> [String] -> String
+-- Terms (System F has annotated lambda, PCF has unannotated)
+formatCon "App" [f, a] = "(" ++ f ++ " " ++ a ++ ")"
+formatCon "Lam" [ty, b] = "(λ:" ++ ty ++ ". " ++ b ++ ")"  -- System F: annotated lambda
+formatCon "Lam" [b] = "(λ." ++ b ++ ")"                     -- PCF: unannotated lambda
+formatCon "Var" [n] = case parseNat n of
+    Just k  -> "x" ++ subscriptNum (show k)
+    Nothing -> n
+  where
+    -- Parse a Nat-formatted string like "0", "S(0)", "S(S(0))" to Int
+    parseNat :: String -> Maybe Int
+    parseNat "0" = Just 0
+    parseNat ('S':'(':rest) = case parseNat (init rest) of  -- init removes trailing ')'
+      Just k -> Just (k + 1)
+      Nothing -> Nothing
+    parseNat s | all isDigit s = Just (read s)
+    parseNat _ = Nothing
+    isDigit c = c `elem` "0123456789"
+formatCon "Zero" [] = "0"
+formatCon "Succ" [e] = "S(" ++ e ++ ")"
+formatCon "Pred" [e] = "pred(" ++ e ++ ")"
+formatCon "Ifz" [c, t, f] = "ifz(" ++ c ++ ", " ++ t ++ ", " ++ f ++ ")"
+formatCon "Fix" [e] = "fix(" ++ e ++ ")"
+-- Natural numbers
+formatCon "Z" [] = "0"
+formatCon "S" [n] = "S(" ++ n ++ ")"
+-- System F Types
+formatCon "TUnit" [] = "Unit"
+formatCon "TVar" [n] = "α" ++ subscriptNum n
+formatCon "TArr" [a, b] = "(" ++ a ++ " → " ++ b ++ ")"
+formatCon "TAll" [ty] = "(∀. " ++ ty ++ ")"
+-- System F Terms
+formatCon "Unit" [] = "()"
+formatCon "TLam" [b] = "(Λ." ++ b ++ ")"
+formatCon "TApp" [e, ty] = "(" ++ e ++ " [" ++ ty ++ "])"
+-- STLC Bidir Types
+formatCon "→" [a, b] = "(" ++ a ++ " → " ++ b ++ ")"
+-- Contexts
+formatCon "Nil" [] = "·"
+formatCon "·" [] = "·"
+formatCon "TmBind" [ty, ctx] = ctx ++ ", x:" ++ ty
+formatCon "TyBind" [ctx] = ctx ++ ", α"
+formatCon "Cons" [ty, ctx] = ctx ++ ", " ++ ty
+formatCon "," [ty, ctx] = ctx ++ ", " ++ ty
+-- Default
+formatCon n [] = n
+formatCon n args = n ++ "(" ++ intercalate ", " args ++ ")"
+
+-- | Convert a number string to subscript
+subscriptNum :: String -> String
+subscriptNum = concatMap toSub
+  where
+    toSub '0' = "₀"; toSub '1' = "₁"; toSub '2' = "₂"; toSub '3' = "₃"
+    toSub '4' = "₄"; toSub '5' = "₅"; toSub '6' = "₆"; toSub '7' = "₇"
+    toSub '8' = "₈"; toSub '9' = "₉"; toSub c = [c]
+
+intercalate :: String -> [String] -> String
+intercalate _ [] = ""
+intercalate _ [x] = x
+intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
+
+--------------------------------------------------------------------------------
+-- Pretty-printing Logic terms
+--------------------------------------------------------------------------------
 
 -- | Pretty-print a logic value using quote and displayVar.
 -- Used by tracing interpreters to capture relation arguments.
@@ -40,15 +120,6 @@ prettyLogic (Ground r) = prettyReified r
     prettyLogicAny :: (Redex rel, LogicType t) => Logic t (RVar rel) -> String
     prettyLogicAny (Free v) = displayVar v
     prettyLogicAny (Ground r') = prettyReified r'
-
-    formatCon :: String -> [String] -> String
-    formatCon n [] = n
-    formatCon n args = n ++ "(" ++ intercalate ", " args ++ ")"
-
-    intercalate :: String -> [String] -> String
-    intercalate _ [] = ""
-    intercalate _ [x] = x
-    intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
 
 flatteningUnify :: (Alternative rel, LogicType a) => (forall a'. (LogicType a') => Var' a' rel -> L a' rel -> rel ()) -> L a rel -> L a rel -> rel ()
 flatteningUnify unifyVar (Free a) b = unifyVar a b
@@ -92,19 +163,19 @@ argument5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, Log
 argument5 a_ b_ c_ d_ e_ f = argument a_ $ \a -> argument b_ $ \b -> argument c_ $ \c -> argument d_ $ \d -> argument e_ $ \e -> f a b c d e
 
 relation :: (Redex rel, LogicType a) => String -> (L a rel -> rel ()) -> L a rel -> Relation rel
-relation n f a_ = Relation n [prettyLogic a_] $ argument a_ f
+relation n f a_ = Relation n [CapturedTerm a_] $ argument a_ f
 
 relation2 :: (Redex rel, LogicType a, LogicType b) => String -> (L a rel -> L b rel -> rel ()) -> L a rel -> L b rel -> Relation rel
-relation2 n f a_ b_ = Relation n [prettyLogic a_, prettyLogic b_] $ argument2 a_ b_ f
+relation2 n f a_ b_ = Relation n [CapturedTerm a_, CapturedTerm b_] $ argument2 a_ b_ f
 
 relation3 :: (Redex rel, LogicType a, LogicType b, LogicType c) => String -> (L a rel -> L b rel -> L c rel -> rel ()) -> L a rel -> L b rel -> L c rel -> Relation rel
-relation3 n f a_ b_ c_ = Relation n [prettyLogic a_, prettyLogic b_, prettyLogic c_] $ argument3 a_ b_ c_ f
+relation3 n f a_ b_ c_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_] $ argument3 a_ b_ c_ f
 
 relation4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d) => String -> (L a rel -> L b rel -> L c rel -> L d rel -> rel ()) -> L a rel -> L b rel -> L c rel -> L d rel -> Relation rel
-relation4 n f a_ b_ c_ d_ = Relation n [prettyLogic a_, prettyLogic b_, prettyLogic c_, prettyLogic d_] $ argument4 a_ b_ c_ d_ f
+relation4 n f a_ b_ c_ d_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_] $ argument4 a_ b_ c_ d_ f
 
 relation5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e) => String -> (L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> rel ()) -> L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> Relation rel
-relation5 n f a_ b_ c_ d_ e_ = Relation n [prettyLogic a_, prettyLogic b_, prettyLogic c_, prettyLogic d_, prettyLogic e_] $ argument5 a_ b_ c_ d_ e_ f
+relation5 n f a_ b_ c_ d_ e_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_, CapturedTerm e_] $ argument5 a_ b_ c_ d_ e_ f
 
 call :: (Redex rel) => Relation rel -> rel ()
 call = call_ Opaque

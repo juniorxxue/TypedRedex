@@ -8,7 +8,7 @@ import Control.Applicative (empty)
 import TypedRedex.Core.Redex hiding (rule, rule3)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
-import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivation, Derivation(..))
+import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Utils.Type (quote0, quote1, quote2)
 import TypedRedex.Utils.Define (rule3)
 
@@ -17,6 +17,37 @@ import TypedRedex.Utils.Define (rule3)
 --
 -- Synthesis: Γ ⊢ e ⇒ A
 -- Checking:  Γ ⊢ e ⇐ A
+
+--------------------------------------------------------------------------------
+-- Judgment Formatter for Bidirectional STLC
+--------------------------------------------------------------------------------
+
+-- | Custom formatter for bidirectional typing derivations
+data BidirFormatter = BidirFormatter
+
+instance JudgmentFormatter BidirFormatter where
+  formatConclusion _ name args = case (name, args) of
+    -- Synthesis rules (start with ⇒)
+    (n, [ctx, e, ty]) | isSynthRule n -> ctx ++ " ⊢ " ++ e ++ " ⇒ " ++ ty
+    -- Checking rules (start with ⇐)
+    (n, [ctx, e, ty]) | isCheckRule n -> ctx ++ " ⊢ " ++ e ++ " ⇐ " ++ ty
+    -- Context lookup
+    (n, [ctx, idx, ty]) | isLookupRule n -> ctx ++ "(" ++ idx ++ ") = " ++ ty
+    -- Default
+    _ -> defaultFormatConclusion name args
+    where
+      isSynthRule ('⇒':_) = True
+      isSynthRule s = "synth" `isPrefixOf` s
+      isCheckRule ('⇐':_) = True
+      isCheckRule s = "check" `isPrefixOf` s
+      isLookupRule s = "lookup" `isPrefixOf` s
+      isPrefixOf [] _ = True
+      isPrefixOf _ [] = False
+      isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
+
+-- | Pretty-print derivation with bidirectional typing formatting
+prettyDerivation :: Derivation -> String
+prettyDerivation = prettyDerivationWith BidirFormatter
 
 --------------------------------------------------------------------------------
 -- Natural numbers for de Bruijn indices

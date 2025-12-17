@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, KindSignatures, FlexibleContexts, TypeFamilies #-}
+{-# LANGUAGE GADTs, KindSignatures, FlexibleContexts, TypeFamilies, ExistentialQuantification #-}
 
 -- | Internal.Redex: Stratified typeclasses for TypedRedex interpreters
 --
@@ -72,6 +72,7 @@
 module TypedRedex.Core.Internal.Redex
   ( -- * Core Types
     Relation(..)
+  , CapturedTerm(..)
   , FreshType(..)
   , CallType(..)
     -- * Typeclass Hierarchy
@@ -93,18 +94,32 @@ import TypedRedex.Core.Internal.Logic
 -- Core Types
 --------------------------------------------------------------------------------
 
+-- | A captured logic term for deferred pretty-printing.
+--
+-- This existential type allows us to store logic terms of different types
+-- in a list, then resolve them to strings at render time after unification
+-- has completed.
+--
+-- @
+-- CapturedTerm someVar  -- Captures the variable, resolves later
+-- @
+data CapturedTerm (rel :: Type -> Type) where
+  CapturedTerm :: LogicType a => Logic a (RVar rel) -> CapturedTerm rel
+
 -- | A named logic relation (predicate).
 --
 -- @
--- Relation "append" ["xs", "ys", "zs"] bodyComputation
+-- Relation "append" [CapturedTerm xs, CapturedTerm ys, CapturedTerm zs] bodyComputation
 -- @
 --
--- The name and args are used for debugging and derivation trees.
+-- The name and captured terms are used for debugging and derivation trees.
+-- Terms are resolved to strings AFTER unification completes, ensuring
+-- derivations show actual values instead of unresolved variables.
 -- The body returns @()@; success/failure is via 'Alternative'.
 data Relation (rel :: Type -> Type) = Relation
-  { relName :: String      -- ^ Relation name (e.g., "step", "value")
-  , relArgs :: [String]    -- ^ Pretty-printed arguments
-  , relBody :: rel ()      -- ^ The computation
+  { relName  :: String              -- ^ Relation name (e.g., "step", "value")
+  , relTerms :: [CapturedTerm rel]  -- ^ Captured terms (resolved at render time)
+  , relBody  :: rel ()              -- ^ The computation
   }
 
 -- | How to allocate a fresh variable.
