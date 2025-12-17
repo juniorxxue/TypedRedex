@@ -1,18 +1,18 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE DataKinds #-}
 
 module Main (main) where
 
 import Control.Applicative (empty)
-import TypedRedex hiding (rule, rule2, rule3)
+import TypedRedex
 import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Deep (printRules2)
 import TypedRedex.Interp.Tracing (runWithDerivation, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
-import TypedRedex.DSL.Define (rule1, rule2, rule3)
 
 -- PCF (Programming Computable Functions) with fixpoints
 -- Small-step call-by-value operational semantics
@@ -220,16 +220,16 @@ fix = Ground . FixR
 -- ─────────────── [value-succ]
 -- value(succ v)
 
-value :: (Redex rel) => LTerm Tm rel -> Applied rel Tm
+value :: (Redex rel) => LTerm Tm rel -> Applied rel '[Tm]
 value = judgment "value" [valueLam, valueZero, valueSucc]
   where
-    valueLam = rule1 "value-lam" $ fresh $ \b ->
+    valueLam = rule "value-lam" $ fresh $ \b ->
       concl $ value (lam b)
 
-    valueZero = rule1 "value-zero" $
+    valueZero = rule "value-zero" $
       concl $ value zero
 
-    valueSucc = rule1 "value-succ" $ fresh $ \v -> do
+    valueSucc = rule "value-succ" $ fresh $ \v -> do
       concl $ value (succTm v)
       prem  $ value v
 
@@ -239,8 +239,8 @@ value = judgment "value" [valueLam, valueZero, valueSucc]
 
 -- subst0 body arg out means [arg/0]body = out
 
-subst0 :: (Redex rel) => LTerm Tm rel -> LTerm Tm rel -> LTerm Tm rel -> Applied3 rel Tm Tm Tm
-subst0 = judgment3 "subst0"
+subst0 :: (Redex rel) => LTerm Tm rel -> LTerm Tm rel -> LTerm Tm rel -> Applied rel '[Tm, Tm, Tm]
+subst0 = judgment "subst0"
   [ subst0Lam
   , subst0Var0
   , subst0VarS
@@ -255,26 +255,26 @@ subst0 = judgment3 "subst0"
     -- Lambda: don't substitute under binder (naive, non-capture-avoiding)
     -- ─────────────────────────── [subst0-lam]
     -- [arg/0](λ.b) = λ.b
-    subst0Lam = rule3 "subst0-lam" $ fresh2 $ \b arg ->
+    subst0Lam = rule "subst0-lam" $ fresh2 $ \b arg ->
       concl $ subst0 (lam b) arg (lam b)
 
     -- Variable at index 0: replace with arg
     -- ─────────────────────── [subst0-var0]
     -- [arg/0](var 0) = arg
-    subst0Var0 = rule3 "subst0-var0" $ fresh $ \arg ->
+    subst0Var0 = rule "subst0-var0" $ fresh $ \arg ->
       concl $ subst0 (var zro) arg arg
 
     -- Variable at index n+1: decrement to n
     -- ───────────────────────────── [subst0-varS]
     -- [arg/0](var (S n)) = var n
-    subst0VarS = rule3 "subst0-varS" $ fresh2 $ \n' arg ->
+    subst0VarS = rule "subst0-varS" $ fresh2 $ \n' arg ->
       concl $ subst0 (var (suc n')) arg (var n')
 
     -- Application
     -- [arg/0]f = f'   [arg/0]a = a'
     -- ─────────────────────────────── [subst0-app]
     -- [arg/0](f a) = (f' a')
-    subst0App = rule3 "subst0-app" $ fresh5 $ \f a arg f' a' -> do
+    subst0App = rule "subst0-app" $ fresh5 $ \f a arg f' a' -> do
       concl $ subst0 (app f a) arg (app f' a')
       prem  $ subst0 f arg f'
       prem  $ subst0 a arg a'
@@ -282,14 +282,14 @@ subst0 = judgment3 "subst0"
     -- Zero
     -- ─────────────────────── [subst0-zero]
     -- [arg/0]0 = 0
-    subst0Zero = rule3 "subst0-zero" $ fresh $ \arg ->
+    subst0Zero = rule "subst0-zero" $ fresh $ \arg ->
       concl $ subst0 zero arg zero
 
     -- Succ
     -- [arg/0]e = e'
     -- ──────────────────────────── [subst0-succ]
     -- [arg/0](succ e) = succ e'
-    subst0Succ = rule3 "subst0-succ" $ fresh3 $ \e arg e' -> do
+    subst0Succ = rule "subst0-succ" $ fresh3 $ \e arg e' -> do
       concl $ subst0 (succTm e) arg (succTm e')
       prem  $ subst0 e arg e'
 
@@ -297,7 +297,7 @@ subst0 = judgment3 "subst0"
     -- [arg/0]e = e'
     -- ──────────────────────────── [subst0-pred]
     -- [arg/0](pred e) = pred e'
-    subst0Pred = rule3 "subst0-pred" $ fresh3 $ \e arg e' -> do
+    subst0Pred = rule "subst0-pred" $ fresh3 $ \e arg e' -> do
       concl $ subst0 (predTm e) arg (predTm e')
       prem  $ subst0 e arg e'
 
@@ -305,7 +305,7 @@ subst0 = judgment3 "subst0"
     -- [arg/0]e = e'   [arg/0]e1 = e1'   [arg/0]e2 = e2'
     -- ─────────────────────────────────────────────────── [subst0-ifz]
     -- [arg/0](ifz e e1 e2) = ifz e' e1' e2'
-    subst0Ifz = rule3 "subst0-ifz" $ fresh4 $ \e e1 e2 arg -> fresh3 $ \e' e1' e2' -> do
+    subst0Ifz = rule "subst0-ifz" $ fresh4 $ \e e1 e2 arg -> fresh3 $ \e' e1' e2' -> do
       concl $ subst0 (ifz e e1 e2) arg (ifz e' e1' e2')
       prem  $ subst0 e arg e'
       prem  $ subst0 e1 arg e1'
@@ -315,7 +315,7 @@ subst0 = judgment3 "subst0"
     -- [arg/0]e = e'
     -- ────────────────────────── [subst0-fix]
     -- [arg/0](fix e) = fix e'
-    subst0Fix = rule3 "subst0-fix" $ fresh3 $ \e arg e' -> do
+    subst0Fix = rule "subst0-fix" $ fresh3 $ \e arg e' -> do
       concl $ subst0 (fix e) arg (fix e')
       prem  $ subst0 e arg e'
 
@@ -323,8 +323,8 @@ subst0 = judgment3 "subst0"
 -- Small-step operational semantics using judgment/rule style
 --------------------------------------------------------------------------------
 
-step :: (Redex rel) => LTerm Tm rel -> LTerm Tm rel -> Applied2 rel Tm Tm
-step = judgment2 "step"
+step :: (Redex rel) => LTerm Tm rel -> LTerm Tm rel -> Applied rel '[Tm, Tm]
+step = judgment "step"
   [ stepBeta
   , stepAppL
   , stepAppR
@@ -342,7 +342,7 @@ step = judgment2 "step"
     --   value(v)   [v/x]body = e'
     --   ─────────────────────────── [β]
     --   (λx.body) v ⟶ e'
-    stepBeta = rule2 "β" $ fresh3 $ \body v e' -> do
+    stepBeta = rule "β" $ fresh3 $ \body v e' -> do
       concl $ step (app (lam body) v) e'
       prem  $ value v
       prem  $ subst0 body v e'
@@ -351,7 +351,7 @@ step = judgment2 "step"
     --       e₁ ⟶ e₁'
     --   ─────────────────── [app-L]
     --   e₁ e₂ ⟶ e₁' e₂
-    stepAppL = rule2 "app-L" $ fresh3 $ \e1 e1' e2 -> do
+    stepAppL = rule "app-L" $ fresh3 $ \e1 e1' e2 -> do
       concl $ step (app e1 e2) (app e1' e2)
       prem  $ step e1 e1'
 
@@ -359,7 +359,7 @@ step = judgment2 "step"
     --   value(v)   e₂ ⟶ e₂'
     --   ──────────────────────── [app-R]
     --   v e₂ ⟶ v e₂'
-    stepAppR = rule2 "app-R" $ fresh3 $ \v e2 e2' -> do
+    stepAppR = rule "app-R" $ fresh3 $ \v e2 e2' -> do
       concl $ step (app v e2) (app v e2')
       prem  $ value v
       prem  $ step e2 e2'
@@ -368,21 +368,21 @@ step = judgment2 "step"
     --       e ⟶ e'
     --   ─────────────────── [succ]
     --   succ(e) ⟶ succ(e')
-    stepSucc = rule2 "succ" $ fresh2 $ \e e' -> do
+    stepSucc = rule "succ" $ fresh2 $ \e e' -> do
       concl $ step (succTm e) (succTm e')
       prem  $ step e e'
 
     -- Predecessor of zero (axiom):
     --   ─────────────────── [pred-zero]
     --   pred(0) ⟶ 0
-    stepPredZero = rule2 "pred-zero" $
+    stepPredZero = rule "pred-zero" $
       concl $ step (predTm zero) zero
 
     -- Predecessor of successor:
     --   value(v)
     --   ─────────────────────── [pred-succ]
     --   pred(succ(v)) ⟶ v
-    stepPredSucc = rule2 "pred-succ" $ fresh $ \v -> do
+    stepPredSucc = rule "pred-succ" $ fresh $ \v -> do
       concl $ step (predTm (succTm v)) v
       prem  $ value v
 
@@ -390,21 +390,21 @@ step = judgment2 "step"
     --       e ⟶ e'
     --   ─────────────────── [pred]
     --   pred(e) ⟶ pred(e')
-    stepPred = rule2 "pred" $ fresh2 $ \e e' -> do
+    stepPred = rule "pred" $ fresh2 $ \e e' -> do
       concl $ step (predTm e) (predTm e')
       prem  $ step e e'
 
     -- If-zero when condition is zero:
     --   ───────────────────────────── [ifz-zero]
     --   ifz(0, e₁, e₂) ⟶ e₁
-    stepIfzZero = rule2 "ifz-zero" $ fresh2 $ \e1 e2 ->
+    stepIfzZero = rule "ifz-zero" $ fresh2 $ \e1 e2 ->
       concl $ step (ifz zero e1 e2) e1
 
     -- If-zero when condition is successor:
     --   value(v)
     --   ─────────────────────────────── [ifz-succ]
     --   ifz(succ(v), e₁, e₂) ⟶ e₂
-    stepIfzSucc = rule2 "ifz-succ" $ fresh3 $ \v e1 e2 -> do
+    stepIfzSucc = rule "ifz-succ" $ fresh3 $ \v e1 e2 -> do
       concl $ step (ifz (succTm v) e1 e2) e2
       prem  $ value v
 
@@ -412,14 +412,14 @@ step = judgment2 "step"
     --           e ⟶ e'
     --   ─────────────────────────────── [ifz]
     --   ifz(e, e₁, e₂) ⟶ ifz(e', e₁, e₂)
-    stepIfzCong = rule2 "ifz" $ fresh4 $ \e e' e1 e2 -> do
+    stepIfzCong = rule "ifz" $ fresh4 $ \e e' e1 e2 -> do
       concl $ step (ifz e e1 e2) (ifz e' e1 e2)
       prem  $ step e e'
 
     -- Fixpoint unrolling:
     --   ─────────────────────── [fix]
     --   fix(e) ⟶ e (fix(e))
-    stepFix = rule2 "fix" $ fresh $ \e ->
+    stepFix = rule "fix" $ fresh $ \e ->
       concl $ step (fix e) (app e (fix e))
 
 --------------------------------------------------------------------------------
@@ -437,7 +437,7 @@ type TracingStream a = Stream (a, Derivation)
 
 stepWithTrace :: Tm -> TracingStream Tm
 stepWithTrace t0 = runWithDerivation $ fresh $ \t' -> do
-  app2Goal $ step (Ground $ project t0) t'
+  appGoal $ step (Ground $ project t0) t'
   eval t'
 
 main :: IO ()

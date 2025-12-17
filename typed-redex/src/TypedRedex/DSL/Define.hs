@@ -3,15 +3,25 @@
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 -- | Clean DSL syntax for defining relations using inference-rule style.
 --
--- This module provides a cleaner alternative to the callback-based rule syntax.
+-- This module provides a unified API for relations of any arity using
+-- type-level lists.
 --
 -- @
--- lookupTm = judgment3 "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
+-- lookupTm :: Redex rel => LTerm Ctx rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Ctx, Nat, Ty]
+-- lookupTm = judgment "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
 --   where
 --     lookupTmHere = rule "lookup-here" $ fresh2 $ \\ty rest ->
 --       concl $ lookupTm (tmBind ty rest) zro ty
@@ -21,68 +31,87 @@
 --       prem  $ lookupTm rest n' ty
 -- @
 --
--- Both 'concl' and 'prem' are overloaded and work for any arity.
+-- Both 'concl' and 'prem' work for any arity.
 -- Rule names are tracked for derivation trees.
 
 module TypedRedex.DSL.Define
-  ( -- * Applied relation types (store args + goal)
-    Applied(..)
-  , Applied2(..)
-  , Applied3(..)
-  , Applied4(..)
-  , Applied5(..)
+  ( -- * Type-level list of logic terms
+    LTermList(..)
+    -- * Applied relation type (unified for all arities)
+  , Applied(..)
     -- * Conclusion and Premise (overloaded)
   , Conclude(..)
   , Premise(..)
-    -- * Named rules
-  , Rule(..), Rule2(..), Rule3(..), Rule4(..), Rule5(..)
-  , rule, rule1, rule2, rule3, rule4, rule5
-    -- * Judgment combinators (combine named rules)
-  , judgment, judgment1, judgment2, judgment3, judgment4, judgment5
+    -- * Named rules (unified)
+  , Rule(..)
+  , rule
+    -- * Judgment combinator (unified, works for all arities)
+  , judgment
+    -- * Type-level machinery
+  , AllLogicType
+  , Curried
   ) where
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.DSL.Fresh (LTerm, argument, argument2, argument3, argument4, argument5)
+import TypedRedex.DSL.Fresh (LTerm, argument)
 import TypedRedex.Core.Internal.Relation (call, (<=>))
 import Control.Applicative (asum)
+import Data.Kind (Type, Constraint)
 
 --------------------------------------------------------------------------------
--- Applied types: store arguments + goal
+-- Type-level list of logic terms
 --------------------------------------------------------------------------------
 
--- | Applied unary relation: stores argument and goal.
-data Applied rel a = Applied
-  { app1Arg  :: LTerm a rel
-  , app1Goal :: rel ()
-  }
+-- | Heterogeneous list of logic terms, indexed by a type-level list.
+data LTermList rel (ts :: [Type]) where
+  TNil  :: LTermList rel '[]
+  (:>)  :: LogicType t => LTerm t rel -> LTermList rel ts -> LTermList rel (t ': ts)
 
--- | Applied binary relation: stores arguments and goal.
-data Applied2 rel a b = Applied2
-  { app2Args :: (LTerm a rel, LTerm b rel)
-  , app2Goal :: rel ()
-  }
+infixr 5 :>
 
--- | Applied ternary relation: stores arguments and goal.
-data Applied3 rel a b c = Applied3
-  { app3Args :: (LTerm a rel, LTerm b rel, LTerm c rel)
-  , app3Goal :: rel ()
-  }
+--------------------------------------------------------------------------------
+-- Constraint family: all types in list must be LogicType
+--------------------------------------------------------------------------------
 
--- | Applied quaternary relation: stores arguments and goal.
-data Applied4 rel a b c d = Applied4
-  { app4Args :: (LTerm a rel, LTerm b rel, LTerm c rel, LTerm d rel)
-  , app4Goal :: rel ()
-  }
+-- | Constraint that all types in the list are LogicType instances.
+type family AllLogicType (ts :: [Type]) :: Constraint where
+  AllLogicType '[]       = ()
+  AllLogicType (t ': ts) = (LogicType t, AllLogicType ts)
 
--- | Applied 5-ary relation: stores arguments and goal.
-data Applied5 rel a b c d e = Applied5
-  { app5Args :: (LTerm a rel, LTerm b rel, LTerm c rel, LTerm d rel, LTerm e rel)
-  , app5Goal :: rel ()
+--------------------------------------------------------------------------------
+-- Applied type: unified for all arities
+--------------------------------------------------------------------------------
+
+-- | Applied relation: stores arguments (as LTermList) and goal.
+-- Replaces Applied, Applied2, Applied3, Applied4, Applied5.
+data Applied rel (ts :: [Type]) = Applied
+  { appArgs :: LTermList rel ts
+  , appGoal :: rel ()
   }
 
 --------------------------------------------------------------------------------
--- Conclude: type class with type family for pattern type
+-- Rule type: unified for all arities
+--------------------------------------------------------------------------------
+
+-- | A named rule for a judgment of any arity.
+-- The type list ts determines the arity.
+data Rule rel (ts :: [Type]) = Rule
+  { ruleName :: String
+  , ruleBody :: (?concl :: LTermList rel ts -> rel ()) => rel ()
+  }
+
+-- | Create a named rule. The name appears in derivation trees.
+--
+-- @
+-- lookupHere = rule "lookup-here" $ fresh2 $ \\ty rest ->
+--   concl $ lookup' (cons ty rest) zro ty
+-- @
+rule :: String -> ((?concl :: LTermList rel ts -> rel ()) => rel ()) -> Rule rel ts
+rule name body = Rule name body
+
+--------------------------------------------------------------------------------
+-- Conclude: single instance for Applied rel ts
 --------------------------------------------------------------------------------
 
 -- | Type class for extracting conclusion pattern and unifying.
@@ -90,154 +119,92 @@ class Conclude app rel where
   type ConcludePat app
   concl :: (?concl :: ConcludePat app -> rel ()) => app -> rel ()
 
-instance Conclude (Applied rel a) rel where
-  type ConcludePat (Applied rel a) = LTerm a rel
-  concl (Applied px _) = ?concl px
-
-instance Conclude (Applied2 rel a b) rel where
-  type ConcludePat (Applied2 rel a b) = (LTerm a rel, LTerm b rel)
-  concl (Applied2 pat _) = ?concl pat
-
-instance Conclude (Applied3 rel a b c) rel where
-  type ConcludePat (Applied3 rel a b c) = (LTerm a rel, LTerm b rel, LTerm c rel)
-  concl (Applied3 pat _) = ?concl pat
-
-instance Conclude (Applied4 rel a b c d) rel where
-  type ConcludePat (Applied4 rel a b c d) = (LTerm a rel, LTerm b rel, LTerm c rel, LTerm d rel)
-  concl (Applied4 pat _) = ?concl pat
-
-instance Conclude (Applied5 rel a b c d e) rel where
-  type ConcludePat (Applied5 rel a b c d e) = (LTerm a rel, LTerm b rel, LTerm c rel, LTerm d rel, LTerm e rel)
-  concl (Applied5 pat _) = ?concl pat
+instance Conclude (Applied rel ts) rel where
+  type ConcludePat (Applied rel ts) = LTermList rel ts
+  concl (Applied args _) = ?concl args
 
 --------------------------------------------------------------------------------
--- Premise: type class for running applied relations
+-- Premise: single instance for Applied rel ts
 --------------------------------------------------------------------------------
 
 -- | Type class for running an applied relation as a premise.
 class Premise app rel where
   prem :: app -> rel ()
 
-instance (Redex rel) => Premise (Applied rel a) rel where
+instance Premise (Applied rel ts) rel where
   prem (Applied _ g) = g
 
-instance (Redex rel) => Premise (Applied2 rel a b) rel where
-  prem (Applied2 _ g) = g
-
-instance (Redex rel) => Premise (Applied3 rel a b c) rel where
-  prem (Applied3 _ g) = g
-
-instance (Redex rel) => Premise (Applied4 rel a b c d) rel where
-  prem (Applied4 _ g) = g
-
-instance (Redex rel) => Premise (Applied5 rel a b c d e) rel where
-  prem (Applied5 _ g) = g
-
 --------------------------------------------------------------------------------
--- Named rules
+-- Helper type classes for building judgment
 --------------------------------------------------------------------------------
 
--- | A named rule for a unary judgment.
-data Rule rel a = Rule
-  { rule1Name :: String
-  , rule1Body :: (?concl :: LTerm a rel -> rel ()) => rel ()
-  }
+-- | Bind a list of arguments to fresh local variables.
+class ArgumentList rel ts where
+  argumentList :: LTermList rel ts -> (LTermList rel ts -> rel a) -> rel a
 
--- | A named rule for a binary judgment.
-data Rule2 rel a b = Rule2
-  { rule2Name :: String
-  , rule2Body :: (?concl :: (LTerm a rel, LTerm b rel) -> rel ()) => rel ()
-  }
+instance ArgumentList rel '[] where
+  argumentList TNil f = f TNil
 
--- | A named rule for a ternary judgment.
-data Rule3 rel a b c = Rule3
-  { rule3Name :: String
-  , rule3Body :: (?concl :: (LTerm a rel, LTerm b rel, LTerm c rel) -> rel ()) => rel ()
-  }
+instance (Redex rel, LogicType t, ArgumentList rel ts) => ArgumentList rel (t ': ts) where
+  argumentList (x :> xs) f = argument x $ \x' ->
+    argumentList xs $ \xs' -> f (x' :> xs')
 
--- | A named rule for a quaternary judgment.
-data Rule4 rel a b c d = Rule4
-  { rule4Name :: String
-  , rule4Body :: (?concl :: (LTerm a rel, LTerm b rel, LTerm c rel, LTerm d rel) -> rel ()) => rel ()
-  }
+-- | Unify two LTermLists element-wise.
+class UnifyList rel ts where
+  unifyList :: LTermList rel ts -> LTermList rel ts -> rel ()
 
--- | A named rule for a 5-ary judgment.
-data Rule5 rel a b c d e = Rule5
-  { rule5Name :: String
-  , rule5Body :: (?concl :: (LTerm a rel, LTerm b rel, LTerm c rel, LTerm d rel, LTerm e rel) -> rel ()) => rel ()
-  }
+instance Redex rel => UnifyList rel '[] where
+  unifyList TNil TNil = pure ()
 
--- | Create a named rule. The name appears in derivation trees.
+instance (LogicType t, Redex rel, UnifyList rel ts) => UnifyList rel (t ': ts) where
+  unifyList (x :> xs) (y :> ys) = (x <=> y) >> unifyList xs ys
+
+-- | Capture terms from an LTermList for derivation tracking.
+captureTerms :: LTermList rel ts -> [CapturedTerm rel]
+captureTerms TNil = []
+captureTerms (x :> xs) = CapturedTerm x : captureTerms xs
+
+--------------------------------------------------------------------------------
+-- Curried type family: compute curried function signature
+--------------------------------------------------------------------------------
+
+-- | Type family that computes the curried function type from a type list.
+-- Curried rel '[A, B, C] = LTerm A rel -> LTerm B rel -> LTerm C rel -> Applied rel '[A, B, C]
+type family Curried rel (ts :: [Type]) where
+  Curried rel '[]       = Applied rel '[]
+  Curried rel (t ': ts) = LTerm t rel -> Curried rel ts
+
+-- | Curried type with explicit result type (for internal use).
+-- CurriedR rel '[A, B] r = LTerm A rel -> LTerm B rel -> r
+type family CurriedR rel (ts :: [Type]) (r :: Type) where
+  CurriedR rel '[]       r = r
+  CurriedR rel (t ': ts) r = LTerm t rel -> CurriedR rel ts r
+
+--------------------------------------------------------------------------------
+-- BuildLTermList: helper for currying to LTermList
+--------------------------------------------------------------------------------
+
+-- | Helper class that converts curried arguments to an LTermList.
+-- Uses continuation-passing style to build up the list.
+class BuildLTermList rel ts where
+  buildLTermList :: (LTermList rel ts -> r) -> CurriedR rel ts r
+
+instance BuildLTermList rel '[] where
+  buildLTermList f = f TNil
+
+instance (LogicType t, BuildLTermList rel ts) => BuildLTermList rel (t ': ts) where
+  buildLTermList f x = buildLTermList (\rest -> f (x :> rest))
+
+--------------------------------------------------------------------------------
+-- judgment: unified curried judgment combinator
+--------------------------------------------------------------------------------
+
+-- | Define a judgment from a list of named rules.
+-- Works for any arity via type inference.
 --
 -- @
--- lookupHere = rule "lookup-here" $ fresh2 $ \\ty rest ->
---   concl $ lookup (cons ty rest) zro ty
--- @
-class MkRule r where
-  rule :: String -> r -> r
-
-instance MkRule (Rule rel a) where
-  rule name body = body { rule1Name = name }
-
-instance MkRule (Rule2 rel a b) where
-  rule name body = body { rule2Name = name }
-
-instance MkRule (Rule3 rel a b c) where
-  rule name body = body { rule3Name = name }
-
-instance MkRule (Rule4 rel a b c d) where
-  rule name body = body { rule4Name = name }
-
-instance MkRule (Rule5 rel a b c d e) where
-  rule name body = body { rule5Name = name }
-
--- | Smart constructor for unary rules.
-rule1 :: String -> ((?concl :: LTerm a rel -> rel ()) => rel ()) -> Rule rel a
-rule1 name body = Rule name body
-
--- | Smart constructor for binary rules.
-rule2 :: String -> ((?concl :: (LTerm a rel, LTerm b rel) -> rel ()) => rel ()) -> Rule2 rel a b
-rule2 name body = Rule2 name body
-
--- | Smart constructor for ternary rules.
-rule3 :: String -> ((?concl :: (LTerm a rel, LTerm b rel, LTerm c rel) -> rel ()) => rel ()) -> Rule3 rel a b c
-rule3 name body = Rule3 name body
-
--- | Smart constructor for quaternary rules.
-rule4 :: String -> ((?concl :: (LTerm a rel, LTerm b rel, LTerm c rel, LTerm d rel) -> rel ()) => rel ()) -> Rule4 rel a b c d
-rule4 name body = Rule4 name body
-
--- | Smart constructor for 5-ary rules.
-rule5 :: String -> ((?concl :: (LTerm a rel, LTerm b rel, LTerm c rel, LTerm d rel, LTerm e rel) -> rel ()) => rel ()) -> Rule5 rel a b c d e
-rule5 name body = Rule5 name body
-
---------------------------------------------------------------------------------
--- Judgment combinators
---------------------------------------------------------------------------------
-
--- | Define a unary judgment from a list of named rules.
--- Note: CapturedTerm captures original terms (x, y, z) for better rule extraction.
--- For SubstRedex, these resolve after unification. For DeepRedex, ground terms print as-is.
-judgment :: (Redex rel, LogicType a)
-         => String
-         -> [Rule rel a]
-         -> LTerm a rel -> Applied rel a
-judgment _ rules x = Applied x $ argument x $ \x' ->
-  let terms = [CapturedTerm x]  -- Capture original term
-  in let ?concl = \px -> x' <=> px
-  in asum [call $ Relation (rule1Name r) terms (rule1Body r) | r <- rules]
-
--- | Alias for 'judgment' for consistency with rule1, judgment2, etc.
-judgment1 :: (Redex rel, LogicType a)
-          => String
-          -> [Rule rel a]
-          -> LTerm a rel -> Applied rel a
-judgment1 = judgment
-
--- | Define a binary judgment from a list of named rules.
---
--- @
--- natLt = judgment2 "natLt" [natLtZero, natLtSucc]
+-- natLt :: Redex rel => LTerm Nat rel -> LTerm Nat rel -> Applied rel '[Nat, Nat]
+-- natLt = judgment "natLt" [natLtZero, natLtSucc]
 --   where
 --     natLtZero = rule "lt-zero" $ fresh $ \\m' ->
 --       concl $ natLt zro (suc m')
@@ -246,41 +213,10 @@ judgment1 = judgment
 --       concl $ natLt (suc n') (suc m')
 --       prem  $ natLt n' m'
 -- @
-judgment2 :: (Redex rel, LogicType a, LogicType b)
-          => String
-          -> [Rule2 rel a b]
-          -> LTerm a rel -> LTerm b rel -> Applied2 rel a b
-judgment2 _ rules x y = Applied2 (x, y) $ argument2 x y $ \x' y' ->
-  let terms = [CapturedTerm x, CapturedTerm y]  -- Capture original terms
-  in let ?concl = \(px, py) -> x' <=> px >> y' <=> py
-  in asum [call $ Relation (rule2Name r) terms (rule2Body r) | r <- rules]
-
--- | Define a ternary judgment from a list of named rules.
-judgment3 :: (Redex rel, LogicType a, LogicType b, LogicType c)
-          => String
-          -> [Rule3 rel a b c]
-          -> LTerm a rel -> LTerm b rel -> LTerm c rel -> Applied3 rel a b c
-judgment3 _ rules x y z = Applied3 (x, y, z) $ argument3 x y z $ \x' y' z' ->
-  let terms = [CapturedTerm x, CapturedTerm y, CapturedTerm z]  -- Capture original terms
-  in let ?concl = \(px, py, pz) -> x' <=> px >> y' <=> py >> z' <=> pz
-  in asum [call $ Relation (rule3Name r) terms (rule3Body r) | r <- rules]
-
--- | Define a quaternary judgment from a list of named rules.
-judgment4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d)
-          => String
-          -> [Rule4 rel a b c d]
-          -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> Applied4 rel a b c d
-judgment4 _ rules x y z w = Applied4 (x, y, z, w) $ argument4 x y z w $ \x' y' z' w' ->
-  let terms = [CapturedTerm x, CapturedTerm y, CapturedTerm z, CapturedTerm w]  -- Capture original
-  in let ?concl = \(px, py, pz, pw) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw
-  in asum [call $ Relation (rule4Name r) terms (rule4Body r) | r <- rules]
-
--- | Define a 5-ary judgment from a list of named rules.
-judgment5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
-          => String
-          -> [Rule5 rel a b c d e]
-          -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel -> Applied5 rel a b c d e
-judgment5 _ rules x y z w v = Applied5 (x, y, z, w, v) $ argument5 x y z w v $ \x' y' z' w' v' ->
-  let terms = [CapturedTerm x, CapturedTerm y, CapturedTerm z, CapturedTerm w, CapturedTerm v]
-  in let ?concl = \(px, py, pz, pw, pv) -> x' <=> px >> y' <=> py >> z' <=> pz >> w' <=> pw >> v' <=> pv
-  in asum [call $ Relation (rule5Name r) terms (rule5Body r) | r <- rules]
+judgment :: forall rel ts. (BuildLTermList rel ts, Redex rel, ArgumentList rel ts, UnifyList rel ts)
+         => String -> [Rule rel ts] -> CurriedR rel ts (Applied rel ts)
+judgment name rules = buildLTermList $ \args ->
+  Applied args $ argumentList args $ \args' ->
+    let terms = captureTerms args
+    in let ?concl = \pat -> unifyList args' pat
+    in asum [call $ Relation (ruleName r) terms (ruleBody r) | r <- rules]

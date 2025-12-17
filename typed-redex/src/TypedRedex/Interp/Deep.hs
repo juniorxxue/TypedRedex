@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeFamilies, GeneralisedNewtypeDeriving, DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, FlexibleContexts #-}
 {-# LANGUAGE GADTs, RankNTypes, TypeApplications, ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds #-}
 
 -- | DeepRedex: A deep embedding interpreter for TypedRedex
 --
@@ -28,7 +29,7 @@ import TypedRedex.Core.Internal.Logic
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Interp.Format (formatCon, formatConWith, intercalate, TermFormatter(..), DefaultTermFormatter(..), JudgmentFormatter(..), defaultFormatJudgment)
 import TypedRedex.Interp.PrettyPrint (VarNaming(..), namingByTag, subscriptNum)
-import TypedRedex.DSL.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..))
+import TypedRedex.DSL.Define (Applied(..))
 import Control.Applicative
 import Control.Monad (when)
 import Control.Monad.State
@@ -444,10 +445,10 @@ deepVar n = Free (DVar n)
 -- | Print all rules for a unary relation.
 printRules :: (LogicType a)
            => String
-           -> (LTerm a DeepRedex -> Applied DeepRedex a)
+           -> (LTerm a DeepRedex -> Applied DeepRedex '[a])
            -> IO ()
 printRules judgmentName rel = do
-  let goal = runDeep $ app1Goal $ rel (deepVar 0)
+  let goal = runDeep $ appGoal $ rel (deepVar 0)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
@@ -456,10 +457,10 @@ printRules judgmentName rel = do
 -- | Print all rules for a binary relation.
 printRules2 :: (LogicType a, LogicType b)
             => String
-            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> Applied2 DeepRedex a b)
+            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> Applied DeepRedex '[a, b])
             -> IO ()
 printRules2 judgmentName rel = do
-  let goal = runDeep $ app2Goal $ rel (deepVar 0) (deepVar 1)
+  let goal = runDeep $ appGoal $ rel (deepVar 0) (deepVar 1)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
@@ -468,10 +469,10 @@ printRules2 judgmentName rel = do
 -- | Print all rules for a ternary relation.
 printRules3 :: (LogicType a, LogicType b, LogicType c)
             => String
-            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> Applied3 DeepRedex a b c)
+            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> Applied DeepRedex '[a, b, c])
             -> IO ()
 printRules3 judgmentName rel = do
-  let goal = runDeep $ app3Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2)
+  let goal = runDeep $ appGoal $ rel (deepVar 0) (deepVar 1) (deepVar 2)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
@@ -480,10 +481,10 @@ printRules3 judgmentName rel = do
 -- | Print all rules for a quaternary relation.
 printRules4 :: (LogicType a, LogicType b, LogicType c, LogicType d)
             => String
-            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> Applied4 DeepRedex a b c d)
+            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> Applied DeepRedex '[a, b, c, d])
             -> IO ()
 printRules4 judgmentName rel = do
-  let goal = runDeep $ app4Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3)
+  let goal = runDeep $ appGoal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
@@ -492,10 +493,10 @@ printRules4 judgmentName rel = do
 -- | Print all rules for a 5-ary relation.
 printRules5 :: (LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
             => String
-            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> LTerm e DeepRedex -> Applied5 DeepRedex a b c d e)
+            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> LTerm e DeepRedex -> Applied DeepRedex '[a, b, c, d, e])
             -> IO ()
 printRules5 judgmentName rel = do
-  let goal = runDeep $ app5Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3) (deepVar 4)
+  let goal = runDeep $ appGoal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3) (deepVar 4)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgment judgmentName name ruleGoal
@@ -509,10 +510,10 @@ printRules5 judgmentName rel = do
 printRulesWith :: (LogicType a, TermFormatter fmt, JudgmentFormatter fmt)
                => fmt
                -> String
-               -> (LTerm a DeepRedex -> Applied DeepRedex a)
+               -> (LTerm a DeepRedex -> Applied DeepRedex '[a])
                -> IO ()
 printRulesWith fmt judgmentName rel = do
-  let goal = runDeepWith fmt $ app1Goal $ rel (deepVar 0)
+  let goal = runDeepWith fmt $ appGoal $ rel (deepVar 0)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal
@@ -522,10 +523,10 @@ printRulesWith fmt judgmentName rel = do
 printRules2With :: (LogicType a, LogicType b, TermFormatter fmt, JudgmentFormatter fmt)
                 => fmt
                 -> String
-                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> Applied2 DeepRedex a b)
+                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> Applied DeepRedex '[a, b])
                 -> IO ()
 printRules2With fmt judgmentName rel = do
-  let goal = runDeepWith fmt $ app2Goal $ rel (deepVar 0) (deepVar 1)
+  let goal = runDeepWith fmt $ appGoal $ rel (deepVar 0) (deepVar 1)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal
@@ -535,10 +536,10 @@ printRules2With fmt judgmentName rel = do
 printRules3With :: (LogicType a, LogicType b, LogicType c, TermFormatter fmt, JudgmentFormatter fmt)
                 => fmt
                 -> String
-                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> Applied3 DeepRedex a b c)
+                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> Applied DeepRedex '[a, b, c])
                 -> IO ()
 printRules3With fmt judgmentName rel = do
-  let goal = runDeepWith fmt $ app3Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2)
+  let goal = runDeepWith fmt $ appGoal $ rel (deepVar 0) (deepVar 1) (deepVar 2)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal
@@ -548,10 +549,10 @@ printRules3With fmt judgmentName rel = do
 printRules4With :: (LogicType a, LogicType b, LogicType c, LogicType d, TermFormatter fmt, JudgmentFormatter fmt)
                 => fmt
                 -> String
-                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> Applied4 DeepRedex a b c d)
+                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> Applied DeepRedex '[a, b, c, d])
                 -> IO ()
 printRules4With fmt judgmentName rel = do
-  let goal = runDeepWith fmt $ app4Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3)
+  let goal = runDeepWith fmt $ appGoal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal
@@ -561,10 +562,10 @@ printRules4With fmt judgmentName rel = do
 printRules5With :: (LogicType a, LogicType b, LogicType c, LogicType d, LogicType e, TermFormatter fmt, JudgmentFormatter fmt)
                 => fmt
                 -> String
-                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> LTerm e DeepRedex -> Applied5 DeepRedex a b c d e)
+                -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> LTerm e DeepRedex -> Applied DeepRedex '[a, b, c, d, e])
                 -> IO ()
 printRules5With fmt judgmentName rel = do
-  let goal = runDeepWith fmt $ app5Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3) (deepVar 4)
+  let goal = runDeepWith fmt $ appGoal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3) (deepVar 4)
   let rules = extractAllRules goal
   mapM_ (\(name, ruleGoal) -> do
     putStrLn $ formatAsRuleWithJudgmentWith fmt judgmentName name ruleGoal

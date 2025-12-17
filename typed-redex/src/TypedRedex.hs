@@ -64,7 +64,7 @@ module TypedRedex
 
     -- * Defining inference rules (for derivation tracking)
     -- | Build relations in rule style with conclusion patterns
-  , rule, rule1, rule2, rule3, rule4, rule5
+  , rule
 
     -- * Invoking relations
   , call       -- ^ Invoke a relation with fair interleaving
@@ -87,11 +87,12 @@ module TypedRedex
   , neg    -- ^ Constructive negation: succeed if goal has no solutions
 
     -- * Clean DSL syntax (judgment/rule/concl/prem)
-  , Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..)
-  , Conclude(..)  -- concl method + ConcludePat type family
-  , Premise(..)   -- prem method
-  , Rule(..), Rule2(..), Rule3(..), Rule4(..), Rule5(..)
-  , judgment, judgment1, judgment2, judgment3, judgment4, judgment5
+  , Applied(..)     -- Unified Applied rel ts (replaces Applied2, Applied3, etc.)
+  , LTermList(..)   -- Heterogeneous list of logic terms
+  , Conclude(..)    -- concl method + ConcludePat type family
+  , Premise(..)     -- prem method
+  , Rule(..)        -- Unified Rule rel ts
+  , judgment        -- Unified judgment (works for any arity)
   ) where
 
 -- Core types
@@ -102,7 +103,7 @@ import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Var, Reified, C
 import TypedRedex.DSL.Fresh (LTerm, LVar, fresh, fresh2, fresh3, fresh4, fresh5, argument, argument2, argument3, argument4, argument5)
 
 -- DSL: Define judgment/rule syntax
-import TypedRedex.DSL.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..), Conclude(..), Premise(..), Rule(..), Rule2(..), Rule3(..), Rule4(..), Rule5(..), rule, rule1, rule2, rule3, rule4, rule5, judgment, judgment1, judgment2, judgment3, judgment4, judgment5)
+import TypedRedex.DSL.Define (Applied(..), LTermList(..), Conclude(..), Premise(..), Rule(..), rule, judgment)
 
 -- Relation primitives
 import TypedRedex.Core.Internal.Relation (relation, relation2, relation3, relation4, relation5, call, callDirect, (<=>), conde)

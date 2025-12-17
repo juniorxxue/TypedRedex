@@ -1,17 +1,17 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE DataKinds #-}
 
 module Main (main) where
 
 import Control.Applicative (empty)
-import TypedRedex hiding (rule, rule3)
+import TypedRedex
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Tracing (runWithDerivation, runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.DSL.Type (quote0, quote1, quote2)
-import TypedRedex.DSL.Define (rule3)
 
 -- Bidirectional typing for STLC (Dunfield & Krishnaswami style)
 -- Using the new judgment/rule syntax
@@ -275,13 +275,13 @@ cons ty ctx = Ground $ ConsR ty ctx
 -- ─────────────────────── [lookup-there]
 -- lookup (Γ,B) (S n) A
 
-lookup' :: (Redex rel) => LTerm Ctx rel -> LTerm Nat rel -> LTerm Ty rel -> Applied3 rel Ctx Nat Ty
-lookup' = judgment3 "lookup" [lookupHere, lookupThere]
+lookup' :: (Redex rel) => LTerm Ctx rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Ctx, Nat, Ty]
+lookup' = judgment "lookup" [lookupHere, lookupThere]
   where
-    lookupHere = rule3 "lookup-here" $ fresh2 $ \ty rest ->
+    lookupHere = rule "lookup-here" $ fresh2 $ \ty rest ->
       concl $ lookup' (cons ty rest) zro ty
 
-    lookupThere = rule3 "lookup-there" $ fresh4 $ \ty' rest n' ty -> do
+    lookupThere = rule "lookup-there" $ fresh4 $ \ty' rest n' ty -> do
       concl $ lookup' (cons ty' rest) (suc n') ty
       prem  $ lookup' rest n' ty
 
@@ -313,26 +313,26 @@ lookup' = judgment3 "lookup" [lookupHere, lookupThere]
 -- ─────────────────── [⇒Ann]
 --   Γ ⊢ (e:A) ⇒ A
 
-synth :: (Redex rel) => LTerm Ctx rel -> LTerm Tm rel -> LTerm Ty rel -> Applied3 rel Ctx Tm Ty
-synth = judgment3 "synth" [synthVar, synthUnit, synthLamAnn, synthApp, synthAnn]
+synth :: (Redex rel) => LTerm Ctx rel -> LTerm Tm rel -> LTerm Ty rel -> Applied rel '[Ctx, Tm, Ty]
+synth = judgment "synth" [synthVar, synthUnit, synthLamAnn, synthApp, synthAnn]
   where
-    synthVar = rule3 "⇒Var" $ fresh3 $ \ctx n ty -> do
+    synthVar = rule "⇒Var" $ fresh3 $ \ctx n ty -> do
       concl $ synth ctx (var n) ty
       prem  $ lookup' ctx n ty
 
-    synthUnit = rule3 "⇒Unit" $ fresh $ \ctx ->
+    synthUnit = rule "⇒Unit" $ fresh $ \ctx ->
       concl $ synth ctx unit tunit
 
-    synthLamAnn = rule3 "⇒λ:" $ fresh4 $ \ctx a b body -> do
+    synthLamAnn = rule "⇒λ:" $ fresh4 $ \ctx a b body -> do
       concl $ synth ctx (lamAnn a body) (tarr a b)
       prem  $ synth (cons a ctx) body b
 
-    synthApp = rule3 "⇒App" $ fresh5 $ \ctx e1 e2 a b -> do
+    synthApp = rule "⇒App" $ fresh5 $ \ctx e1 e2 a b -> do
       concl $ synth ctx (app e1 e2) b
       prem  $ synth ctx e1 (tarr a b)
       prem  $ check ctx e2 a
 
-    synthAnn = rule3 "⇒Ann" $ fresh3 $ \ctx e ty -> do
+    synthAnn = rule "⇒Ann" $ fresh3 $ \ctx e ty -> do
       concl $ synth ctx (ann e ty) ty
       prem  $ check ctx e ty
 
@@ -350,14 +350,14 @@ synth = judgment3 "synth" [synthVar, synthUnit, synthLamAnn, synthApp, synthAnn]
 -- ─────────────────── [⇐Sub]
 --      Γ ⊢ e ⇐ A
 
-check :: (Redex rel) => LTerm Ctx rel -> LTerm Tm rel -> LTerm Ty rel -> Applied3 rel Ctx Tm Ty
-check = judgment3 "check" [checkLam, checkSub]
+check :: (Redex rel) => LTerm Ctx rel -> LTerm Tm rel -> LTerm Ty rel -> Applied rel '[Ctx, Tm, Ty]
+check = judgment "check" [checkLam, checkSub]
   where
-    checkLam = rule3 "⇐λ" $ fresh4 $ \ctx a b body -> do
+    checkLam = rule "⇐λ" $ fresh4 $ \ctx a b body -> do
       concl $ check ctx (lam body) (tarr a b)
       prem  $ check (cons a ctx) body b
 
-    checkSub = rule3 "⇐Sub" $ fresh3 $ \ctx e ty -> do
+    checkSub = rule "⇐Sub" $ fresh3 $ \ctx e ty -> do
       concl $ check ctx e ty
       prem  $ synth ctx e ty
 
@@ -368,25 +368,25 @@ check = judgment3 "check" [checkLam, checkSub]
 -- Run synthesis in mode (I,I,O): given ctx and term, find type
 synthIO :: Ctx -> Tm -> Stream Ty
 synthIO ctx0 e0 = runSubstRedex $ fresh $ \ty -> do
-  app3Goal $ synth (Ground $ project ctx0) (Ground $ project e0) ty
+  appGoal $ synth (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
 -- Run checking in mode (I,I,I): given ctx, term, and type, verify
 checkIII :: Ctx -> Tm -> Ty -> Stream ()
 checkIII ctx0 e0 ty0 = runSubstRedex $ do
-  app3Goal $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
+  appGoal $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 
 -- Run synthesis with derivation tracing using custom formatter
 synthWithTrace :: Ctx -> Tm -> Stream (Ty, Derivation)
 synthWithTrace ctx0 e0 = runWithDerivationWith BidirFormatter $ fresh $ \ty -> do
-  app3Goal $ synth (Ground $ project ctx0) (Ground $ project e0) ty
+  appGoal $ synth (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
 -- Run checking with derivation tracing using custom formatter
 checkWithTrace :: Ctx -> Tm -> Ty -> Stream ((), Derivation)
 checkWithTrace ctx0 e0 ty0 = runWithDerivationWith BidirFormatter $ do
-  app3Goal $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
+  appGoal $ check (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 
 --------------------------------------------------------------------------------

@@ -2,18 +2,18 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE DataKinds #-}
 
 module Main (main) where
 
 import Control.Applicative (empty)
-import TypedRedex hiding (rule, rule2, rule3, rule4)
+import TypedRedex
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Tracing (runWithDerivation, runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
-import TypedRedex.Interp.Deep (printRules3, printRules3With)
+import TypedRedex.Interp.Deep (printRules3With)
 import TypedRedex.DSL.Type (quote0, quote1, quote2)
-import TypedRedex.DSL.Define (rule2, rule3, rule4)
 
 import Syntax
 
@@ -109,39 +109,39 @@ prettyDerivation = prettyDerivationWith SystemFFormatter
 --------------------------------------------------------------------------------
 
 -- Nat equality check
-natEq :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> Applied2 rel Nat Nat
-natEq = judgment2 "natEq" [natEqZero, natEqSucc]
+natEq :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> Applied rel '[Nat, Nat]
+natEq = judgment "natEq" [natEqZero, natEqSucc]
   where
-    natEqZero = rule2 "eq-zero" $
+    natEqZero = rule "eq-zero" $
       concl $ natEq zro zro
 
-    natEqSucc = rule2 "eq-succ" $ fresh2 $ \n' m' -> do
+    natEqSucc = rule "eq-succ" $ fresh2 $ \n' m' -> do
       concl $ natEq (suc n') (suc m')
       prem  $ natEq n' m'
 
 -- Less than check (strict)
-natLt :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> Applied2 rel Nat Nat
-natLt = judgment2 "natLt" [natLtZero, natLtSucc]
+natLt :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> Applied rel '[Nat, Nat]
+natLt = judgment "natLt" [natLtZero, natLtSucc]
   where
-    natLtZero = rule2 "lt-zero" $ fresh $ \m' ->
+    natLtZero = rule "lt-zero" $ fresh $ \m' ->
       concl $ natLt zro (suc m')
 
-    natLtSucc = rule2 "lt-succ" $ fresh2 $ \n' m' -> do
+    natLtSucc = rule "lt-succ" $ fresh2 $ \n' m' -> do
       concl $ natLt (suc n') (suc m')
       prem  $ natLt n' m'
 
 -- Context lookup
-lookupTm :: (Redex rel) => LTerm Ctx rel -> LTerm Nat rel -> LTerm Ty rel -> Applied3 rel Ctx Nat Ty
-lookupTm = judgment3 "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
+lookupTm :: (Redex rel) => LTerm Ctx rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Ctx, Nat, Ty]
+lookupTm = judgment "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
   where
-    lookupTmHere = rule3 "lookup-here" $ fresh2 $ \ty rest ->
+    lookupTmHere = rule "lookup-here" $ fresh2 $ \ty rest ->
       concl $ lookupTm (tmBind ty rest) zro ty
 
-    lookupTmThere = rule3 "lookup-there" $ fresh4 $ \ty ty' rest n' -> do
+    lookupTmThere = rule "lookup-there" $ fresh4 $ \ty ty' rest n' -> do
       concl $ lookupTm (tmBind ty' rest) (suc n') ty
       prem  $ lookupTm rest n' ty
 
-    lookupTmSkip = rule3 "lookup-skip" $ fresh3 $ \rest n ty -> do
+    lookupTmSkip = rule "lookup-skip" $ fresh3 $ \rest n ty -> do
       concl $ lookupTm (tyBind rest) n ty
       prem  $ lookupTm rest n ty
 
@@ -156,13 +156,13 @@ lookupTm = judgment3 "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
 -- ────────────────────────────── [add-succ]
 -- addNat (S n) m (S sum)
 
-addNat :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> LTerm Nat rel -> Applied3 rel Nat Nat Nat
-addNat = judgment3 "addNat" [addZero, addSucc]
+addNat :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> LTerm Nat rel -> Applied rel '[Nat, Nat, Nat]
+addNat = judgment "addNat" [addZero, addSucc]
   where
-    addZero = rule3 "add-zero" $ fresh $ \m ->
+    addZero = rule "add-zero" $ fresh $ \m ->
       concl $ addNat zro m m
 
-    addSucc = rule3 "add-succ" $ fresh3 $ \n' m sum' -> do
+    addSucc = rule "add-succ" $ fresh3 $ \n' m sum' -> do
       concl $ addNat (suc n') m (suc sum')
       prem  $ addNat n' m sum'
 
@@ -185,22 +185,22 @@ addNat = judgment3 "addNat" [addZero, addSucc]
 -- ─────────────────────────────────────────── [subst-all]
 -- substTy depth subTy (∀.body) (∀.body')
 
-substTy :: (Redex rel) => LTerm Nat rel -> LTerm Ty rel -> LTerm Ty rel -> LTerm Ty rel -> Applied4 rel Nat Ty Ty Ty
-substTy = judgment4 "substTy" [substUnit, substVar, substArr, substAll]
+substTy :: (Redex rel) => LTerm Nat rel -> LTerm Ty rel -> LTerm Ty rel -> LTerm Ty rel -> Applied rel '[Nat, Ty, Ty, Ty]
+substTy = judgment "substTy" [substUnit, substVar, substArr, substAll]
   where
-    substUnit = rule4 "subst-unit" $ fresh2 $ \depth subTy ->
+    substUnit = rule "subst-unit" $ fresh2 $ \depth subTy ->
       concl $ substTy depth subTy tunit tunit
 
-    substVar = rule4 "subst-var" $ fresh3 $ \depth subTy n -> fresh $ \result -> do
+    substVar = rule "subst-var" $ fresh3 $ \depth subTy n -> fresh $ \result -> do
       concl $ substTy depth subTy (tvar n) result
       prem  $ substTyVar depth subTy n result
 
-    substArr = rule4 "subst-arr" $ fresh4 $ \depth subTy a b -> fresh2 $ \a' b' -> do
+    substArr = rule "subst-arr" $ fresh4 $ \depth subTy a b -> fresh2 $ \a' b' -> do
       concl $ substTy depth subTy (tarr a b) (tarr a' b')
       prem  $ substTy depth subTy a a'
       prem  $ substTy depth subTy b b'
 
-    substAll = rule4 "subst-all" $ fresh3 $ \depth subTy body -> fresh $ \body' -> do
+    substAll = rule "subst-all" $ fresh3 $ \depth subTy body -> fresh $ \body' -> do
       concl $ substTy depth subTy (tall body) (tall body')
       prem  $ substTy (suc depth) subTy body body'
 
@@ -220,17 +220,17 @@ substTy = judgment4 "substTy" [substUnit, substVar, substArr, substAll]
 -- ──────────────────────────────────────────── [subst-var-gt]
 -- substTyVar depth subTy (S n') (TVar n')
 
-substTyVar :: (Redex rel) => LTerm Nat rel -> LTerm Ty rel -> LTerm Nat rel -> LTerm Ty rel -> Applied4 rel Nat Ty Nat Ty
-substTyVar = judgment4 "substTyVar" [substVarEq, substVarLt, substVarGt]
+substTyVar :: (Redex rel) => LTerm Nat rel -> LTerm Ty rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Nat, Ty, Nat, Ty]
+substTyVar = judgment "substTyVar" [substVarEq, substVarLt, substVarGt]
   where
-    substVarEq = rule4 "subst-var-eq" $ fresh2 $ \depth subTy -> do
+    substVarEq = rule "subst-var-eq" $ fresh2 $ \depth subTy -> do
       concl $ substTyVar depth subTy depth subTy
 
-    substVarLt = rule4 "subst-var-lt" $ fresh3 $ \depth subTy n -> do
+    substVarLt = rule "subst-var-lt" $ fresh3 $ \depth subTy n -> do
       concl $ substTyVar depth subTy n (tvar n)
       prem  $ natLt n depth
 
-    substVarGt = rule4 "subst-var-gt" $ fresh3 $ \depth subTy n' -> do
+    substVarGt = rule "subst-var-gt" $ fresh3 $ \depth subTy n' -> do
       concl $ substTyVar depth subTy (suc n') (tvar n')
       prem  $ natLt depth (suc n')
 
@@ -253,22 +253,22 @@ substTyVar = judgment4 "substTyVar" [substVarEq, substVarLt, substVarGt]
 -- ─────────────────────────────────────────────── [shift-all]
 -- shiftTy cutoff amount (∀.body) (∀.body')
 
-shiftTy :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> LTerm Ty rel -> LTerm Ty rel -> Applied4 rel Nat Nat Ty Ty
-shiftTy = judgment4 "shiftTy" [shiftUnit, shiftVar, shiftArr, shiftAll]
+shiftTy :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> LTerm Ty rel -> LTerm Ty rel -> Applied rel '[Nat, Nat, Ty, Ty]
+shiftTy = judgment "shiftTy" [shiftUnit, shiftVar, shiftArr, shiftAll]
   where
-    shiftUnit = rule4 "shift-unit" $ fresh2 $ \cutoff amount ->
+    shiftUnit = rule "shift-unit" $ fresh2 $ \cutoff amount ->
       concl $ shiftTy cutoff amount tunit tunit
 
-    shiftVar = rule4 "shift-var" $ fresh3 $ \cutoff amount n -> fresh $ \result -> do
+    shiftVar = rule "shift-var" $ fresh3 $ \cutoff amount n -> fresh $ \result -> do
       concl $ shiftTy cutoff amount (tvar n) result
       prem  $ shiftTyVar cutoff amount n result
 
-    shiftArr = rule4 "shift-arr" $ fresh4 $ \cutoff amount a b -> fresh2 $ \a' b' -> do
+    shiftArr = rule "shift-arr" $ fresh4 $ \cutoff amount a b -> fresh2 $ \a' b' -> do
       concl $ shiftTy cutoff amount (tarr a b) (tarr a' b')
       prem  $ shiftTy cutoff amount a a'
       prem  $ shiftTy cutoff amount b b'
 
-    shiftAll = rule4 "shift-all" $ fresh3 $ \cutoff amount body -> fresh $ \body' -> do
+    shiftAll = rule "shift-all" $ fresh3 $ \cutoff amount body -> fresh $ \body' -> do
       concl $ shiftTy cutoff amount (tall body) (tall body')
       prem  $ shiftTy (suc cutoff) amount body body'
 
@@ -284,21 +284,21 @@ shiftTy = judgment4 "shiftTy" [shiftUnit, shiftVar, shiftArr, shiftAll]
 -- ─────────────────────────────────────── [shift-var-ge]
 -- shiftTyVar cutoff amount n (TVar n')
 
-shiftTyVar :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> LTerm Nat rel -> LTerm Ty rel -> Applied4 rel Nat Nat Nat Ty
-shiftTyVar = judgment4 "shiftTyVar" [shiftVarLt, shiftVarGeEq, shiftVarGeGt]
+shiftTyVar :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Nat, Nat, Nat, Ty]
+shiftTyVar = judgment "shiftTyVar" [shiftVarLt, shiftVarGeEq, shiftVarGeGt]
   where
     -- n < cutoff: keep variable unchanged
-    shiftVarLt = rule4 "shift-var-lt" $ fresh3 $ \cutoff amount n -> do
+    shiftVarLt = rule "shift-var-lt" $ fresh3 $ \cutoff amount n -> do
       concl $ shiftTyVar cutoff amount n (tvar n)
       prem  $ natLt n cutoff
 
     -- n = cutoff: shift by amount
-    shiftVarGeEq = rule4 "shift-var-eq" $ fresh3 $ \cutoff amount n' -> do
+    shiftVarGeEq = rule "shift-var-eq" $ fresh3 $ \cutoff amount n' -> do
       concl $ shiftTyVar cutoff amount cutoff (tvar n')
       prem  $ addNat cutoff amount n'
 
     -- n > cutoff: shift by amount
-    shiftVarGeGt = rule4 "shift-var-gt" $ fresh4 $ \cutoff amount n n' -> do
+    shiftVarGeGt = rule "shift-var-gt" $ fresh4 $ \cutoff amount n n' -> do
       concl $ shiftTyVar cutoff amount n (tvar n')
       prem  $ natLt cutoff n
       prem  $ addNat n amount n'
@@ -330,30 +330,30 @@ shiftTyVar = judgment4 "shiftTyVar" [shiftVarLt, shiftVarGeEq, shiftVarGeGt]
 -- ─────────────────────────────────────────────── [typeof-tapp]
 -- typeof ctx (e [tyB]) tyA'
 
-typeof :: (Redex rel) => LTerm Ctx rel -> LTerm Tm rel -> LTerm Ty rel -> Applied3 rel Ctx Tm Ty
-typeof = judgment3 "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeofTLam, typeofTApp]
+typeof :: (Redex rel) => LTerm Ctx rel -> LTerm Tm rel -> LTerm Ty rel -> Applied rel '[Ctx, Tm, Ty]
+typeof = judgment "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeofTLam, typeofTApp]
   where
-    typeofUnit = rule3 "typeof-unit" $ fresh $ \ctx ->
+    typeofUnit = rule "typeof-unit" $ fresh $ \ctx ->
       concl $ typeof ctx unit' tunit
 
-    typeofVar = rule3 "typeof-var" $ fresh3 $ \ctx n ty -> do
+    typeofVar = rule "typeof-var" $ fresh3 $ \ctx n ty -> do
       concl $ typeof ctx (var n) ty
       prem  $ lookupTm ctx n ty
 
-    typeofLam = rule3 "typeof-lam" $ fresh4 $ \ctx tyA body tyB -> do
+    typeofLam = rule "typeof-lam" $ fresh4 $ \ctx tyA body tyB -> do
       concl $ typeof ctx (lam tyA body) (tarr tyA tyB)
       prem  $ typeof (tmBind tyA ctx) body tyB
 
-    typeofApp = rule3 "typeof-app" $ fresh5 $ \ctx e1 e2 tyA tyB -> do
+    typeofApp = rule "typeof-app" $ fresh5 $ \ctx e1 e2 tyA tyB -> do
       concl $ typeof ctx (app e1 e2) tyB
       prem  $ typeof ctx e1 (tarr tyA tyB)
       prem  $ typeof ctx e2 tyA
 
-    typeofTLam = rule3 "typeof-tlam" $ fresh3 $ \ctx body tyA -> do
+    typeofTLam = rule "typeof-tlam" $ fresh3 $ \ctx body tyA -> do
       concl $ typeof ctx (tlam body) (tall tyA)
       prem  $ typeof (tyBind ctx) body tyA
 
-    typeofTApp = rule3 "typeof-tapp" $ fresh4 $ \ctx e tyB tyA -> fresh $ \tyA' -> do
+    typeofTApp = rule "typeof-tapp" $ fresh4 $ \ctx e tyB tyA -> fresh $ \tyA' -> do
       concl $ typeof ctx (tapp e tyB) tyA'
       prem  $ typeof ctx e (tall tyA)
       prem  $ substTy zro tyB tyA tyA'
@@ -364,30 +364,30 @@ typeof = judgment3 "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeof
 
 typeofIO :: Ctx -> Tm -> Stream Ty
 typeofIO ctx0 e0 = runSubstRedex $ fresh $ \ty -> do
-  app3Goal $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
+  appGoal $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
 checkIII :: Ctx -> Tm -> Ty -> Stream ()
 checkIII ctx0 e0 ty0 = runSubstRedex $ do
-  app3Goal $ typeof (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
+  appGoal $ typeof (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
   pure ()
 
 -- Run with derivation tracing using custom formatter
 typeofWithTrace :: Ctx -> Tm -> Stream (Ty, Derivation)
 typeofWithTrace ctx0 e0 = runWithDerivationWith SystemFFormatter $ fresh $ \ty -> do
-  app3Goal $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
+  appGoal $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
   eval ty
 
 -- Test natLt with derivation
 natLtWithTrace :: Nat -> Nat -> Stream ((), Derivation)
 natLtWithTrace n m = runWithDerivationWith SystemFFormatter $ do
-  app2Goal $ natLt (Ground $ project n) (Ground $ project m)
+  appGoal $ natLt (Ground $ project n) (Ground $ project m)
   pure ()
 
 -- Test lookupTm with derivation
 lookupWithTrace :: Ctx -> Nat -> Stream (Ty, Derivation)
 lookupWithTrace ctx0 n0 = runWithDerivationWith SystemFFormatter $ fresh $ \ty -> do
-  app3Goal $ lookupTm (Ground $ project ctx0) (Ground $ project n0) ty
+  appGoal $ lookupTm (Ground $ project ctx0) (Ground $ project n0) ty
   eval ty
 
 --------------------------------------------------------------------------------
