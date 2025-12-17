@@ -8,9 +8,9 @@ module TypedRedex.Core.Internal.Relation
   ( -- * Relation construction
     relation, relation2, relation3, relation4, relation5
     -- * Relation invocation
-  , call, premise, embed
+  , call, callDirect
     -- * Unification operators
-  , (===), (<=>)
+  , (<=>)
     -- * Disjunction
   , conde
   ) where
@@ -25,23 +25,23 @@ import Control.Applicative (asum)
 --------------------------------------------------------------------------------
 
 -- | Define a unary relation.
-relation :: (Redex rel, LogicType a) => String -> (L a rel -> rel ()) -> L a rel -> Relation rel
+relation :: (Redex rel, LogicType a) => String -> (LTerm a rel -> rel ()) -> LTerm a rel -> Relation rel
 relation n f a_ = Relation n [CapturedTerm a_] $ argument a_ f
 
 -- | Define a binary relation.
-relation2 :: (Redex rel, LogicType a, LogicType b) => String -> (L a rel -> L b rel -> rel ()) -> L a rel -> L b rel -> Relation rel
+relation2 :: (Redex rel, LogicType a, LogicType b) => String -> (LTerm a rel -> LTerm b rel -> rel ()) -> LTerm a rel -> LTerm b rel -> Relation rel
 relation2 n f a_ b_ = Relation n [CapturedTerm a_, CapturedTerm b_] $ argument2 a_ b_ f
 
 -- | Define a ternary relation.
-relation3 :: (Redex rel, LogicType a, LogicType b, LogicType c) => String -> (L a rel -> L b rel -> L c rel -> rel ()) -> L a rel -> L b rel -> L c rel -> Relation rel
+relation3 :: (Redex rel, LogicType a, LogicType b, LogicType c) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> rel ()) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> Relation rel
 relation3 n f a_ b_ c_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_] $ argument3 a_ b_ c_ f
 
 -- | Define a quaternary relation.
-relation4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d) => String -> (L a rel -> L b rel -> L c rel -> L d rel -> rel ()) -> L a rel -> L b rel -> L c rel -> L d rel -> Relation rel
+relation4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> rel ()) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> Relation rel
 relation4 n f a_ b_ c_ d_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_] $ argument4 a_ b_ c_ d_ f
 
 -- | Define a 5-ary relation.
-relation5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e) => String -> (L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> rel ()) -> L a rel -> L b rel -> L c rel -> L d rel -> L e rel -> Relation rel
+relation5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel -> rel ()) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel -> Relation rel
 relation5 n f a_ b_ c_ d_ e_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_, CapturedTerm e_] $ argument5 a_ b_ c_ d_ e_ f
 
 --------------------------------------------------------------------------------
@@ -49,27 +49,39 @@ relation5 n f a_ b_ c_ d_ e_ = Relation n [CapturedTerm a_, CapturedTerm b_, Cap
 --------------------------------------------------------------------------------
 
 -- | Invoke a relation with suspension (for fair interleaving).
+--
+-- This is the standard way to call a relation. The suspension ensures
+-- fair interleaving in the search, preventing one branch from starving others.
 call :: (Redex rel) => Relation rel -> rel ()
 call = call_ Opaque
 
--- | Alias for 'call'. Use in inference rules to invoke premises.
-premise :: (Redex rel) => Relation rel -> rel ()
-premise = call
-
--- | Invoke a relation without suspension (transparent embedding).
-embed :: (Redex rel) => Relation rel -> rel ()
-embed = call_ Transparent
+-- | Invoke a relation without suspension (direct/transparent execution).
+--
+-- Use this when you want to inline a relation call without fair interleaving.
+-- This is useful for helper relations that should execute immediately.
+--
+-- @
+-- run f = fresh $ \\x -> do
+--   callDirect $ f x  -- Execute without suspension
+--   eval x
+-- @
+callDirect :: (Redex rel) => Relation rel -> rel ()
+callDirect = call_ Transparent
 
 --------------------------------------------------------------------------------
 -- Unification operators
 --------------------------------------------------------------------------------
 
--- | Unify a logic term with a ground pattern.
-(===) :: (LogicType a, Redex rel) => L a rel -> Reified a (RVar rel) -> rel ()
-a === b = unify a (Ground b)
-
 -- | Unify two logic terms.
-(<=>) :: (LogicType a, Redex rel) => L a rel -> L a rel -> rel ()
+--
+-- This is the primary unification operator. Use it for equating logic terms:
+--
+-- @
+-- fresh2 $ \\x y -> do
+--   x <=> y           -- Unify two logic variables
+--   x <=> Ground (project someValue)  -- Unify with a ground value
+-- @
+(<=>) :: (LogicType a, Redex rel) => LTerm a rel -> LTerm a rel -> rel ()
 a <=> b = unify a b
 
 --------------------------------------------------------------------------------

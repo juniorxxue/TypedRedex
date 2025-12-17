@@ -58,25 +58,27 @@ Refactoring Plan
   Principle: Users import TypedRedex and get DSL + Interp. They never see Core.Internal.*.
 
   ---
-  Phase 3: Naming Cleanup (after architecture is stable)
+  Phase 3: Naming Cleanup (after architecture is stable) ✅ DONE
 
-  3.1 Rename core type aliases
+  3.1 Rename core type aliases ✅
   - L a rel → LTerm a rel
   - Var' a rel → LVar a rel
-  - Update all usages
+  - Old names removed completely (no backward compatibility)
+  - Updated all internal usages and examples
 
-  3.2 Fix arity suffix inconsistency
-  - Add judgment1 to Define.hs (or remove all *1 variants — pick one convention)
-  - Ensure rule, fresh, relation, run, argument families are consistent
+  3.2 Fix arity suffix inconsistency ✅
+  - Added judgment1 to Define.hs for consistency with rule1
+  - All families now have consistent *1 variants: fresh, argument, relation, rule, judgment, run
 
-  3.3 Clarify call variants
-  - Rename embed → callDirect
-  - Remove premise alias (or keep if you prefer paper notation)
-  - Document the difference clearly
+  3.3 Clarify call variants ✅
+  - Renamed embed → callDirect (direct execution without suspension)
+  - Added documentation explaining call vs callDirect
+  - Old names (premise, embed) removed completely
 
-  3.4 Unify operators
-  - Remove (===), keep only (<=>)
-  - Update all call sites to use Ground $ project value pattern
+  3.4 Unify operators ✅
+  - Removed (===) completely
+  - (<=> ) is now the only unification operator
+  - Usage: x <=> Ground (project v)
 
   ---
   Phase 4: Extension Reduction
@@ -125,9 +127,9 @@ Refactoring Plan
   | 3       | 1.3 Extract SubstCore.hs               | Deduplicate SubstRedex/TracingRedex      | ✅     |
   | 4       | 1.4 Deprecate Rule.hs                  | Migrate to Define.hs style               | ✅     |
   | 5       | 2.0 Three-layer reorganization         | Core/Internal, DSL, Interp structure     | ✅     |
-  | 6       | 3.1 Rename L/Var'                      | LTerm, LVar                              |        |
-  | 7       | 3.2 Fix arity suffixes                 | Consistent *1 convention                 |        |
-  | 8       | 3.3 + 3.4 Call variants + operators    | callDirect, remove (===)                 |        |
+  | 6       | 3.1 Rename L/Var'                      | LTerm, LVar                              | ✅     |
+  | 7       | 3.2 Fix arity suffixes                 | Consistent *1 convention                 | ✅     |
+  | 8       | 3.3 + 3.4 Call variants + operators    | callDirect, deprecate (===)              | ✅     |
   | 9       | 4.1 Remove ImplicitParams              | Explicit RuleEnv or ReaderT              |        |
   | 10      | 4.2 + 4.3 Extension cleanup            | ApplicativeDo, TypeApplications          |        |
   | 11      | 5.1 + 5.2 Format consolidation         | Unified pretty-printing                  |        |

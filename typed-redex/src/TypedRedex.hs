@@ -21,13 +21,13 @@
 --
 -- 2. **Logic variables** (RVar): Unification variables (like Prolog variables)
 --    - Created with fresh, fresh2, etc.
---    - Bound through unification (===)
+--    - Bound through unification (<=>)
 --
--- 3. **Logic terms** (L a rel): Either ground values (Ground) or variables (Free)
---    - L Nat rel: a natural number that might be a variable
---    - L (Tm, Ty) rel: a pair where components might be variables
+-- 3. **Logic terms** (LTerm a rel): Either ground values (Ground) or variables (Free)
+--    - LTerm Nat rel: a natural number that might be a variable
+--    - LTerm (Tm, Ty) rel: a pair where components might be variables
 --
--- 4. **Unification** (===, <=>): Equate two logic terms
+-- 4. **Unification** (<=>): Equate two logic terms
 --    - Can bind variables, fail if incompatible, or recursively unify structures
 --
 -- 5. **Disjunction** (conde, <|>): Try multiple alternatives (OR)
@@ -51,7 +51,8 @@ module TypedRedex
   , RedexNeg              -- ^ Negation support
   , LogicType             -- ^ Types that can be used in logic programs
   , Logic(..)             -- ^ Logic terms: Free (variable) or Ground (value)
-  , L                     -- ^ Type alias for Logic a (RVar rel)
+  , LTerm                 -- ^ Type alias for Logic a (RVar rel)
+  , LVar                  -- ^ Type alias for Var a (RVar rel)
 
     -- * Creating fresh variables
     -- | Allocate unbound logic variables (∃ quantification)
@@ -66,9 +67,8 @@ module TypedRedex
   , rule, rule1, rule2, rule3, rule4, rule5
 
     -- * Invoking relations
-  , call   -- ^ Invoke a relation (goal call)
-  , premise -- ^ Alias for call
-  , embed  -- ^ Embed a relation transparently
+  , call       -- ^ Invoke a relation with fair interleaving
+  , callDirect -- ^ Invoke a relation without suspension (direct execution)
 
     -- * Evaluation
   , eval   -- ^ Extract ground value from a logic term
@@ -77,8 +77,7 @@ module TypedRedex
     -- | Execute relations and return streams of solutions
   , run, run2, run3, run4, run5
 
-    -- * Unification and relational operators
-  , (===)  -- ^ Unify logic term with ground pattern
+    -- * Unification
   , (<=>)  -- ^ Unify two logic terms
 
     -- * Disjunction
@@ -92,7 +91,7 @@ module TypedRedex
   , Conclude(..)  -- concl method + ConcludePat type family
   , Premise(..)   -- prem method
   , Rule(..), Rule2(..), Rule3(..), Rule4(..), Rule5(..)
-  , judgment, judgment2, judgment3, judgment4, judgment5
+  , judgment, judgment1, judgment2, judgment3, judgment4, judgment5
   ) where
 
 -- Core types
@@ -100,13 +99,13 @@ import TypedRedex.Core.Internal.Redex (Redex(..), RedexEval(..), RedexNeg(..), R
 import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Var, Reified, Constructor(..), Field(..))
 
 -- DSL: Fresh variables and type aliases
-import TypedRedex.DSL.Fresh (L, Var', fresh, fresh2, fresh3, fresh4, fresh5, argument, argument2, argument3, argument4, argument5)
+import TypedRedex.DSL.Fresh (LTerm, LVar, fresh, fresh2, fresh3, fresh4, fresh5, argument, argument2, argument3, argument4, argument5)
 
 -- DSL: Define judgment/rule syntax
-import TypedRedex.DSL.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..), Conclude(..), Premise(..), Rule(..), Rule2(..), Rule3(..), Rule4(..), Rule5(..), rule, rule1, rule2, rule3, rule4, rule5, judgment, judgment2, judgment3, judgment4, judgment5)
+import TypedRedex.DSL.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..), Conclude(..), Premise(..), Rule(..), Rule2(..), Rule3(..), Rule4(..), Rule5(..), rule, rule1, rule2, rule3, rule4, rule5, judgment, judgment1, judgment2, judgment3, judgment4, judgment5)
 
 -- Relation primitives
-import TypedRedex.Core.Internal.Relation (relation, relation2, relation3, relation4, relation5, call, premise, embed, (===), (<=>), conde)
+import TypedRedex.Core.Internal.Relation (relation, relation2, relation3, relation4, relation5, call, callDirect, (<=>), conde)
 
 -- Evaluation and running
 import TypedRedex.Interp.Run (eval, run, run2, run3, run4, run5)

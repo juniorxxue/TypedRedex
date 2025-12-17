@@ -22,7 +22,7 @@ module TypedRedex.Interp.Deep
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.DSL.Fresh (L)
+import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Interp.Format (formatCon, intercalate)
 import TypedRedex.Interp.PrettyPrint (VarNaming(..), namingByTag, subscriptNum)
 import TypedRedex.DSL.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..))
@@ -455,7 +455,7 @@ deepVar n = Free (DVar n)
 -- | Print all rules for a unary relation.
 printRules :: (LogicType a)
            => String
-           -> (L a DeepRedex -> Applied DeepRedex a)
+           -> (LTerm a DeepRedex -> Applied DeepRedex a)
            -> IO ()
 printRules judgmentName rel = do
   let goal = runDeep $ app1Goal $ rel (deepVar 0)
@@ -467,7 +467,7 @@ printRules judgmentName rel = do
 -- | Print all rules for a binary relation.
 printRules2 :: (LogicType a, LogicType b)
             => String
-            -> (L a DeepRedex -> L b DeepRedex -> Applied2 DeepRedex a b)
+            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> Applied2 DeepRedex a b)
             -> IO ()
 printRules2 judgmentName rel = do
   let goal = runDeep $ app2Goal $ rel (deepVar 0) (deepVar 1)
@@ -479,7 +479,7 @@ printRules2 judgmentName rel = do
 -- | Print all rules for a ternary relation.
 printRules3 :: (LogicType a, LogicType b, LogicType c)
             => String
-            -> (L a DeepRedex -> L b DeepRedex -> L c DeepRedex -> Applied3 DeepRedex a b c)
+            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> Applied3 DeepRedex a b c)
             -> IO ()
 printRules3 judgmentName rel = do
   let goal = runDeep $ app3Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2)
@@ -491,7 +491,7 @@ printRules3 judgmentName rel = do
 -- | Print all rules for a quaternary relation.
 printRules4 :: (LogicType a, LogicType b, LogicType c, LogicType d)
             => String
-            -> (L a DeepRedex -> L b DeepRedex -> L c DeepRedex -> L d DeepRedex -> Applied4 DeepRedex a b c d)
+            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> Applied4 DeepRedex a b c d)
             -> IO ()
 printRules4 judgmentName rel = do
   let goal = runDeep $ app4Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3)
@@ -503,7 +503,7 @@ printRules4 judgmentName rel = do
 -- | Print all rules for a 5-ary relation.
 printRules5 :: (LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
             => String
-            -> (L a DeepRedex -> L b DeepRedex -> L c DeepRedex -> L d DeepRedex -> L e DeepRedex -> Applied5 DeepRedex a b c d e)
+            -> (LTerm a DeepRedex -> LTerm b DeepRedex -> LTerm c DeepRedex -> LTerm d DeepRedex -> LTerm e DeepRedex -> Applied5 DeepRedex a b c d e)
             -> IO ()
 printRules5 judgmentName rel = do
   let goal = runDeep $ app5Goal $ rel (deepVar 0) (deepVar 1) (deepVar 2) (deepVar 3) (deepVar 4)

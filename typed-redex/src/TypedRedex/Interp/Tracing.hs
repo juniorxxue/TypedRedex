@@ -60,7 +60,7 @@ import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
 import TypedRedex.Core.Internal.Unify (flatteningUnify, occursCheck)
 import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
-import TypedRedex.DSL.Fresh (L, Var')
+import TypedRedex.DSL.Fresh (LTerm, LVar)
 import TypedRedex.Interp.Format (formatCon, intercalate)
 import TypedRedex.Interp.Stream
 import Control.Monad.State
@@ -333,7 +333,7 @@ resolveCaptured :: CapturedTerm (TracingRedex s) -> TracingRedex s String
 resolveCaptured (CapturedTerm term) = prettyResolved term
 
 -- | Pretty-print a logic term after resolving through substitution.
-prettyResolved :: LogicType a => L a (TracingRedex s) -> TracingRedex s String
+prettyResolved :: LogicType a => LTerm a (TracingRedex s) -> TracingRedex s String
 prettyResolved (Free v) = do
   mx <- gets (readSubst v)
   case mx of
@@ -385,7 +385,7 @@ instance RedexEval (TracingRedex s) where
       Nothing -> error $ "Unbound variable: " ++ displayVar v
       Just val -> evalLogic val
     where
-      evalLogic :: LogicType a => L a (TracingRedex s) -> TracingRedex s a
+      evalLogic :: LogicType a => LTerm a (TracingRedex s) -> TracingRedex s a
       evalLogic (Free v') = derefVar v'
       evalLogic (Ground r) = derefVal evalLogic r
 

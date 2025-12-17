@@ -15,7 +15,7 @@ module TypedRedex.Interp.Subst
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Unify (flatteningUnify, occursCheck)
 import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
-import TypedRedex.DSL.Fresh (L, Var')
+import TypedRedex.DSL.Fresh (LTerm, LVar)
 import TypedRedex.Interp.Run (eval)
 import TypedRedex.Interp.Stream
 import Control.Monad.State
@@ -49,7 +49,7 @@ instance MonadState (Subst s) (R s) where
 readVar :: V s t -> R s (Maybe t)
 readVar v = gets $ readSubst v
 
-makeVar :: Maybe (L a (R s)) -> R s (Var' a (R s))
+makeVar :: Maybe (LTerm a (R s)) -> R s (LVar a (R s))
 makeVar x = do
     v <- SVar <$> gets nextVar
     modify $ succVar . updateSubst v x
