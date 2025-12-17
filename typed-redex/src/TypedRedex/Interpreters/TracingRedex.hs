@@ -17,7 +17,7 @@
 --                     └─ Stream: lazy list with interleaving
 --
 -- TracingState contains:
---   ├─ tsSubst: variable substitution (like SubstRedex)
+--   ├─ tsSubst: variable substitution (shared with SubstRedex via SubstCore)
 --   ├─ tsNextVar: fresh variable counter
 --   └─ tsDerivStack: stack of derivation frames
 -- @
@@ -58,11 +58,14 @@ module TypedRedex.Interpreters.TracingRedex
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
+import TypedRedex.Core.Internal.Unify (flatteningUnify, occursCheck)
+import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
+import TypedRedex.Utils.Fresh (L, Var')
+import TypedRedex.Utils.Format (formatCon, intercalate)
 import Stream
 import Control.Monad.State
 import Control.Applicative
 import Unsafe.Coerce (unsafeCoerce)
-import TypedRedex.Utils.Redex (flatteningUnify, occursCheck, L, Var', formatCon, intercalate)
 
 --------------------------------------------------------------------------------
 -- Derivation Trees
@@ -195,7 +198,7 @@ substInDerivation var val (Deriv name args children) =
 -- Tracing State
 --------------------------------------------------------------------------------
 
-type VarRepr = Int
+type V s t = RVar (TracingRedex s) t
 
 -- | A frame in the derivation stack.
 --
@@ -210,9 +213,9 @@ data DerivFrame s = DerivFrame
 
 -- | Complete state for the tracing interpreter.
 data TracingState s = TracingState
-  { tsSubst      :: forall t. RVar (TracingRedex s) t -> Maybe t  -- ^ Substitution
-  , tsNextVar    :: VarRepr                                        -- ^ Fresh var counter
-  , tsDerivStack :: [DerivFrame s]                                 -- ^ Derivation stack
+  { tsSubst      :: forall t. V s t -> Maybe t  -- ^ Substitution
+  , tsNextVar    :: VarRepr                      -- ^ Fresh var counter
+  , tsDerivStack :: [DerivFrame s]               -- ^ Derivation stack
   }
 
 emptyState :: TracingState s
@@ -222,17 +225,20 @@ emptyState = TracingState
   , tsDerivStack = [DerivFrame "top" [] []]  -- Start with top-level frame
   }
 
-varToInt :: RVar (TracingRedex s) t -> Int
+varToInt :: V s t -> Int
 varToInt (TVar n) = n
 
-readSubst :: RVar (TracingRedex s) a -> TracingState s -> Maybe a
+-- | Read a variable's binding.
+readSubst :: V s a -> TracingState s -> Maybe a
 readSubst v s = tsSubst s v
 
-updateSubst :: RVar (TracingRedex s) a -> Maybe a -> TracingState s -> TracingState s
+-- | Update a variable's binding.
+updateSubst :: V s a -> Maybe a -> TracingState s -> TracingState s
 updateSubst v a s = s { tsSubst = \v' -> if varEq' v v' then unsafeCoerce a else tsSubst s v' }
   where
     varEq' (TVar a') (TVar b) = a' == b
 
+-- | Increment the variable counter.
 succVar :: TracingState s -> TracingState s
 succVar s = s { tsNextVar = succ (tsNextVar s) }
 
@@ -266,7 +272,7 @@ instance Redex (TracingRedex s) where
   newtype RVar (TracingRedex s) t = TVar VarRepr
     deriving (Functor, Show)
 
-  -- | Allocate fresh variables (same as SubstRedex)
+  -- | Allocate fresh variables
   fresh_ FreshVar k = do
     v <- TVar <$> gets tsNextVar
     modify $ succVar . updateSubst v Nothing
@@ -277,7 +283,7 @@ instance Redex (TracingRedex s) where
     modify $ succVar . updateSubst v (Just x)
     k v
 
-  -- | Unification (same as SubstRedex)
+  -- | Unification
   unify = flatteningUnify unif
     where
       unif v y
@@ -287,7 +293,7 @@ instance Redex (TracingRedex s) where
             maybe (modify $ updateSubst v (Just y)) (unify y) x
 
   -- | Display variable
-  displayVar (TVar v) = "x" ++ show v
+  displayVar (TVar v) = displayVarInt v
 
   -- | Suspend for fair interleaving
   suspend (TracingRedex r) = TracingRedex $ mapStateT Immature r

@@ -17,7 +17,8 @@ module TypedRedex.Interpreters.DeepRedex
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.Redex (L, formatCon, intercalate)
+import TypedRedex.Utils.Fresh (L)
+import TypedRedex.Utils.Format (formatCon, intercalate)
 import TypedRedex.Utils.PrettyPrint (VarNaming(..), namingByTag, subscriptNum)
 import TypedRedex.Utils.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..))
 import Control.Applicative

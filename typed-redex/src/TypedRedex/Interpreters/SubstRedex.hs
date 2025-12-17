@@ -13,14 +13,17 @@ module TypedRedex.Interpreters.SubstRedex
   ) where
 
 import TypedRedex.Core.Internal.Redex
+import TypedRedex.Core.Internal.Unify (flatteningUnify, occursCheck)
+import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
+import TypedRedex.Utils.Fresh (L, Var')
+import TypedRedex.Utils.Run (eval)
 import Stream
 import Control.Monad.State
 import Unsafe.Coerce (unsafeCoerce)
-import TypedRedex.Utils.Redex
 
-type VarRepr = Int
 type V s t = RVar (SubstRedex s) t
 
+-- | Substitution state for SubstRedex.
 data Subst s = Subst { subst :: forall t. V s t -> Maybe t, nextVar :: VarRepr }
 
 emptySubst :: Subst s
@@ -67,7 +70,7 @@ instance Redex (R s) where
                               (unify y)
                               x
 
-    displayVar (SVar v) = "x" ++ show v
+    displayVar (SVar v) = displayVarInt v
 
     suspend (SubstRedex r) = SubstRedex $ mapStateT Immature r
 

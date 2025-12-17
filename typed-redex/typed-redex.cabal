@@ -13,11 +13,17 @@ library
     TypedRedex.Core.Redex
     TypedRedex.Core.Internal.Redex
     TypedRedex.Core.Internal.Logic
+    TypedRedex.Core.Internal.Unify
+    TypedRedex.Core.Internal.SubstCore
     TypedRedex.Interpreters.SubstRedex
     TypedRedex.Interpreters.DeepRedex
     TypedRedex.Interpreters.TracingRedex
     TypedRedex.Utils.PrettyPrint
     TypedRedex.Utils.Redex
+    TypedRedex.Utils.Fresh
+    TypedRedex.Utils.Relation
+    TypedRedex.Utils.Run
+    TypedRedex.Utils.Format
     TypedRedex.Utils.Rule
     TypedRedex.Utils.Define
     TypedRedex.Utils.Type

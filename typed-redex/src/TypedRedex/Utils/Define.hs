@@ -43,7 +43,8 @@ module TypedRedex.Utils.Define
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.Redex (L, argument, argument2, argument3, argument4, argument5, call, (<=>))
+import TypedRedex.Utils.Fresh (L, argument, argument2, argument3, argument4, argument5)
+import TypedRedex.Utils.Relation (call, (<=>))
 import Control.Applicative (asum)
 
 --------------------------------------------------------------------------------

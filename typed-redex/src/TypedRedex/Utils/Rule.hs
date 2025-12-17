@@ -1,28 +1,30 @@
 {-# LANGUAGE Rank2Types #-}
 
--- | Inference-rule-style syntax for defining relations.
+-- | DEPRECATED: Inference-rule-style syntax for defining relations.
 --
--- This module provides combinators that make relation definitions look
--- more like inference rules from papers:
+-- This module is DEPRECATED. Use "TypedRedex.Utils.Define" instead, which
+-- provides a cleaner syntax with @concl@/@prem@ and matches paper notation better.
 --
--- @
---     e₁ ⟶ e₁'
--- ─────────────────── [step-app-l]
--- e₁ e₂ ⟶ e₁' e₂
--- @
---
--- becomes:
+-- Migration guide:
 --
 -- @
+-- -- Old (Rule.hs style):
 -- stepAppL = rule2 \"step-app-l\" $ \\concl ->
 --   fresh3 $ \\e1 e1' e2 -> do
 --     concl (app e1 e2) (app e1' e2)
 --     call (step e1 e1')
+--
+-- -- New (Define.hs style):
+-- stepAppL = rule2 \"step-app-l\" $ fresh3 $ \\e1 e1' e2 -> do
+--   concl $ step (app e1 e2) (app e1' e2)
+--   prem  $ step e1 e1'
 -- @
 --
--- IMPORTANT: Put @concl@ FIRST, before premises. This ensures the
--- patterns constrain fresh variables before recursive calls, which
--- is necessary for termination.
+-- The Define.hs approach uses @judgment@ combinators to group rules:
+--
+-- @
+-- step = judgment2 \"step\" [stepBeta, stepAppL, stepAppR]
+-- @
 
 module TypedRedex.Utils.Rule
   ( -- * Rule combinators
@@ -45,7 +47,8 @@ module TypedRedex.Utils.Rule
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.Redex
+import TypedRedex.Utils.Fresh (L)
+import TypedRedex.Utils.Relation (relation, relation2, relation3, relation4, relation5, call, conde, (<=>))
 
 -- | Define a unary relation using inference-rule style.
 rule :: (Redex rel, LogicType a)
