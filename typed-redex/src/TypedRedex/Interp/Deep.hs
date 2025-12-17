@@ -1,7 +1,12 @@
 {-# LANGUAGE TypeFamilies, GeneralisedNewtypeDeriving, DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, FlexibleContexts #-}
 {-# LANGUAGE GADTs, RankNTypes, TypeApplications, ScopedTypeVariables #-}
-module TypedRedex.Interpreters.DeepRedex
+
+-- | DeepRedex: A deep embedding interpreter for TypedRedex
+--
+-- This interpreter builds a Goal AST instead of solving, which is useful
+-- for rule extraction and analysis.
+module TypedRedex.Interp.Deep
   ( DeepRedex
   , Goal(..)
   , runDeep
@@ -17,10 +22,10 @@ module TypedRedex.Interpreters.DeepRedex
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.Fresh (L)
-import TypedRedex.Utils.Format (formatCon, intercalate)
-import TypedRedex.Utils.PrettyPrint (VarNaming(..), namingByTag, subscriptNum)
-import TypedRedex.Utils.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..))
+import TypedRedex.DSL.Fresh (L)
+import TypedRedex.Interp.Format (formatCon, intercalate)
+import TypedRedex.Interp.PrettyPrint (VarNaming(..), namingByTag, subscriptNum)
+import TypedRedex.DSL.Define (Applied(..), Applied2(..), Applied3(..), Applied4(..), Applied5(..))
 import Control.Applicative
 import Control.Monad (when)
 import Control.Monad.State

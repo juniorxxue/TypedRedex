@@ -24,7 +24,7 @@
 -- Both 'concl' and 'prem' are overloaded and work for any arity.
 -- Rule names are tracked for derivation trees.
 
-module TypedRedex.Utils.Define
+module TypedRedex.DSL.Define
   ( -- * Applied relation types (store args + goal)
     Applied(..)
   , Applied2(..)
@@ -43,8 +43,8 @@ module TypedRedex.Utils.Define
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.Fresh (L, argument, argument2, argument3, argument4, argument5)
-import TypedRedex.Utils.Relation (call, (<=>))
+import TypedRedex.DSL.Fresh (L, argument, argument2, argument3, argument4, argument5)
+import TypedRedex.Core.Internal.Relation (call, (<=>))
 import Control.Applicative (asum)
 
 --------------------------------------------------------------------------------

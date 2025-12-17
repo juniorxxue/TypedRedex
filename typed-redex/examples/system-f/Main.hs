@@ -6,13 +6,13 @@
 module Main (main) where
 
 import Control.Applicative (empty)
-import TypedRedex.Core.Redex hiding (rule, rule2, rule3, rule4)
+import TypedRedex hiding (rule, rule2, rule3, rule4)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
-import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
-import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
-import TypedRedex.Interpreters.DeepRedex (printRules3)
-import TypedRedex.Utils.Type (quote0, quote1, quote2)
-import TypedRedex.Utils.Define (rule2, rule3, rule4)
+import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
+import TypedRedex.Interp.Tracing (runWithDerivation, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
+import TypedRedex.Interp.Deep (printRules3)
+import TypedRedex.DSL.Type (quote0, quote1, quote2)
+import TypedRedex.DSL.Define (rule2, rule3, rule4)
 
 import Syntax
 

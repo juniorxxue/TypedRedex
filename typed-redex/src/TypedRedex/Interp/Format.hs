@@ -2,7 +2,7 @@
 --
 -- This module provides pretty-printing utilities for logic terms,
 -- including constructor formatting and term-to-string conversion.
-module TypedRedex.Utils.Format
+module TypedRedex.Interp.Format
   ( -- * Constructor formatting
     formatCon
     -- * Logic term pretty-printing
@@ -15,7 +15,7 @@ module TypedRedex.Utils.Format
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.PrettyPrint (subscriptStr)
+import TypedRedex.Interp.PrettyPrint (subscriptStr)
 
 -- | Re-export subscriptStr as subscriptNum for backward compatibility.
 subscriptNum :: String -> String

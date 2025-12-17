@@ -5,7 +5,7 @@
 -- This is the standard "eval" interpreter that executes logic programs
 -- via substitutions and backtracking streams.
 
-module TypedRedex.Interpreters.SubstRedex
+module TypedRedex.Interp.Subst
   ( runSubstRedex
   , Stream
   , takeS
@@ -15,9 +15,9 @@ module TypedRedex.Interpreters.SubstRedex
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Unify (flatteningUnify, occursCheck)
 import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
-import TypedRedex.Utils.Fresh (L, Var')
-import TypedRedex.Utils.Run (eval)
-import Stream
+import TypedRedex.DSL.Fresh (L, Var')
+import TypedRedex.Interp.Run (eval)
+import TypedRedex.Interp.Stream
 import Control.Monad.State
 import Unsafe.Coerce (unsafeCoerce)
 

@@ -4,7 +4,7 @@
 --
 -- This module provides combinators for allocating fresh logic variables
 -- and binding arguments to local variables.
-module TypedRedex.Utils.Fresh
+module TypedRedex.DSL.Fresh
   ( -- * Type aliases
     Var', L
     -- * Fresh variable allocation

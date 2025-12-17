@@ -4,7 +4,7 @@
 --
 -- This module provides combinators for running relations and extracting
 -- ground values from the resulting substitutions.
-module TypedRedex.Utils.Run
+module TypedRedex.Interp.Run
   ( -- * Evaluation
     eval
     -- * Running relations
@@ -13,8 +13,8 @@ module TypedRedex.Utils.Run
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.Fresh
-import TypedRedex.Utils.Relation (embed)
+import TypedRedex.DSL.Fresh
+import TypedRedex.Core.Internal.Relation (embed)
 
 --------------------------------------------------------------------------------
 -- Evaluation

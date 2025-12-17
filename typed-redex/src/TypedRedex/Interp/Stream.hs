@@ -1,5 +1,16 @@
 {-# LANGUAGE InstanceSigs #-}
-module Stream (takeS, takeWhileS, maybeToStream, isMature, fmap, pure, (<*>), empty, (<|>), (>>=), mzero, mplus, Stream (..)) where
+
+-- | Lazy streams with interleaving for fair search.
+--
+-- This module provides the Stream type used by interpreters for
+-- backtracking search with fair interleaving of alternatives.
+module TypedRedex.Interp.Stream
+  ( Stream(..)
+  , takeS
+  , takeWhileS
+  , maybeToStream
+  , isMature
+  ) where
 
 import           Control.Applicative
 import           Control.Monad

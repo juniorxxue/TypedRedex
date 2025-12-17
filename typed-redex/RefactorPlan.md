@@ -21,21 +21,21 @@ Refactoring Plan
   - Both interpreters now import VarRepr from SubstCore
   - Shared substitution pattern documented (interpreters have similar structure)
 
-  1.4 Deprecate Rule.hs ✅
+  1.4 Remove deprecated Rule.hs ✅
   - All examples already use Define.hs style
-  - Added deprecation notice to Rule.hs header with migration guide
+  - Utils/Rule.hs removed (axiom*, rules* combinators no longer needed)
 
   ---
-  Phase 2: Three-Layer Architecture
+  Phase 2: Three-Layer Architecture ✅ DONE
 
-  2.0 Reorganize into three layers
+  2.0 Reorganize into three layers ✅
 
-  Target structure:
+  Completed structure:
     TypedRedex/
     ├── Core/Internal/       ← Kernel (dev-only)
     │   ├── Logic.hs         -- Logic, Var, Reified, LogicType
     │   ├── Redex.hs         -- Redex typeclass, (<=>), unify
-    │   ├── Relation.hs      -- relation, relation2, ..., conde, condu (solver primitives)
+    │   ├── Relation.hs      -- relation, relation2, ..., conde (solver primitives)
     │   ├── Unify.hs         -- flatteningUnify, occursCheck
     │   └── SubstCore.hs     -- shared interpreter primitives
     │
@@ -45,11 +45,13 @@ Refactoring Plan
     │   └── Type.hs          -- type-level helpers users need
     │
     ├── Interp/              ← Interpreters
-    │   ├── Subst.hs         -- SubstRedex (was SubstRedex.hs)
+    │   ├── Stream.hs        -- Stream type for backtracking search
+    │   ├── Subst.hs         -- SubstRedex
     │   ├── Tracing.hs       -- TracingRedex
     │   ├── Deep.hs          -- DeepRedex
     │   ├── Run.hs           -- run, run2, ..., eval
-    │   └── Format.hs        -- prettyLogic, formatCon, derivation printing
+    │   ├── Format.hs        -- prettyLogic, formatCon
+    │   └── PrettyPrint.hs   -- variable naming
     │
     └── TypedRedex.hs        ← Re-export public API only (DSL + Interp)
 
@@ -122,7 +124,7 @@ Refactoring Plan
   | 2       | 1.2 Extract Unify.hs                   | Move interpreter helpers to Internal     | ✅     |
   | 3       | 1.3 Extract SubstCore.hs               | Deduplicate SubstRedex/TracingRedex      | ✅     |
   | 4       | 1.4 Deprecate Rule.hs                  | Migrate to Define.hs style               | ✅     |
-  | 5       | 2.0 Three-layer reorganization         | Core/Internal, DSL, Interp structure     |        |
+  | 5       | 2.0 Three-layer reorganization         | Core/Internal, DSL, Interp structure     | ✅     |
   | 6       | 3.1 Rename L/Var'                      | LTerm, LVar                              |        |
   | 7       | 3.2 Fix arity suffixes                 | Consistent *1 convention                 |        |
   | 8       | 3.3 + 3.4 Call variants + operators    | callDirect, remove (===)                 |        |

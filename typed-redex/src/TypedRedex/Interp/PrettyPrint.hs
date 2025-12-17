@@ -2,7 +2,7 @@
 --
 -- This module centralizes all display-related naming logic, keeping it
 -- separate from core logic and interpreters.
-module TypedRedex.Utils.PrettyPrint
+module TypedRedex.Interp.PrettyPrint
   ( -- * Subscript conversion
     subscriptNum
   , subscriptStr

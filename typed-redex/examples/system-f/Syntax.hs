@@ -5,11 +5,11 @@
 module Syntax where
 
 import Control.Applicative (empty)
-import TypedRedex.Core.Redex
+import TypedRedex
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
-import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
-import TypedRedex.Utils.Type (quote0, quote1, quote2)
-import TypedRedex.Utils.PrettyPrint (VarNaming(..), natNaming, tyNaming, ctxNaming, subscriptNum)
+import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
+import TypedRedex.DSL.Type (quote0, quote1, quote2)
+import TypedRedex.Interp.PrettyPrint (VarNaming(..), natNaming, tyNaming, ctxNaming, subscriptNum)
 
 -- System F Type Checking
 -- Uses de Bruijn indices for both term and type variables

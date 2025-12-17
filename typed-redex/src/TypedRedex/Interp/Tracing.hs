@@ -39,7 +39,7 @@
 -- strings happens at popFrame time, AFTER unification completes.
 -- This ensures derivations show actual values, not unresolved variables.
 
-module TypedRedex.Interpreters.TracingRedex
+module TypedRedex.Interp.Tracing
   ( -- * Running with Derivations
     runTracingRedex
   , runWithDerivation
@@ -60,9 +60,9 @@ import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
 import TypedRedex.Core.Internal.Unify (flatteningUnify, occursCheck)
 import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
-import TypedRedex.Utils.Fresh (L, Var')
-import TypedRedex.Utils.Format (formatCon, intercalate)
-import Stream
+import TypedRedex.DSL.Fresh (L, Var')
+import TypedRedex.Interp.Format (formatCon, intercalate)
+import TypedRedex.Interp.Stream
 import Control.Monad.State
 import Control.Applicative
 import Unsafe.Coerce (unsafeCoerce)

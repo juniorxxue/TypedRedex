@@ -5,13 +5,13 @@
 module Main (main) where
 
 import Control.Applicative (empty)
-import TypedRedex.Core.Redex hiding (rule, rule2, rule3)
+import TypedRedex hiding (rule, rule2, rule3)
 import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
-import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
-import TypedRedex.Interpreters.DeepRedex (printRules2)
-import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
-import TypedRedex.Utils.Type (quote0, quote1, quote2, quote3)
-import TypedRedex.Utils.Define (rule1, rule2, rule3)
+import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
+import TypedRedex.Interp.Deep (printRules2)
+import TypedRedex.Interp.Tracing (runWithDerivation, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
+import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
+import TypedRedex.DSL.Define (rule1, rule2, rule3)
 
 -- PCF (Programming Computable Functions) with fixpoints
 -- Small-step call-by-value operational semantics

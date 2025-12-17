@@ -5,12 +5,12 @@
 module Main (main) where
 
 import Control.Applicative (empty)
-import TypedRedex.Core.Redex hiding (rule, rule3)
+import TypedRedex hiding (rule, rule3)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
-import TypedRedex.Interpreters.SubstRedex (runSubstRedex, takeS, Stream)
-import TypedRedex.Interpreters.TracingRedex (runWithDerivation, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
-import TypedRedex.Utils.Type (quote0, quote1, quote2)
-import TypedRedex.Utils.Define (rule3)
+import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
+import TypedRedex.Interp.Tracing (runWithDerivation, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
+import TypedRedex.DSL.Type (quote0, quote1, quote2)
+import TypedRedex.DSL.Define (rule3)
 
 -- Bidirectional typing for STLC (Dunfield & Krishnaswami style)
 -- Using the new judgment/rule syntax

@@ -3,7 +3,7 @@ module TypedRedex.Core.Internal.Logic(module TypedRedex.Core.Internal.Logic) whe
 import Data.Kind (Type)
 import Data.Proxy (Proxy)
 import Control.Applicative
-import TypedRedex.Utils.PrettyPrint (VarNaming(..), tmNaming)
+import TypedRedex.Interp.PrettyPrint (VarNaming(..), tmNaming)
 
 data Field a var where
   Field :: LogicType x => Proxy x -> Logic x var -> Field a var

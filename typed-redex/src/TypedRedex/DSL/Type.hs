@@ -1,5 +1,10 @@
 {-# LANGUAGE Rank2Types, LambdaCase, ApplicativeDo #-}
-module TypedRedex.Utils.Type
+
+-- | Type-level helpers for defining LogicType instances.
+--
+-- This module provides utilities for defining custom types that can be
+-- used in logic programs.
+module TypedRedex.DSL.Type
 (
   defaultUnif
 , field
@@ -8,6 +13,7 @@ module TypedRedex.Utils.Type
 , LogicType(quote, unifyVal, derefVal)
 , empty
 ) where
+
 import Data.Proxy (Proxy(Proxy))
 import TypedRedex.Core.Internal.Logic
 import Text.Printf (printf)

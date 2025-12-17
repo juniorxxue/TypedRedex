@@ -1,8 +1,10 @@
 -- | Relation construction and invocation utilities.
 --
--- This module provides combinators for constructing named relations
+-- This module provides solver primitives for constructing named relations
 -- and invoking them with different suspension behaviors.
-module TypedRedex.Utils.Relation
+--
+-- This is part of Core/Internal because these are low-level solver primitives.
+module TypedRedex.Core.Internal.Relation
   ( -- * Relation construction
     relation, relation2, relation3, relation4, relation5
     -- * Relation invocation
@@ -15,7 +17,7 @@ module TypedRedex.Utils.Relation
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Utils.Fresh
+import TypedRedex.DSL.Fresh
 import Control.Applicative (asum)
 
 --------------------------------------------------------------------------------
