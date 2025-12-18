@@ -11,11 +11,13 @@ module TypedRedex.DSL.Type
 , con0, con1, con2, con3
 , quote0, quote1, quote2, quote3
 , LogicType(quote, unifyVal, derefVal)
+, LogicVarNaming
 , empty
 ) where
 
 import Data.Proxy (Proxy(Proxy))
 import TypedRedex.Core.Internal.Logic
+import TypedRedex.Interp.PrettyPrint (LogicVarNaming)
 import Text.Printf (printf)
 import Unsafe.Coerce (unsafeCoerce)
 import Control.Applicative (Alternative (empty))
@@ -32,7 +34,7 @@ defaultUnif unif x y = do
     traverse_ (\((Field _ xi), (Field _ yi)) -> unif xi (unsafeCoerce yi)) (zip xs ys)
     pure ()
 
-field :: (LogicType t) => L' t var -> Field a var
+field :: LogicType t => L' t var -> Field a var
 field x = Field Proxy x
 
 reifyError :: String -> Int -> [x] -> a
@@ -61,7 +63,7 @@ con3 c r = Constructor c $ \case
 quote0 :: String -> (forall var. Reified t var) -> (Constructor t, [Field t v])
 quote0 c r = (con0 c r, [])
 
-quote1 :: (LogicType a) => String -> (forall var. L' a var -> Reified t var) -> L' a v -> (Constructor t, [Field t v])
+quote1 :: LogicType a => String -> (forall var. L' a var -> Reified t var) -> L' a v -> (Constructor t, [Field t v])
 quote1 c r x = (con1 c r, [field x])
 
 quote2 :: (LogicType a, LogicType b) => String -> (forall var. L' a var -> L' b var -> Reified t var) -> L' a v -> L' b v -> (Constructor t, [Field t v])

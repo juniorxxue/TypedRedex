@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 -- | Pretty-printing utilities for variable naming and subscript conversion.
 --
 -- This module centralizes all display-related naming logic, keeping it
@@ -20,6 +22,8 @@ module TypedRedex.Interp.PrettyPrint
   , tmVarName
   , natVarName
   , defaultVarName
+    -- * Type class for variable naming
+  , LogicVarNaming(..)
   ) where
 
 import Data.Maybe (fromMaybe)
@@ -107,3 +111,17 @@ natVarName i = let (q, r) = i `divMod` 3
 -- | Default variable naming: v₀, v₁, v₂, ...
 defaultVarName :: Int -> String
 defaultVarName n = "v" ++ subscriptNum n
+
+--------------------------------------------------------------------------------
+-- Type class for variable naming
+--------------------------------------------------------------------------------
+
+-- | Type class for specifying how logic variables of a type should be named.
+--
+-- Separate from LogicType to allow user customization without affecting
+-- the core logic type machinery.
+--
+-- Default instance uses tmNaming (e, e₁, e₂, ...).
+class LogicVarNaming a where
+  varNaming :: VarNaming
+  varNaming = tmNaming

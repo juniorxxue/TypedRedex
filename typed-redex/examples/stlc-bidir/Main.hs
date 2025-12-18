@@ -11,6 +11,7 @@ import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Tracing (runWithDerivation, runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
+import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..))
 import TypedRedex.DSL.Type (quote0, quote1, quote2)
 
 -- Bidirectional typing for STLC (Dunfield & Krishnaswami style)
@@ -93,6 +94,8 @@ prettyDerivation = prettyDerivationWith BidirFormatter
 
 data Nat = Z | S Nat deriving (Eq, Show)
 
+instance LogicVarNaming Nat
+
 instance LogicType Nat where
   data Reified Nat var = ZR | SR (Logic Nat var)
 
@@ -124,6 +127,8 @@ suc = Ground . SR
 --------------------------------------------------------------------------------
 
 data Ty = TUnit | TArr Ty Ty deriving (Eq, Show)
+
+instance LogicVarNaming Ty
 
 instance LogicType Ty where
   data Reified Ty var
@@ -165,6 +170,8 @@ data Tm
   | App Tm Tm         -- e₁ e₂
   | Ann Tm Ty         -- (e : A)
   deriving (Eq, Show)
+
+instance LogicVarNaming Tm
 
 instance LogicType Tm where
   data Reified Tm var
@@ -235,6 +242,8 @@ ann e ty = Ground $ AnnR e ty
 --------------------------------------------------------------------------------
 
 data Ctx = Nil | Cons Ty Ctx deriving (Eq, Show)
+
+instance LogicVarNaming Ctx
 
 instance LogicType Ctx where
   data Reified Ctx var

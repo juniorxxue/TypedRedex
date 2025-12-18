@@ -1,4 +1,132 @@
-# Binding Representation Proposals for TypedRedex (Revised)
+# Binding Support for TypedRedex
+
+## Final Implementation (TypedRedex.Binding)
+
+The binding module is implemented in `TypedRedex.Binding` and provides locally nameless
+representation with an unbound-generics-inspired API.
+
+### Design Choices Made
+
+1. **Internal representation**: Locally nameless with name hints
+2. **User API**: Users write names, never see de Bruijn indices
+3. **Alpha-equivalence**: Automatic in unification (via de Bruijn body comparison)
+4. **Pattern matching**: Use `unbind` in rules to access binding contents
+
+### Architecture
+
+```
+User writes:        bind "x" (fvar "x")
+                         ↓ smart constructor converts FVar→BVar
+Internal storage:   Bind (Name "x") (BVar 0)
+                         ↓ unification compares de Bruijn bodies only
+Alpha-equiv:        bind "x" (fvar "x") ≡ bind "y" (fvar "y")  ✓
+                         ↓ unbind converts BVar→FVar
+User sees:          name hint + body with FVar
+```
+
+### Core Types
+
+```haskell
+-- | Typed variable name (for display)
+newtype Name a = Name { unName :: String }
+
+-- | Locally nameless variable
+data Var a = BVar Nat     -- Bound variable (de Bruijn index, internal)
+           | FVar (Name a) -- Free variable (named, user-facing)
+
+-- | Binding construct with automatic alpha-equivalence
+data Bind p t = Bind p t
+-- Alpha-equiv: unifyVal compares bodies only, ignoring name hints
+```
+
+### User-Facing API
+
+```haskell
+-- Create a name
+mkName :: String -> Logic (Name a) var
+
+-- Create a free variable (the primary way users create variables)
+fvar :: String -> Logic (Var a) var
+fvar s = Ground $ FVarR (Ground $ NameR s)
+
+-- Create a binding (converts FVar→BVar for the bound name)
+bind :: String -> Logic (Var a) var -> Logic (Bind (Name a) (Var a)) var
+bind x body = Ground $ BindR (mkName x) (convertFVarToBVar x body)
+
+-- Open a binding in a continuation (converts BVar→FVar)
+unbind :: (Redex rel)
+       => LTerm (Bind (Name a) (Var a)) rel
+       -> (LTerm (Name a) rel -> LTerm (Var a) rel -> rel b)
+       -> rel b
+```
+
+### Usage Example
+
+```haskell
+-- Define a term type using binding
+data Tm
+  = TmVar (Var Tm)           -- Variable
+  | Lam (Bind (Name Tm) Tm)  -- Lambda with binding
+  | App Tm Tm
+  deriving (Generic)
+
+-- Smart constructors for CONCRETE terms
+var :: String -> LTerm Tm rel
+var s = Ground $ TmVarR (fvar s)
+
+lam :: String -> LTerm Tm rel -> LTerm Tm rel
+lam x body = Ground $ LamR (bind x body)  -- converts FVar x → BVar 0
+
+-- Pattern wrapper (for matching in rules, no conversion)
+lamP :: LTerm (Bind (Name Tm) Tm) rel -> LTerm Tm rel
+lamP bnd = Ground $ LamR bnd
+
+-- Writing rules: use unbind for patterns
+typeLam :: (Redex rel) => Rule rel '[Ctx, Tm, Ty]
+typeLam = rule "type-lam" $ fresh4 $ \ctx a b bnd -> do
+  concl $ typeof ctx (lamP bnd) (tarr a b)    -- lamP for pattern
+  prem  $ unbind bnd $ \x body ->              -- unbind to access
+    typeof (extend ctx x a) body b
+
+-- Beta reduction
+stepBeta :: (Redex rel) => Rule rel '[Tm, Tm]
+stepBeta = rule "beta" $ fresh3 $ \bnd arg result -> do
+  concl $ step (app (lamP bnd) arg) result    -- lamP for pattern
+  prem  $ unbind bnd $ \x body ->              -- unbind to get x, body
+    subst x arg body result
+
+-- Concrete terms use lam (auto-converts FVar→BVar)
+idTm = lam "x" (var "x")               -- λx. x
+constTm = lam "x" (lam "y" (var "x"))  -- λx. λy. x
+
+-- Alpha-equivalence works automatically in unification
+-- lam "x" (var "x") unifies with lam "y" (var "y")  ✓
+```
+
+### Pattern vs Term Construction
+
+| Context | Use | Behavior |
+|---------|-----|----------|
+| Concrete term | `lam "x" body` | Converts FVar→BVar |
+| Rule pattern | `lamP bnd` + `unbind bnd $ \x body -> ...` | No conversion, extracts via unbind |
+
+### Internal Details (Hidden from Users)
+
+- `Nat` type for de Bruijn indices: `Z | S Nat`
+- `bvar :: Logic Nat var -> Logic (Var a) var` - internal, creates BVar
+- `zro`, `suc` - internal nat constructors
+- `convertFVarToBVar` - converts matching FVar to BVar 0
+- `convertBVarToFVar` - converts BVar 0 back to FVar with name hint
+
+### Limitations / Future Work
+
+- `bind` only works correctly for simple `Var` bodies; nested terms need recursive conversion
+- Helper relations (`nameEq`, `nameNeq`, `freeIn`) not yet implemented
+- Generic `subst` not provided; users write their own using `unbind`
+
+---
+
+# Original Proposals (Historical Reference)
 
 ## Design Goals
 
@@ -9,9 +137,9 @@
 
 ---
 
-## Current Situation
+## Original Situation
 
-TypedRedex uses raw de Bruijn indices:
+TypedRedex originally used raw de Bruijn indices:
 
 ```haskell
 data Tm = Var Nat | Lam Tm | App Tm Tm  -- de Bruijn
@@ -356,41 +484,14 @@ substFresh = judgment "subst" [...]
 
 ## Recommendation
 
-**Proposal A (Auto-Convert)** offers the best balance:
+**A hybrid of Proposal A and B was implemented** as `TypedRedex.Binding`:
 
-1. **Cleanest user experience** — write `lam "x" (var "x")`, get `λx. x`
-2. **Alpha-equiv is automatic** — unification handles it
-3. **Pretty-print is consistent** — preserves user's names
-4. **Hidden complexity** — de Bruijn is internal detail
+1. Uses locally nameless internally (like Proposal A)
+2. Provides explicit `Bind`/`unbind` API (like Proposal B)
+3. Alpha-equivalence is automatic via `Bind`'s `unifyVal`
+4. Users write with names, never see de Bruijn indices
 
-### Implementation Sketch
-
-```haskell
--- Module: TypedRedex.Binding.Named
-
--- | Named term with original names preserved
-data Named a = Named
-  { namedValue :: a        -- Original named term
-  , namedDB    :: DB a     -- De Bruijn version (for unification)
-  }
-
--- | LogicType instance handles conversion transparently
-instance LogicType (Named Tm) where
-  -- Unification compares de Bruijn forms
-  unifyVal unif (NamedR _ db1) (NamedR _ db2) = unifyDB unif db1 db2
-
-  -- Quote reconstructs named form
-  quote (NamedR named _) = quoteNamed named
-
--- | User-facing smart constructors
-lam :: (Redex rel) => String -> LTerm Tm rel -> LTerm Tm rel
-lam x body = wrapNamed (Lam x (unwrapNamed body))
-
--- | The magic: consistent names in, consistent names out
--- User writes: lam "x" (lam "y" (var "x"))
--- Unifies:     as Lam (Lam (BVar 1))
--- Displays:    λx. λy. x
-```
+See the "Final Implementation" section at the top of this document for the actual API.
 
 ---
 

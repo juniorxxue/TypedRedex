@@ -28,7 +28,7 @@ import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Interp.Format (formatCon, formatConWith, intercalate, TermFormatter(..), DefaultTermFormatter(..), JudgmentFormatter(..), defaultFormatJudgment)
-import TypedRedex.Interp.PrettyPrint (VarNaming(..), namingByTag, subscriptNum)
+import TypedRedex.Interp.PrettyPrint (VarNaming(..), LogicVarNaming(..), namingByTag, subscriptNum)
 import TypedRedex.DSL.Define (Applied(..))
 import Control.Applicative
 import Control.Monad (when)
@@ -443,7 +443,7 @@ deepVar n = Free (DVar n)
 --------------------------------------------------------------------------------
 
 -- | Print all rules for a unary relation.
-printRules :: (LogicType a)
+printRules :: LogicType a
            => String
            -> (LTerm a DeepRedex -> Applied DeepRedex '[a])
            -> IO ()

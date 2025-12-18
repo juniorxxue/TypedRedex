@@ -12,6 +12,7 @@ import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Deep (printRules2)
 import TypedRedex.Interp.Tracing (runWithDerivation, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
+import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..))
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 
 -- PCF (Programming Computable Functions) with fixpoints
@@ -84,6 +85,8 @@ prettyDerivation = prettyDerivationWith PCFFormatter
 -- Natural numbers for de Bruijn indices
 data Nat = Z | S Nat deriving (Eq, Show)
 
+instance LogicVarNaming Nat
+
 instance LogicType Nat where
   data Reified Nat var = ZR | SR (Logic Nat var)
 
@@ -121,6 +124,8 @@ data Tm
   | Ifz Tm Tm Tm       -- ifz(e, e₁, e₂): if e=0 then e₁ else e₂
   | Fix Tm             -- fix e (fixpoint combinator)
   deriving (Eq, Show)
+
+instance LogicVarNaming Tm
 
 instance LogicType Tm where
   data Reified Tm var

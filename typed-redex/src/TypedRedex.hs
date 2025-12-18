@@ -49,7 +49,7 @@ module TypedRedex
   , Redex(RVar)           -- ^ Typeclass for logic programming monads
   , RedexEval             -- ^ Extract ground values from logic terms
   , RedexNeg              -- ^ Negation support
-  , LogicType             -- ^ Types that can be used in logic programs
+  , LogicType(..)         -- ^ Types that can be used in logic programs
   , Logic(..)             -- ^ Logic terms: Free (variable) or Ground (value)
   , LTerm                 -- ^ Type alias for Logic a (RVar rel)
   , LVar                  -- ^ Type alias for Var a (RVar rel)
