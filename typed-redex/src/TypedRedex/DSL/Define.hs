@@ -39,6 +39,8 @@ module TypedRedex.DSL.Define
     LTermList(..)
     -- * Applied relation type (unified for all arities)
   , Applied(..)
+    -- * Judgment type alias (for concise signatures)
+  , Judge
     -- * Conclusion and Premise (overloaded)
   , Conclude(..)
   , Premise(..)
@@ -173,6 +175,17 @@ captureTerms (x :> xs) = CapturedTerm x : captureTerms xs
 type family Curried rel (ts :: [Type]) where
   Curried rel '[]       = Applied rel '[]
   Curried rel (t ': ts) = LTerm t rel -> Curried rel ts
+
+-- | User-friendly type alias for judgment signatures.
+--
+-- @
+-- -- Instead of writing:
+-- substTyVar :: Redex rel => LTerm Nat rel -> LTerm Ty rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Nat, Ty, Nat, Ty]
+--
+-- -- You can write:
+-- substTyVar :: Redex rel => Judge rel '[Nat, Ty, Nat, Ty]
+-- @
+type Judge rel ts = CurriedR rel ts (Applied rel ts)
 
 -- | Curried type with explicit result type (for internal use).
 -- CurriedR rel '[A, B] r = LTerm A rel -> LTerm B rel -> r

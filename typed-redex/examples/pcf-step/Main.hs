@@ -220,7 +220,7 @@ fix = Ground . FixR
 -- ─────────────── [value-succ]
 -- value(succ v)
 
-value :: (Redex rel) => LTerm Tm rel -> Applied rel '[Tm]
+value :: (Redex rel) => Judge rel '[Tm]
 value = judgment "value" [valueLam, valueZero, valueSucc]
   where
     valueLam = rule "value-lam" $ fresh $ \b ->
@@ -239,7 +239,7 @@ value = judgment "value" [valueLam, valueZero, valueSucc]
 
 -- subst0 body arg out means [arg/0]body = out
 
-subst0 :: (Redex rel) => LTerm Tm rel -> LTerm Tm rel -> LTerm Tm rel -> Applied rel '[Tm, Tm, Tm]
+subst0 :: (Redex rel) => Judge rel '[Tm, Tm, Tm]
 subst0 = judgment "subst0"
   [ subst0Lam
   , subst0Var0
@@ -323,7 +323,7 @@ subst0 = judgment "subst0"
 -- Small-step operational semantics using judgment/rule style
 --------------------------------------------------------------------------------
 
-step :: (Redex rel) => LTerm Tm rel -> LTerm Tm rel -> Applied rel '[Tm, Tm]
+step :: (Redex rel) => Judge rel '[Tm, Tm]
 step = judgment "step"
   [ stepBeta
   , stepAppL

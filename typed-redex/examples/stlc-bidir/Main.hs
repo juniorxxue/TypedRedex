@@ -275,7 +275,7 @@ cons ty ctx = Ground $ ConsR ty ctx
 -- ─────────────────────── [lookup-there]
 -- lookup (Γ,B) (S n) A
 
-lookup' :: (Redex rel) => LTerm Ctx rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Ctx, Nat, Ty]
+lookup' :: (Redex rel) => Judge rel '[Ctx, Nat, Ty]
 lookup' = judgment "lookup" [lookupHere, lookupThere]
   where
     lookupHere = rule "lookup-here" $ fresh2 $ \ty rest ->
@@ -313,7 +313,7 @@ lookup' = judgment "lookup" [lookupHere, lookupThere]
 -- ─────────────────── [⇒Ann]
 --   Γ ⊢ (e:A) ⇒ A
 
-synth :: (Redex rel) => LTerm Ctx rel -> LTerm Tm rel -> LTerm Ty rel -> Applied rel '[Ctx, Tm, Ty]
+synth :: (Redex rel) => Judge rel '[Ctx, Tm, Ty]
 synth = judgment "synth" [synthVar, synthUnit, synthLamAnn, synthApp, synthAnn]
   where
     synthVar = rule "⇒Var" $ fresh3 $ \ctx n ty -> do
@@ -350,7 +350,7 @@ synth = judgment "synth" [synthVar, synthUnit, synthLamAnn, synthApp, synthAnn]
 -- ─────────────────── [⇐Sub]
 --      Γ ⊢ e ⇐ A
 
-check :: (Redex rel) => LTerm Ctx rel -> LTerm Tm rel -> LTerm Ty rel -> Applied rel '[Ctx, Tm, Ty]
+check :: (Redex rel) => Judge rel '[Ctx, Tm, Ty]
 check = judgment "check" [checkLam, checkSub]
   where
     checkLam = rule "⇐λ" $ fresh4 $ \ctx a b body -> do

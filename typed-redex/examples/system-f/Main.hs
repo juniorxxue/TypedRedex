@@ -109,7 +109,7 @@ prettyDerivation = prettyDerivationWith SystemFFormatter
 --------------------------------------------------------------------------------
 
 -- Nat equality check
-natEq :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> Applied rel '[Nat, Nat]
+natEq :: (Redex rel) => Judge rel '[Nat, Nat]
 natEq = judgment "natEq" [natEqZero, natEqSucc]
   where
     natEqZero = rule "eq-zero" $
@@ -120,7 +120,7 @@ natEq = judgment "natEq" [natEqZero, natEqSucc]
       prem  $ natEq n' m'
 
 -- Less than check (strict)
-natLt :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> Applied rel '[Nat, Nat]
+natLt :: (Redex rel) => Judge rel '[Nat, Nat]
 natLt = judgment "natLt" [natLtZero, natLtSucc]
   where
     natLtZero = rule "lt-zero" $ fresh $ \m' ->
@@ -131,7 +131,7 @@ natLt = judgment "natLt" [natLtZero, natLtSucc]
       prem  $ natLt n' m'
 
 -- Context lookup
-lookupTm :: (Redex rel) => LTerm Ctx rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Ctx, Nat, Ty]
+lookupTm :: (Redex rel) => Judge rel '[Ctx, Nat, Ty]
 lookupTm = judgment "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
   where
     lookupTmHere = rule "lookup-here" $ fresh2 $ \ty rest ->
@@ -156,7 +156,7 @@ lookupTm = judgment "lookupTm" [lookupTmHere, lookupTmThere, lookupTmSkip]
 -- ────────────────────────────── [add-succ]
 -- addNat (S n) m (S sum)
 
-addNat :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> LTerm Nat rel -> Applied rel '[Nat, Nat, Nat]
+addNat :: (Redex rel) => Judge rel '[Nat, Nat, Nat]
 addNat = judgment "addNat" [addZero, addSucc]
   where
     addZero = rule "add-zero" $ fresh $ \m ->
@@ -185,7 +185,7 @@ addNat = judgment "addNat" [addZero, addSucc]
 -- ─────────────────────────────────────────── [subst-all]
 -- substTy depth subTy (∀.body) (∀.body')
 
-substTy :: (Redex rel) => LTerm Nat rel -> LTerm Ty rel -> LTerm Ty rel -> LTerm Ty rel -> Applied rel '[Nat, Ty, Ty, Ty]
+substTy :: (Redex rel) => Judge rel '[Nat, Ty, Ty, Ty]
 substTy = judgment "substTy" [substUnit, substVar, substArr, substAll]
   where
     substUnit = rule "subst-unit" $ fresh2 $ \depth subTy ->
@@ -220,7 +220,7 @@ substTy = judgment "substTy" [substUnit, substVar, substArr, substAll]
 -- ──────────────────────────────────────────── [subst-var-gt]
 -- substTyVar depth subTy (S n') (TVar n')
 
-substTyVar :: (Redex rel) => LTerm Nat rel -> LTerm Ty rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Nat, Ty, Nat, Ty]
+substTyVar :: (Redex rel) => Judge rel '[Nat, Ty, Nat, Ty]
 substTyVar = judgment "substTyVar" [substVarEq, substVarLt, substVarGt]
   where
     substVarEq = rule "subst-var-eq" $ fresh2 $ \depth subTy -> do
@@ -253,7 +253,7 @@ substTyVar = judgment "substTyVar" [substVarEq, substVarLt, substVarGt]
 -- ─────────────────────────────────────────────── [shift-all]
 -- shiftTy cutoff amount (∀.body) (∀.body')
 
-shiftTy :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> LTerm Ty rel -> LTerm Ty rel -> Applied rel '[Nat, Nat, Ty, Ty]
+shiftTy :: (Redex rel) => Judge rel '[Nat, Nat, Ty, Ty]
 shiftTy = judgment "shiftTy" [shiftUnit, shiftVar, shiftArr, shiftAll]
   where
     shiftUnit = rule "shift-unit" $ fresh2 $ \cutoff amount ->
@@ -284,7 +284,7 @@ shiftTy = judgment "shiftTy" [shiftUnit, shiftVar, shiftArr, shiftAll]
 -- ─────────────────────────────────────── [shift-var-ge]
 -- shiftTyVar cutoff amount n (TVar n')
 
-shiftTyVar :: (Redex rel) => LTerm Nat rel -> LTerm Nat rel -> LTerm Nat rel -> LTerm Ty rel -> Applied rel '[Nat, Nat, Nat, Ty]
+shiftTyVar :: (Redex rel) => Judge rel '[Nat, Nat, Nat, Ty]
 shiftTyVar = judgment "shiftTyVar" [shiftVarLt, shiftVarGeEq, shiftVarGeGt]
   where
     -- n < cutoff: keep variable unchanged
@@ -330,7 +330,7 @@ shiftTyVar = judgment "shiftTyVar" [shiftVarLt, shiftVarGeEq, shiftVarGeGt]
 -- ─────────────────────────────────────────────── [typeof-tapp]
 -- typeof ctx (e [tyB]) tyA'
 
-typeof :: (Redex rel) => LTerm Ctx rel -> LTerm Tm rel -> LTerm Ty rel -> Applied rel '[Ctx, Tm, Ty]
+typeof :: (Redex rel) => Judge rel '[Ctx, Tm, Ty]
 typeof = judgment "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeofTLam, typeofTApp]
   where
     typeofUnit = rule "typeof-unit" $ fresh $ \ctx ->

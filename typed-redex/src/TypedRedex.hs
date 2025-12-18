@@ -88,6 +88,7 @@ module TypedRedex
 
     -- * Clean DSL syntax (judgment/rule/concl/prem)
   , Applied(..)     -- Unified Applied rel ts (replaces Applied2, Applied3, etc.)
+  , Judge           -- Type alias: Judge rel '[A,B,C] = LTerm A rel -> LTerm B rel -> LTerm C rel -> Applied rel '[A,B,C]
   , LTermList(..)   -- Heterogeneous list of logic terms
   , Conclude(..)    -- concl method + ConcludePat type family
   , Premise(..)     -- prem method
@@ -103,7 +104,7 @@ import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Var, Reified, C
 import TypedRedex.DSL.Fresh (LTerm, LVar, fresh, fresh2, fresh3, fresh4, fresh5, argument, argument2, argument3, argument4, argument5)
 
 -- DSL: Define judgment/rule syntax
-import TypedRedex.DSL.Define (Applied(..), LTermList(..), Conclude(..), Premise(..), Rule(..), rule, judgment)
+import TypedRedex.DSL.Define (Applied(..), Judge, LTermList(..), Conclude(..), Premise(..), Rule(..), rule, judgment)
 
 -- Relation primitives
 import TypedRedex.Core.Internal.Relation (relation, relation2, relation3, relation4, relation5, call, callDirect, (<=>), conde)
