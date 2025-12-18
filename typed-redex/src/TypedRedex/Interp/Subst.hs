@@ -10,6 +10,8 @@ module TypedRedex.Interp.Subst
   , Stream
   , takeS
   , takeWhileS
+    -- * Nominal Logic Support
+  , RedexNom(..)
   ) where
 
 import TypedRedex.Core.Internal.Redex
@@ -18,16 +20,25 @@ import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
 import TypedRedex.DSL.Fresh (LTerm, LVar)
 import TypedRedex.Interp.Run (eval)
 import TypedRedex.Interp.Stream
+import TypedRedex.Nominal.Nom (Nom(..), TyNom(..), NomState(..), initialNomState, genFreshNom, genFreshTyNom)
 import Control.Monad.State
 import Unsafe.Coerce (unsafeCoerce)
 
 type V s t = RVar (SubstRedex s) t
 
 -- | Substitution state for SubstRedex.
-data Subst s = Subst { subst :: forall t. V s t -> Maybe t, nextVar :: VarRepr }
+data Subst s = Subst
+  { subst :: forall t. V s t -> Maybe t
+  , nextVar :: VarRepr
+  , nomState :: NomState  -- ^ State for fresh nominal atoms
+  }
 
 emptySubst :: Subst s
-emptySubst = Subst { subst = \v -> error $ "Invalid variable " ++ displayVar v, nextVar = 0 }
+emptySubst = Subst
+  { subst = \v -> error $ "Invalid variable " ++ displayVar v
+  , nextVar = 0
+  , nomState = initialNomState
+  }
 
 readSubst :: V s a -> Subst s -> Maybe a
 readSubst v s = subst s v
@@ -99,3 +110,30 @@ instance EqVar (R s) where
 
 runSubstRedex :: (forall s. R s t) -> Stream t
 runSubstRedex (SubstRedex r) = evalStateT r emptySubst
+
+--------------------------------------------------------------------------------
+-- Nominal Logic Support
+--------------------------------------------------------------------------------
+
+-- Import RedexNom from Nominal module would create a cycle, so we define it here
+-- and re-export from Nominal
+
+-- | Typeclass for interpreters that support nominal logic.
+class Redex rel => RedexNom rel where
+  -- | Generate a fresh term variable name.
+  freshNom_ :: (Nom -> rel a) -> rel a
+  -- | Generate a fresh type variable name.
+  freshTyNom_ :: (TyNom -> rel a) -> rel a
+
+instance RedexNom (R s) where
+  freshNom_ k = do
+    s <- get
+    let (n, ns') = genFreshNom (nomState s)
+    put s { nomState = ns' }
+    k n
+
+  freshTyNom_ k = do
+    s <- get
+    let (n, ns') = genFreshTyNom (nomState s)
+    put s { nomState = ns' }
+    k n

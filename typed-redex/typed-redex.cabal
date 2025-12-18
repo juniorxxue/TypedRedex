@@ -11,6 +11,11 @@ library
   exposed-modules:
     -- Main public API
     TypedRedex
+    -- Nominal logic support
+    TypedRedex.Nominal
+    TypedRedex.Nominal.Nom
+    TypedRedex.Nominal.Bind
+    TypedRedex.Nominal.Subst
     -- Core layer (internal)
     TypedRedex.Core.Internal.Redex
     TypedRedex.Core.Internal.Logic
