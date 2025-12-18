@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main (main) where
 
@@ -9,7 +10,7 @@ import Control.Applicative (empty)
 import TypedRedex
 import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
-import TypedRedex.Interp.Deep (printRules2)
+import TypedRedex.Interp.Deep (printRules)
 import TypedRedex.Interp.Tracing (runWithDerivation, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..))
@@ -451,7 +452,7 @@ main = do
   putStrLn ""
 
   -- Extract all step rules automatically
-  printRules2 "step" step
+  printRules @'[Tm, Tm] "step" step
 
   putStrLn "=== PCF Small-Step Semantics (Execution) ==="
   putStrLn ""

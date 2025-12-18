@@ -52,6 +52,7 @@ module TypedRedex.DSL.Define
     -- * Type-level machinery
   , AllLogicType
   , Curried
+  , CurriedR
   ) where
 
 import TypedRedex.Core.Internal.Redex
@@ -85,11 +86,12 @@ type family AllLogicType (ts :: [Type]) :: Constraint where
 -- Applied type: unified for all arities
 --------------------------------------------------------------------------------
 
--- | Applied relation: stores arguments (as LTermList) and goal.
+-- | Applied relation: stores arguments (as LTermList), goal, and judgment name.
 -- Replaces Applied, Applied2, Applied3, Applied4, Applied5.
 data Applied rel (ts :: [Type]) = Applied
   { appArgs :: LTermList rel ts
   , appGoal :: rel ()
+  , appName :: String  -- ^ Judgment name (for deep interpretation markers)
   }
 
 --------------------------------------------------------------------------------
@@ -121,9 +123,11 @@ class Conclude app rel where
   type ConcludePat app
   concl :: (?concl :: ConcludePat app -> rel ()) => app -> rel ()
 
-instance Conclude (Applied rel ts) rel where
+instance Redex rel => Conclude (Applied rel ts) rel where
   type ConcludePat (Applied rel ts) = LTermList rel ts
-  concl (Applied args _) = ?concl args
+  concl (Applied args _ _) = do
+    markConclusion  -- Emit marker for deep interpretation
+    ?concl args
 
 --------------------------------------------------------------------------------
 -- Premise: single instance for Applied rel ts
@@ -133,8 +137,10 @@ instance Conclude (Applied rel ts) rel where
 class Premise app rel where
   prem :: app -> rel ()
 
-instance Premise (Applied rel ts) rel where
-  prem (Applied _ g) = g
+instance Redex rel => Premise (Applied rel ts) rel where
+  prem (Applied args g name) = do
+    markPremise name (captureTerms args)  -- Emit marker for deep interpretation
+    g
 
 --------------------------------------------------------------------------------
 -- Helper type classes for building judgment
@@ -229,7 +235,8 @@ instance (LogicType t, BuildLTermList rel ts) => BuildLTermList rel (t ': ts) wh
 judgment :: forall rel ts. (BuildLTermList rel ts, Redex rel, ArgumentList rel ts, UnifyList rel ts)
          => String -> [Rule rel ts] -> CurriedR rel ts (Applied rel ts)
 judgment name rules = buildLTermList $ \args ->
-  Applied args $ argumentList args $ \args' ->
-    let terms = captureTerms args
-    in let ?concl = \pat -> unifyList args' pat
-    in asum [call $ Relation (ruleName r) terms (ruleBody r) | r <- rules]
+  let goal = argumentList args $ \args' ->
+        let terms = captureTerms args
+        in let ?concl = \pat -> unifyList args' pat
+        in asum [call $ Relation (ruleName r) terms (ruleBody r) | r <- rules]
+  in Applied args goal name  -- Store the judgment name

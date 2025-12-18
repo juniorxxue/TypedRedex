@@ -234,6 +234,28 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
   call_ Opaque rel = suspend (relBody rel)
   call_ Transparent rel = relBody rel
 
+  ---------------------------------------------------------------------------
+  -- Deep interpretation markers (no-op by default)
+  ---------------------------------------------------------------------------
+
+  -- | Mark the start of a conclusion pattern.
+  --
+  -- Called by 'concl' before unifying the conclusion arguments.
+  -- Deep interpreters override this to record conclusion structure.
+  --
+  -- Default: no-op.
+  markConclusion :: rel ()
+  markConclusion = pure ()
+
+  -- | Mark a premise call with judgment name and captured arguments.
+  --
+  -- Called by 'prem' before executing the premise goal.
+  -- Deep interpreters override this to record premise structure.
+  --
+  -- Default: no-op.
+  markPremise :: String -> [CapturedTerm rel] -> rel ()
+  markPremise _ _ = pure ()
+
 --------------------------------------------------------------------------------
 -- RedexEval: Evaluation
 --------------------------------------------------------------------------------

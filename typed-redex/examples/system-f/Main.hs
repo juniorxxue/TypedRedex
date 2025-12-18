@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main (main) where
 
@@ -12,7 +13,7 @@ import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Tracing (runWithDerivation, runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
-import TypedRedex.Interp.Deep (printRules3With)
+import TypedRedex.Interp.Deep (printRulesWith)
 import TypedRedex.DSL.Type (quote0, quote1, quote2)
 
 import Syntax
@@ -412,7 +413,7 @@ main = do
 
   putStrLn "=== Extracted Typing Rules (DeepRedex) ==="
   putStrLn ""
-  printRules3With SystemFFormatter "typeof" typeof
+  printRulesWith @'[Ctx, Tm, Ty] SystemFFormatter "typeof" typeof
 
   putStrLn "=== Derivation Trees (TracingRedex) ==="
   putStrLn ""
