@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies, DeriveFunctor, Rank2Types, GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs, ExistentialQuantification, ScopedTypeVariables #-}
 
 -- | TracingRedex: A derivation-tracking interpreter for TypedRedex
 --
@@ -67,7 +67,10 @@ import TypedRedex.DSL.Fresh (LTerm, LVar)
 import TypedRedex.Interp.Format (formatCon, formatConWith, intercalate, TermFormatter(..), DefaultTermFormatter(..), JudgmentFormatter(..), defaultFormatJudgment)
 import TypedRedex.Interp.Stream
 import TypedRedex.Interp.Subst (RedexFresh(..))
+import TypedRedex.Nominal.Nom (NominalAtom)
+import TypedRedex.Nominal.Hash (Hash(..), RedexHash(..))
 import Control.Monad.State
+import Control.Monad (guard, forM_)
 import Control.Applicative
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -172,6 +175,11 @@ substInDerivation var val (Deriv name args children) =
 
 type V s t = RVar (TracingRedex s) t
 
+-- | An existentially wrapped hash constraint: name # term
+data HashConstraint s = forall name term.
+  (NominalAtom name, LogicType name, LogicType term, Hash name term) =>
+  HashConstraint (LTerm name (TracingRedex s)) (LTerm term (TracingRedex s))
+
 -- | A frame in the derivation stack.
 --
 -- When we enter a rule, we push a frame with CapturedTerms. As premises
@@ -190,6 +198,7 @@ data TracingState s = TracingState
   , tsDerivStack :: [DerivFrame s]               -- ^ Derivation stack
   , tsFormatter  :: String -> [String] -> String -- ^ Term formatter function
   , tsFreshCounter :: !Int                       -- ^ Counter for fresh nominal atoms
+  , tsHashConstraints :: [HashConstraint s]      -- ^ Lazy hash constraints: name # term
   }
 
 emptyState :: TracingState s
@@ -202,6 +211,7 @@ emptyStateWith fmt = TracingState
   , tsDerivStack = [DerivFrame "top" [] []]  -- Start with top-level frame
   , tsFormatter = fmt
   , tsFreshCounter = 0
+  , tsHashConstraints = []
   }
 
 varToInt :: V s t -> Int
@@ -269,7 +279,11 @@ instance Redex (TracingRedex s) where
         | occursCheck v y = empty
         | otherwise = do
             x <- gets (readSubst v)
-            maybe (modify $ updateSubst v (Just y)) (unify y) x
+            case x of
+              Nothing -> do
+                modify $ updateSubst v (Just y)
+                recheckHashConstraints  -- Check hash constraints after binding
+              Just x' -> unify y x'
 
   -- | Display variable
   displayVar (TVar v) = displayVarInt v
@@ -376,6 +390,71 @@ instance RedexFresh (TracingRedex s) where
     let n = tsFreshCounter s
     put s { tsFreshCounter = n + 1 }
     pure n
+
+--------------------------------------------------------------------------------
+-- Hash Constraints
+--------------------------------------------------------------------------------
+
+-- | Walk a logic term to its root (following variable bindings).
+walkL :: LogicType a => LTerm a (TracingRedex s) -> TracingRedex s (LTerm a (TracingRedex s))
+walkL (Ground r) = pure (Ground r)
+walkL (Free v) = do
+  mx <- gets (readSubst v)
+  case mx of
+    Nothing -> pure (Free v)  -- Unbound variable
+    Just lt -> walkL lt       -- Follow the binding
+
+-- | Check if a logic term is ground (no unbound variables at the root).
+isGroundL :: LogicType a => LTerm a (TracingRedex s) -> TracingRedex s (Maybe a)
+isGroundL lt = do
+  lt' <- walkL lt
+  case lt' of
+    Ground r -> pure (reify r)
+    Free _   -> pure Nothing
+
+-- | Add a hash constraint to the constraint store.
+addHashConstraint :: (NominalAtom name, LogicType name, LogicType term, Hash name term)
+                  => LTerm name (TracingRedex s) -> LTerm term (TracingRedex s) -> TracingRedex s ()
+addHashConstraint nameL termL = modify $ \s ->
+  s { tsHashConstraints = HashConstraint nameL termL : tsHashConstraints s }
+
+-- | Check a single hash constraint.
+checkHashConstraint :: HashConstraint s -> TracingRedex s ()
+checkHashConstraint (HashConstraint nameL termL) = do
+  mName <- isGroundL nameL
+  mTerm <- isGroundL termL
+  case (mName, mTerm) of
+    (Just name, Just term) ->
+      -- Both ground: check immediately
+      guard (not $ occursIn name term)
+    _ ->
+      -- At least one is still a variable: keep the constraint
+      addHashConstraint nameL termL
+
+-- | Re-check all hash constraints (called after unification).
+recheckHashConstraints :: TracingRedex s ()
+recheckHashConstraints = do
+  constraints <- gets tsHashConstraints
+  -- Clear the constraint store before re-checking
+  modify $ \s -> s { tsHashConstraints = [] }
+  -- Re-check each constraint (will re-add if still not ground)
+  forM_ constraints checkHashConstraint
+
+instance RedexHash (TracingRedex s) where
+  hash nameL termL = do
+    -- Walk to roots
+    nameL' <- walkL nameL
+    termL' <- walkL termL
+    -- Try to get ground values
+    mName <- isGroundL nameL'
+    mTerm <- isGroundL termL'
+    case (mName, mTerm) of
+      (Just name, Just term) ->
+        -- Both ground: check immediately, fail if violated
+        guard (not $ occursIn name term)
+      _ ->
+        -- At least one is a variable: store constraint for later
+        addHashConstraint nameL' termL'
 
 --------------------------------------------------------------------------------
 -- Running

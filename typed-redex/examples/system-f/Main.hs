@@ -230,4 +230,194 @@ main = do
     _ -> putStrLn "No derivation found"
   putStrLn ""
 
-  putStrLn "=== All tests passed ==="
+  putStrLn "=== Alpha-Equivalence Tests ==="
+  putStrLn ""
+
+  -- Test 9: Alpha-equivalence of term binders
+  -- λx:Unit. x  should equal  λy:Unit. y
+  let x100 = Nom 100
+      y200 = Nom 200
+      lamX = Lam TUnit (Bind x100 (Var x100))  -- λx. x
+      lamY = Lam TUnit (Bind y200 (Var y200))  -- λy. y
+  putStrLn "9. Alpha-equivalence: (λx:Unit. x) =α= (λy:Unit. y)"
+  putStrLn $ "   lamX = " ++ show lamX
+  putStrLn $ "   lamY = " ++ show lamY
+  let alphaTest1 = runSubstRedex $ do
+        (Ground (project lamX)) <=> (Ground (project lamY))
+        pure "unified!"
+  putStrLn $ "   Result: " ++ show (takeS 1 alphaTest1)
+  putStrLn ""
+
+  -- Test 10: Alpha-equivalence of type binders
+  -- ∀α. α  should equal  ∀β. β
+  let alpha100 = TyNom 100
+      beta200 = TyNom 200
+      forallAlpha = TAll (Bind alpha100 (TVar alpha100))  -- ∀α. α
+      forallBeta  = TAll (Bind beta200 (TVar beta200))    -- ∀β. β
+  putStrLn "10. Alpha-equivalence: (∀α. α) =α= (∀β. β)"
+  putStrLn $ "    forallAlpha = " ++ show forallAlpha
+  putStrLn $ "    forallBeta  = " ++ show forallBeta
+  let alphaTest2 = runSubstRedex $ do
+        (Ground (project forallAlpha)) <=> (Ground (project forallBeta))
+        pure "unified!"
+  putStrLn $ "    Result: " ++ show (takeS 1 alphaTest2)
+  putStrLn ""
+
+  -- Test 11: Alpha-equivalence with more complex bodies
+  -- ∀α. α → α  should equal  ∀β. β → β
+  let forallArr1 = TAll (Bind alpha100 (TArr (TVar alpha100) (TVar alpha100)))
+      forallArr2 = TAll (Bind beta200 (TArr (TVar beta200) (TVar beta200)))
+  putStrLn "11. Alpha-equivalence: (∀α. α→α) =α= (∀β. β→β)"
+  let alphaTest3 = runSubstRedex $ do
+        (Ground (project forallArr1)) <=> (Ground (project forallArr2))
+        pure "unified!"
+  putStrLn $ "    Result: " ++ show (takeS 1 alphaTest3)
+  putStrLn ""
+
+  -- Test 12: NON-alpha-equivalent types should NOT unify
+  -- ∀α. α  should NOT equal  ∀α. Unit
+  let forallUnit = TAll (Bind alpha100 TUnit)
+  putStrLn "12. Non-equivalence: (∀α. α) ≠ (∀α. Unit)"
+  let alphaTest4 = runSubstRedex $ do
+        (Ground (project forallAlpha)) <=> (Ground (project forallUnit))
+        pure "unified!"
+  putStrLn $ "    Result (should be empty): " ++ show (takeS 1 alphaTest4)
+  putStrLn ""
+
+  putStrLn "=== Substitution Tests ==="
+  putStrLn ""
+
+  -- Test 13: Simple substitution (no capture)
+  -- [Unit/α](α → α) = Unit → Unit
+  let tyBody = TArr (TVar alpha100) (TVar alpha100)  -- α → α
+      substResult1 = subst alpha100 TUnit tyBody
+  putStrLn "13. Substitution: [Unit/α](α → α)"
+  putStrLn $ "    Before: " ++ show tyBody
+  putStrLn $ "    After:  " ++ show substResult1
+  putStrLn $ "    Expected: Unit → Unit"
+  putStrLn ""
+
+  -- Test 14: Substitution with shadowing (should NOT substitute under shadow)
+  -- [Unit/α](∀α. α) = ∀α. α  (α is shadowed)
+  let substResult2 = subst alpha100 TUnit forallAlpha
+  putStrLn "14. Substitution with shadowing: [Unit/α](∀α. α)"
+  putStrLn $ "    Before: " ++ show forallAlpha
+  putStrLn $ "    After:  " ++ show substResult2
+  putStrLn $ "    Expected: ∀α. α (unchanged, shadowed)"
+  putStrLn ""
+
+  -- Test 15: Substitution under binder (no capture risk)
+  -- [Unit/α](∀β. α → β) = ∀β. Unit → β
+  let gamma300 = TyNom 300
+      forallGammaAlpha = TAll (Bind gamma300 (TArr (TVar alpha100) (TVar gamma300)))
+      substResult3 = subst alpha100 TUnit forallGammaAlpha
+  putStrLn "15. Substitution under binder: [Unit/α](∀γ. α → γ)"
+  putStrLn $ "    Before: " ++ show forallGammaAlpha
+  putStrLn $ "    After:  " ++ show substResult3
+  putStrLn $ "    Expected: ∀γ. Unit → γ"
+  putStrLn ""
+
+  -- Test 16: CAPTURE TEST - This is where naive substitution fails!
+  -- [β/α](∀β. α → β) should be ∀β'. β → β' (with fresh β')
+  -- But naive substitution gives ∀β. β → β (WRONG - β is captured!)
+  let forallBetaAlpha = TAll (Bind beta200 (TArr (TVar alpha100) (TVar beta200)))
+      -- Substituting β for α
+      substResult4 = subst alpha100 (TVar beta200) forallBetaAlpha
+  putStrLn "16. CAPTURE TEST: [β/α](∀β. α → β)"
+  putStrLn $ "    Before: " ++ show forallBetaAlpha
+  putStrLn $ "    After:  " ++ show substResult4
+  putStrLn $ "    Expected (capture-avoiding): ∀β'. β → β' (fresh β')"
+  putStrLn $ "    Actual (naive, WRONG if captured): ∀β. β → β"
+  -- Check if capture occurred
+  case substResult4 of
+    TAll (Bind boundVar (TArr t1 t2)) ->
+      if t1 == TVar boundVar
+        then putStrLn "    WARNING: Capture occurred! The free β became bound."
+        else putStrLn "    OK: No capture (or properly renamed)."
+    _ -> putStrLn "    Unexpected result shape"
+  putStrLn ""
+
+  -- Test 17: Type application that exercises substitution
+  -- (Λα. λx:α. x) [∀β. β]  should typecheck
+  -- Result type: (∀β. β) → (∀β. β)
+  let polyType = TAll (Bind beta200 (TVar beta200))  -- ∀β. β
+      polyIdWithPolyArg = TApp polyId polyType
+  putStrLn "17. Typecheck: (Λα. λx:α. x) [∀β. β]"
+  putStrLn $ "    Expected type: (∀β. β) → (∀β. β)"
+  print $ takeS 1 (typeofIO Nil polyIdWithPolyArg)
+  putStrLn ""
+
+  putStrLn "=== Hash Constraint Tests ==="
+  putStrLn ""
+
+  -- Test 18: Demonstrate hash constraint for capture avoidance
+  -- The hash constraint α # β asserts α ≠ β (α does not occur in β)
+  putStrLn "18. Hash constraint: α # β (α does not occur free in β)"
+  let hashTest1 = runSubstRedex $ do
+        -- α # β should succeed when α ≠ β
+        hash (tynom alpha100) (tynom beta200)
+        pure "α # β succeeded (they're different)"
+  putStrLn $ "    hash α100 β200: " ++ show (takeS 1 hashTest1)
+
+  let hashTest2 = runSubstRedex $ do
+        -- α # α should fail (α occurs in α)
+        hash (tynom alpha100) (tynom alpha100)
+        pure "α # α succeeded (BUG!)"
+  putStrLn $ "    hash α100 α100: " ++ show (takeS 1 hashTest2) ++ " (should be empty)"
+  putStrLn ""
+
+  -- Test 19: Hash in types - α # (β → β)
+  putStrLn "19. Hash in types: α # (β → β)"
+  let tyBetaArr = TArr (TVar beta200) (TVar beta200)  -- β → β
+  let hashTest3 = runSubstRedex $ do
+        hash (tynom alpha100) (Ground (project tyBetaArr))
+        pure "α # (β → β) succeeded"
+  putStrLn $ "    hash α (β → β): " ++ show (takeS 1 hashTest3)
+
+  let tyAlphaArr = TArr (TVar alpha100) (TVar alpha100)  -- α → α
+  let hashTest4 = runSubstRedex $ do
+        hash (tynom alpha100) (Ground (project tyAlphaArr))
+        pure "α # (α → α) succeeded (BUG!)"
+  putStrLn $ "    hash α (α → α): " ++ show (takeS 1 hashTest4) ++ " (should be empty)"
+  putStrLn ""
+
+  -- Test 20: Hash with binder - α # (∀α. α) should succeed (α is bound)
+  putStrLn "20. Hash with shadowing: α # (∀α. α)"
+  let hashTest5 = runSubstRedex $ do
+        hash (tynom alpha100) (Ground (project forallAlpha))
+        pure "α # (∀α. α) succeeded (α is shadowed)"
+  putStrLn $ "    hash α100 (∀α100. α100): " ++ show (takeS 1 hashTest5)
+  putStrLn ""
+
+  -- Test 21: Using hash for capture-avoiding substitution
+  -- To properly do [β/α](∀β. α → β), we need:
+  -- 1. Pick fresh γ where γ # β (the replacement)
+  -- 2. Rename ∀β to ∀γ
+  -- 3. Then substitute
+  putStrLn "21. Capture-avoiding substitution via hash + swap:"
+  putStrLn "    [β/α](∀β. α → β) with fresh γ where γ # β"
+  let captureAvoidTest = runSubstRedex $ do
+        -- Pick a fresh name
+        gamma <- freshTyNom
+        -- Ensure gamma # replacement (β)
+        hash (tynom gamma) (tvar (tynom beta200))
+        -- Now gamma is safe to use as binder
+        -- Original: ∀β. α → β  (with β = beta200, α = alpha100)
+        -- After renaming β to γ: ∀γ. α → γ
+        -- After substituting [β/α]: ∀γ. β → γ
+        let renamedBody = TArr (TVar alpha100) (TVar gamma)  -- α → γ (after swap)
+        let result = TAll (Bind gamma (subst alpha100 (TVar beta200) renamedBody))
+        pure result
+  case takeS 1 captureAvoidTest of
+    [result] -> do
+      putStrLn $ "    Result: " ++ show result
+      case result of
+        TAll (Bind boundVar (TArr t1 t2)) ->
+          if t1 == TVar beta200 && t2 == TVar boundVar && boundVar /= beta200
+            then putStrLn "    CORRECT: ∀γ. β → γ (no capture!)"
+            else putStrLn "    Check the result structure"
+        _ -> putStrLn "    Unexpected shape"
+    [] -> putStrLn "    No result (constraint failed)"
+  putStrLn ""
+
+  putStrLn "=== All tests completed ==="

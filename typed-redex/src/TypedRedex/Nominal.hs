@@ -28,6 +28,18 @@
 --     prem $ typeof (extend (nom x) tyA ctx) body tyB
 -- @
 --
+-- = Hash Constraints (Freshness)
+--
+-- The 'hash' function asserts @a # t@ (\"a does not occur free in t\"):
+--
+-- @
+-- hash (nom x) term  -- x # term
+-- @
+--
+-- = Capture-Avoiding Substitution
+--
+-- Use 'Substo' for capture-avoiding substitution. See "TypedRedex.Nominal.Subst".
+--
 -- = Custom Name Types
 --
 -- For custom name types, use 'RedexFresh' and 'unbindWith':
@@ -52,7 +64,12 @@ module TypedRedex.Nominal
   , Bind(..)
     -- * Permutation
   , Permute(..)
-    -- * Substitution
+    -- * Hash Constraints (Freshness)
+  , Hash(..)
+  , RedexHash(..)
+    -- * Relational Substitution (Capture-Avoiding)
+  , Substo(..)
+    -- * Legacy Pure Substitution (use with caution)
   , Subst(..)
   , substBind
     -- * Fresh Name Generation
@@ -74,6 +91,7 @@ import TypedRedex.Interp.Subst (RedexFresh(..))
 import TypedRedex.Nominal.Nom
 import TypedRedex.Nominal.Bind
 import TypedRedex.Nominal.Subst
+import TypedRedex.Nominal.Hash
 
 --------------------------------------------------------------------------------
 -- High-Level API (Generic)

@@ -87,6 +87,23 @@ instance Subst TyNom Ty where
     TAll bnd -> TAll (substBind name replacement bnd)
 
 --------------------------------------------------------------------------------
+-- Hash instances for Ty (checking if name occurs free)
+--------------------------------------------------------------------------------
+
+-- Check if TyNom occurs free in Ty
+instance Hash TyNom Ty where
+  occursIn a TUnit = False
+  occursIn a (TVar v) = a == v
+  occursIn a (TArr t1 t2) = occursIn a t1 || occursIn a t2
+  occursIn a (TAll (Bind b body))
+    | a == b    = False  -- shadowed
+    | otherwise = occursIn a body
+
+-- Nom never occurs in Ty (different namespace)
+instance Hash Nom Ty where
+  occursIn _ _ = False
+
+--------------------------------------------------------------------------------
 -- Terms
 --------------------------------------------------------------------------------
 
@@ -141,6 +158,32 @@ instance Permute Nom (Bind TyNom Tm) where
 -- Cross: TyNom in Bind Nom Tm (TyNom swap doesn't affect Nom)
 instance Permute TyNom (Bind Nom Tm) where
   swap a b (Bind n body) = Bind n (swap a b body)
+
+--------------------------------------------------------------------------------
+-- Hash instances for Tm (checking if name occurs free)
+--------------------------------------------------------------------------------
+
+-- Check if Nom occurs free in Tm
+instance Hash Nom Tm where
+  occursIn a Unit = False
+  occursIn a (Var v) = a == v
+  occursIn a (Lam _ (Bind b body))
+    | a == b    = False  -- shadowed
+    | otherwise = occursIn a body
+  occursIn a (App t1 t2) = occursIn a t1 || occursIn a t2
+  occursIn a (TLam (Bind _ body)) = occursIn a body  -- TyNom doesn't shadow Nom
+  occursIn a (TApp t _) = occursIn a t  -- ty has no Nom
+
+-- Check if TyNom occurs free in Tm
+instance Hash TyNom Tm where
+  occursIn _ Unit = False
+  occursIn _ (Var _) = False  -- term vars don't contain type vars
+  occursIn a (Lam ty (Bind _ body)) = occursIn a ty || occursIn a body
+  occursIn a (App t1 t2) = occursIn a t1 || occursIn a t2
+  occursIn a (TLam (Bind b body))
+    | a == b    = False  -- shadowed
+    | otherwise = occursIn a body
+  occursIn a (TApp t ty) = occursIn a t || occursIn a ty
 
 --------------------------------------------------------------------------------
 -- Type substitution in terms (TyNom -> Ty in Tm)

@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, DeriveFunctor, Rank2Types, GeneralisedNewtypeDeriving, TypeSynonymInstances, MultiParamTypeClasses, FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies, DeriveFunctor, Rank2Types, GeneralisedNewtypeDeriving, TypeSynonymInstances, MultiParamTypeClasses, FlexibleContexts, ExistentialQuantification, ScopedTypeVariables #-}
 
 -- | SubstRedex: A substitution-based interpreter for TypedRedex
 --
@@ -12,24 +12,38 @@ module TypedRedex.Interp.Subst
   , takeWhileS
     -- * Fresh Name Generation
   , RedexFresh(..)
+    -- * Hash Constraints
+  , RedexHash(..)
   ) where
 
 import TypedRedex.Core.Internal.Redex
+import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), reify)
 import TypedRedex.Core.Internal.Unify (flatteningUnify, occursCheck)
 import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
 import TypedRedex.DSL.Fresh (LTerm, LVar)
 import TypedRedex.Interp.Run (eval)
 import TypedRedex.Interp.Stream
+import TypedRedex.Nominal.Nom (NominalAtom)
+import TypedRedex.Nominal.Hash (Hash(..), RedexHash(..))
 import Control.Monad.State
+import Control.Monad (guard, forM_)
+import Control.Applicative (empty)
 import Unsafe.Coerce (unsafeCoerce)
 
 type V s t = RVar (SubstRedex s) t
+
+-- | An existentially wrapped hash constraint: name # term
+-- Used to store heterogeneous constraints in the constraint store.
+data HashConstraint s = forall name term.
+  (NominalAtom name, LogicType name, LogicType term, Hash name term) =>
+  HashConstraint (LTerm name (SubstRedex s)) (LTerm term (SubstRedex s))
 
 -- | Substitution state for SubstRedex.
 data Subst s = Subst
   { subst :: forall t. V s t -> Maybe t
   , nextVar :: VarRepr
   , freshCounter :: !Int  -- ^ Counter for fresh nominal atoms
+  , hashConstraints :: [HashConstraint s]  -- ^ Lazy hash constraints: name # term
   }
 
 emptySubst :: Subst s
@@ -37,6 +51,7 @@ emptySubst = Subst
   { subst = \v -> error $ "Invalid variable " ++ displayVar v
   , nextVar = 0
   , freshCounter = 0
+  , hashConstraints = []
   }
 
 readSubst :: V s a -> Subst s -> Maybe a
@@ -76,9 +91,11 @@ instance Redex (R s) where
             unif v y | occursCheck v y = empty
                      | otherwise = do
                         x <- readVar v
-                        maybe (modify $ updateSubst v (Just y))
-                              (unify y)
-                              x
+                        case x of
+                          Nothing -> do
+                            modify $ updateSubst v (Just y)
+                            recheckHashConstraints  -- Check hash constraints after binding
+                          Just x' -> unify y x'
 
     displayVar (SVar v) = displayVarInt v
 
@@ -135,3 +152,68 @@ instance RedexFresh (R s) where
     let n = freshCounter s
     put s { freshCounter = n + 1 }
     pure n
+
+--------------------------------------------------------------------------------
+-- Hash Constraints
+--------------------------------------------------------------------------------
+
+-- | Walk a logic term to its root (following variable bindings).
+walkL :: LogicType a => LTerm a (R s) -> R s (LTerm a (R s))
+walkL (Ground r) = pure (Ground r)
+walkL (Free v) = do
+  mx <- readVar v
+  case mx of
+    Nothing -> pure (Free v)  -- Unbound variable
+    Just lt -> walkL lt       -- Follow the binding
+
+-- | Check if a logic term is ground (no unbound variables at the root).
+isGroundL :: LogicType a => LTerm a (R s) -> R s (Maybe a)
+isGroundL lt = do
+  lt' <- walkL lt
+  case lt' of
+    Ground r -> pure (reify r)
+    Free _   -> pure Nothing
+
+-- | Add a hash constraint to the constraint store.
+addHashConstraint :: (NominalAtom name, LogicType name, LogicType term, Hash name term)
+                  => LTerm name (R s) -> LTerm term (R s) -> R s ()
+addHashConstraint nameL termL = modify $ \s ->
+  s { hashConstraints = HashConstraint nameL termL : hashConstraints s }
+
+-- | Check a single hash constraint. Returns True if satisfied or deferred.
+checkHashConstraint :: HashConstraint s -> R s ()
+checkHashConstraint (HashConstraint nameL termL) = do
+  mName <- isGroundL nameL
+  mTerm <- isGroundL termL
+  case (mName, mTerm) of
+    (Just name, Just term) ->
+      -- Both ground: check immediately
+      guard (not $ occursIn name term)
+    _ ->
+      -- At least one is still a variable: keep the constraint
+      addHashConstraint nameL termL
+
+-- | Re-check all hash constraints (called after unification).
+recheckHashConstraints :: R s ()
+recheckHashConstraints = do
+  constraints <- gets hashConstraints
+  -- Clear the constraint store before re-checking
+  modify $ \s -> s { hashConstraints = [] }
+  -- Re-check each constraint (will re-add if still not ground)
+  forM_ constraints checkHashConstraint
+
+instance RedexHash (R s) where
+  hash nameL termL = do
+    -- Walk to roots
+    nameL' <- walkL nameL
+    termL' <- walkL termL
+    -- Try to get ground values
+    mName <- isGroundL nameL'
+    mTerm <- isGroundL termL'
+    case (mName, mTerm) of
+      (Just name, Just term) ->
+        -- Both ground: check immediately, fail if violated
+        guard (not $ occursIn name term)
+      _ ->
+        -- At least one is a variable: store constraint for later
+        addHashConstraint nameL' termL'

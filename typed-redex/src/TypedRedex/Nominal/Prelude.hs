@@ -49,6 +49,7 @@ import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), VarNaming(..))
 import TypedRedex.Nominal.Nom (NominalAtom(..))
 import TypedRedex.Nominal.Bind (Bind(..), Permute(..), mkBind)
 import TypedRedex.Nominal.Subst (Subst(..))
+import TypedRedex.Nominal.Hash (Hash(..))
 
 --------------------------------------------------------------------------------
 -- Nominal Atom Types
@@ -142,6 +143,18 @@ instance Subst Nom TyNom where
 -- Substituting TyNom doesn't affect Nom
 instance Subst TyNom Nom where
   subst _ _ y = y
+
+--------------------------------------------------------------------------------
+-- Cross-namespace Hash instances
+--------------------------------------------------------------------------------
+
+-- Nom never occurs free in TyNom (different namespaces)
+instance Hash Nom TyNom where
+  occursIn _ _ = False
+
+-- TyNom never occurs free in Nom (different namespaces)
+instance Hash TyNom Nom where
+  occursIn _ _ = False
 
 --------------------------------------------------------------------------------
 -- Fresh Name Generation
