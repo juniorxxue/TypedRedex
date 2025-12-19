@@ -119,10 +119,10 @@ typeof = judgment "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeofT
       prem  $ lookupTm ctx x ty
 
     -- Gamma, x:A |- e : B  =>  Gamma |- lam x:A. e : A -> B
-    typeofLam = rule "typeof-lam" $ fresh2 $ \ctx tyA -> do
-      freshNom_ $ \x -> fresh2 $ \body tyB -> do
-        concl $ typeof ctx (lam tyA (bind x body)) (tarr tyA tyB)
-        prem  $ typeof (tmBind (nom x) tyA ctx) body tyB
+    -- Now using unified fresh: x :: Nom is inferred from bind usage
+    typeofLam = rule "typeof-lam" $ fresh5 $ \ctx tyA x body tyB -> do
+      concl $ typeof ctx (lam tyA (bind x body)) (tarr tyA tyB)
+      prem  $ typeof (tmBind (nom x) tyA ctx) body tyB
 
     -- Gamma |- e1 : A -> B  /\  Gamma |- e2 : A  =>  Gamma |- e1 e2 : B
     typeofApp = rule "typeof-app" $ fresh5 $ \ctx e1 e2 tyA tyB -> do
@@ -131,11 +131,10 @@ typeof = judgment "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeofT
       prem  $ typeof ctx e2 tyA
 
     -- Gamma, alpha |- e : A  =>  Gamma |- Lam alpha. e : forall alpha. A
-    typeofTLam = rule "typeof-tlam" $ fresh $ \ctx -> do
-      -- Open the term binder to get fresh alpha and body
-      freshTyNom_ $ \alpha -> fresh2 $ \body tyBody -> do
-        concl $ typeof ctx (tlam (bind alpha body)) (tall (bind alpha tyBody))
-        prem  $ typeof (tyBind' (tynom alpha) ctx) body tyBody
+    -- Now using unified fresh: alpha :: TyNom is inferred from bind usage
+    typeofTLam = rule "typeof-tlam" $ fresh4 $ \ctx alpha body tyBody -> do
+      concl $ typeof ctx (tlam (bind alpha body)) (tall (bind alpha tyBody))
+      prem  $ typeof (tyBind' (tynom alpha) ctx) body tyBody
 
     -- Gamma |- e : forall alpha. A  =>  Gamma |- e [B] : A[alpha := B]
     typeofTApp = rule "typeof-tapp" $ fresh5 $ \ctx e tyArg tyBnd result -> do

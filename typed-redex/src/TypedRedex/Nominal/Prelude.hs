@@ -15,9 +15,10 @@
 --
 -- data Tm = Var Nom | Lam Ty (Bind Nom Tm) | App Tm Tm
 --
--- -- In rules:
--- freshNom_ $ \x -> ...
--- (name, body) <- unbind bnd
+-- -- In rules, you can mix logic variables and nominal atoms:
+-- fresh5 $ \\ctx tyA x body tyB -> do
+--   -- ctx :: LTerm Ctx rel, x :: Nom, body :: LTerm Tm rel
+--   concl $ typeof ctx (lam tyA (bind x body)) (tarr tyA tyB)
 -- @
 --
 -- For custom name types, use 'TypedRedex.Nominal' directly with 'RedexFresh'.
@@ -41,7 +42,7 @@ module TypedRedex.Nominal.Prelude
 import Control.Applicative (empty)
 import TypedRedex.Core.Internal.Redex (Redex, RedexEval(..))
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.DSL.Fresh (LTerm)
+import TypedRedex.DSL.Fresh (LTerm, Freshable(..))
 import TypedRedex.DSL.Type (con0)
 import TypedRedex.Interp.Run (eval)
 import TypedRedex.Interp.Subst (RedexFresh(..))
@@ -175,6 +176,18 @@ freshNom_ k = freshNom >>= k
 -- | CPS version of 'freshTyNom'.
 freshTyNom_ :: RedexFresh rel => (TyNom -> rel a) -> rel a
 freshTyNom_ k = freshTyNom >>= k
+
+--------------------------------------------------------------------------------
+-- Freshable instances (for unified fresh)
+--------------------------------------------------------------------------------
+
+-- | Nom can be freshly allocated in any relation that supports RedexFresh.
+instance RedexFresh rel => Freshable Nom rel where
+  freshOne k = freshNom >>= k
+
+-- | TyNom can be freshly allocated in any relation that supports RedexFresh.
+instance RedexFresh rel => Freshable TyNom rel where
+  freshOne k = freshTyNom >>= k
 
 --------------------------------------------------------------------------------
 -- Convenience Unbind

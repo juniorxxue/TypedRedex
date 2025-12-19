@@ -55,8 +55,10 @@ module TypedRedex
   , LVar                  -- ^ Type alias for Var a (RVar rel)
 
     -- * Creating fresh variables
-    -- | Allocate unbound logic variables (∃ quantification)
-  , fresh, fresh2, fresh3, fresh4, fresh5
+    -- | Allocate unbound logic variables or nominal atoms (∃ quantification).
+    -- The type of each variable is inferred from usage context.
+  , Freshable(..)
+  , fresh, fresh2, fresh3, fresh4, fresh5, fresh6, fresh7
 
     -- * Defining relations
     -- | Build named relations from Haskell functions
@@ -101,7 +103,7 @@ import TypedRedex.Core.Internal.Redex (Redex(..), RedexEval(..), RedexNeg(..), R
 import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Var, Reified, Constructor(..), Field(..))
 
 -- DSL: Fresh variables and type aliases
-import TypedRedex.DSL.Fresh (LTerm, LVar, fresh, fresh2, fresh3, fresh4, fresh5, argument, argument2, argument3, argument4, argument5)
+import TypedRedex.DSL.Fresh (LTerm, LVar, Freshable(..), fresh, fresh2, fresh3, fresh4, fresh5, fresh6, fresh7, argument, argument2, argument3, argument4, argument5)
 
 -- DSL: Define judgment/rule syntax
 import TypedRedex.DSL.Define (Applied(..), Judge, LTermList(..), Conclude(..), Premise(..), Rule(..), rule, judgment)
