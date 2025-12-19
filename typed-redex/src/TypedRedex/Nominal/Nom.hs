@@ -1,111 +1,48 @@
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DefaultSignatures #-}
 
--- | Nominal atoms for lambda binding.
+-- | Nominal atom typeclass for lambda binding.
 --
--- This module provides the 'Nom' and 'TyNom' types representing
--- nominal atoms (names) for term and type variables respectively.
--- Unlike logic variables, nominal atoms are ground values.
+-- This module provides the 'NominalAtom' typeclass that defines the requirements
+-- for name types that can be used with 'Bind'.
+--
+-- For standard name types ('Nom', 'TyNom'), see "TypedRedex.Nominal.Prelude".
 module TypedRedex.Nominal.Nom
-  ( -- * Nominal Atom Types
-    Nom(..)
-  , TyNom(..)
-    -- * Fresh Name Generation
-  , NomState(..)
-  , initialNomState
-  , genFreshNom
-  , genFreshTyNom
+  ( NominalAtom(..)
   ) where
 
-import Control.Applicative (empty)
-import TypedRedex.Core.Internal.Logic
-import TypedRedex.DSL.Type (con0)
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), VarNaming(..))
+import TypedRedex.Core.Internal.Logic (LogicType)
 
 --------------------------------------------------------------------------------
--- Nominal Atom Types
+-- Nominal Atom Typeclass
 --------------------------------------------------------------------------------
 
--- | A nominal atom for term variables.
+-- | Typeclass for nominal atom types (variable names).
 --
--- Nom values are ground identifiers that represent variable names.
--- Two Noms are equal iff they have the same index.
-newtype Nom = Nom { nomId :: Int }
-  deriving (Eq, Ord)
-
-instance Show Nom where
-  show (Nom n) = "x" ++ show n
-
--- | A nominal atom for type variables.
+-- A nominal atom is a ground identifier used for variable binding.
+-- Types that implement this class can be used with 'Bind'.
 --
--- TyNom values are ground identifiers that represent type variable names.
-newtype TyNom = TyNom { tyNomId :: Int }
-  deriving (Eq, Ord)
-
-instance Show TyNom where
-  show (TyNom n) = "α" ++ show n
-
---------------------------------------------------------------------------------
--- LogicType Instances
---------------------------------------------------------------------------------
-
-instance LogicVarNaming Nom where
-  varNaming = VarNaming "X" (\i -> "x?" ++ show i)
-
-instance LogicType Nom where
-  data Reified Nom var = NomR Int
-
-  project (Nom n) = NomR n
-
-  reify (NomR n) = Just (Nom n)
-
-  -- NomR doesn't depend on var, so we can use a simple implementation
-  quote (NomR n) = (con0 ("x" ++ show n) (NomR n), [])
-
-  unifyVal _ (NomR a) (NomR b)
-    | a == b    = pure ()
-    | otherwise = empty
-
-  derefVal _ (NomR n) = pure (Nom n)
-
-
-instance LogicVarNaming TyNom where
-  varNaming = VarNaming "A" (\i -> "α?" ++ show i)
-
-instance LogicType TyNom where
-  data Reified TyNom var = TyNomR Int
-
-  project (TyNom n) = TyNomR n
-
-  reify (TyNomR n) = Just (TyNom n)
-
-  quote (TyNomR n) = (con0 ("α" ++ show n) (TyNomR n), [])
-
-  unifyVal _ (TyNomR a) (TyNomR b)
-    | a == b    = pure ()
-    | otherwise = empty
-
-  derefVal _ (TyNomR n) = pure (TyNom n)
-
---------------------------------------------------------------------------------
--- Fresh Name Generation State
---------------------------------------------------------------------------------
-
--- | State for generating fresh nominal atoms.
-data NomState = NomState
-  { nextNom   :: !Int  -- ^ Counter for term variable names
-  , nextTyNom :: !Int  -- ^ Counter for type variable names
-  }
-
--- | Initial state with counters at 0.
-initialNomState :: NomState
-initialNomState = NomState 0 0
-
--- | Generate a fresh term variable name.
-genFreshNom :: NomState -> (Nom, NomState)
-genFreshNom s = (Nom (nextNom s), s { nextNom = nextNom s + 1 })
-
--- | Generate a fresh type variable name.
-genFreshTyNom :: NomState -> (TyNom, NomState)
-genFreshTyNom s = (TyNom (nextTyNom s), s { nextTyNom = nextTyNom s + 1 })
+-- Requirements:
+-- - 'Eq' for comparing names (needed for alpha-equivalence)
+-- - 'LogicType' for use in logic terms
+-- - Self-swapping: @swap a b a == b@ and @swap a b b == a@
+--
+-- Example: defining a custom name type:
+--
+-- @
+-- newtype KindNom = KindNom Int deriving (Eq, Ord)
+--
+-- instance NominalAtom KindNom
+--
+-- instance LogicType KindNom where
+--   ...
+--
+-- freshKindNom :: RedexFresh rel => rel KindNom
+-- freshKindNom = KindNom \<$\> freshInt
+-- @
+class (Eq name, LogicType name) => NominalAtom name where
+  -- | Swap two names in a name. This is the base case for permutation.
+  swapAtom :: name -> name -> name -> name
+  swapAtom a b x
+    | x == a    = b
+    | x == b    = a
+    | otherwise = x

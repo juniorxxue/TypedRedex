@@ -16,6 +16,7 @@ library
     TypedRedex.Nominal.Nom
     TypedRedex.Nominal.Bind
     TypedRedex.Nominal.Subst
+    TypedRedex.Nominal.Prelude
     -- Core layer (internal)
     TypedRedex.Core.Internal.Redex
     TypedRedex.Core.Internal.Logic

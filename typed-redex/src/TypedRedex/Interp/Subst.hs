@@ -10,8 +10,8 @@ module TypedRedex.Interp.Subst
   , Stream
   , takeS
   , takeWhileS
-    -- * Nominal Logic Support
-  , RedexNom(..)
+    -- * Fresh Name Generation
+  , RedexFresh(..)
   ) where
 
 import TypedRedex.Core.Internal.Redex
@@ -20,7 +20,6 @@ import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
 import TypedRedex.DSL.Fresh (LTerm, LVar)
 import TypedRedex.Interp.Run (eval)
 import TypedRedex.Interp.Stream
-import TypedRedex.Nominal.Nom (Nom(..), TyNom(..), NomState(..), initialNomState, genFreshNom, genFreshTyNom)
 import Control.Monad.State
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -30,14 +29,14 @@ type V s t = RVar (SubstRedex s) t
 data Subst s = Subst
   { subst :: forall t. V s t -> Maybe t
   , nextVar :: VarRepr
-  , nomState :: NomState  -- ^ State for fresh nominal atoms
+  , freshCounter :: !Int  -- ^ Counter for fresh nominal atoms
   }
 
 emptySubst :: Subst s
 emptySubst = Subst
   { subst = \v -> error $ "Invalid variable " ++ displayVar v
   , nextVar = 0
-  , nomState = initialNomState
+  , freshCounter = 0
   }
 
 readSubst :: V s a -> Subst s -> Maybe a
@@ -112,28 +111,27 @@ runSubstRedex :: (forall s. R s t) -> Stream t
 runSubstRedex (SubstRedex r) = evalStateT r emptySubst
 
 --------------------------------------------------------------------------------
--- Nominal Logic Support
+-- Fresh Name Generation (Generic)
 --------------------------------------------------------------------------------
 
--- Import RedexNom from Nominal module would create a cycle, so we define it here
--- and re-export from Nominal
+-- | Typeclass for interpreters that support fresh name generation.
+--
+-- Users build their own nominal atom generators using 'freshInt':
+--
+-- @
+-- freshNom :: RedexFresh rel => rel Nom
+-- freshNom = Nom \<$\> freshInt
+--
+-- freshTyNom :: RedexFresh rel => rel TyNom
+-- freshTyNom = TyNom \<$\> freshInt
+-- @
+class Redex rel => RedexFresh rel where
+  -- | Generate a fresh unique integer.
+  freshInt :: rel Int
 
--- | Typeclass for interpreters that support nominal logic.
-class Redex rel => RedexNom rel where
-  -- | Generate a fresh term variable name.
-  freshNom_ :: (Nom -> rel a) -> rel a
-  -- | Generate a fresh type variable name.
-  freshTyNom_ :: (TyNom -> rel a) -> rel a
-
-instance RedexNom (R s) where
-  freshNom_ k = do
+instance RedexFresh (R s) where
+  freshInt = do
     s <- get
-    let (n, ns') = genFreshNom (nomState s)
-    put s { nomState = ns' }
-    k n
-
-  freshTyNom_ k = do
-    s <- get
-    let (n, ns') = genFreshTyNom (nomState s)
-    put s { nomState = ns' }
-    k n
+    let n = freshCounter s
+    put s { freshCounter = n + 1 }
+    pure n

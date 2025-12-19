@@ -11,7 +11,8 @@ import Control.Applicative (empty)
 import TypedRedex
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Nominal
-import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream, RedexNom(..))
+import TypedRedex.Nominal.Prelude
+import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream, RedexFresh(..))
 import TypedRedex.Interp.Tracing (runWithDerivation, runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.Interp.Deep (printRulesWith)
@@ -56,9 +57,8 @@ instance TermFormatter SystemFFormatter where
     ("TVar", [n]) -> Just n
     ("TArr", [a, b]) -> Just $ "(" ++ a ++ " -> " ++ b ++ ")"
     ("TAll", [ty]) -> Just $ "(forall. " ++ ty ++ ")"
-    -- Binders
+    -- Binders (now unified as Bind)
     ("Bind", [n, body]) -> Just $ "(\\" ++ n ++ ". " ++ body ++ ")"
-    ("TyBind", [n, body]) -> Just $ "(/\\" ++ n ++ ". " ++ body ++ ")"
     -- Contexts
     ("Nil", []) -> Just "."
     ("TmBind", [n, ty, ctx]) -> Just $ ctx ++ ", " ++ n ++ ":" ++ ty
@@ -106,7 +106,7 @@ lookupTm = judgment "lookupTm" [lookupHere, lookupThere, lookupSkip]
 -- Type checking (typeof ctx e ty)
 --------------------------------------------------------------------------------
 
-typeof :: (RedexNom rel, RedexEval rel) => Judge rel '[Ctx, Tm, Ty]
+typeof :: (RedexFresh rel, RedexEval rel) => Judge rel '[Ctx, Tm, Ty]
 typeof = judgment "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeofTLam, typeofTApp]
   where
     -- |- () : Unit
@@ -134,14 +134,14 @@ typeof = judgment "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeofT
     typeofTLam = rule "typeof-tlam" $ fresh $ \ctx -> do
       -- Open the term binder to get fresh alpha and body
       freshTyNom_ $ \alpha -> fresh2 $ \body tyBody -> do
-        concl $ typeof ctx (tlam (bindTy alpha body)) (tall (bindTy alpha tyBody))
+        concl $ typeof ctx (tlam (bind alpha body)) (tall (bind alpha tyBody))
         prem  $ typeof (tyBind' (tynom alpha) ctx) body tyBody
 
     -- Gamma |- e : forall alpha. A  =>  Gamma |- e [B] : A[alpha := B]
     typeofTApp = rule "typeof-tapp" $ fresh5 $ \ctx e tyArg tyBnd result -> do
       concl $ typeof ctx (tapp e tyArg) result
       prem  $ typeof ctx e (tall tyBnd)
-      instantiateTyTo tyBnd tyArg result
+      instantiateTo tyBnd tyArg result
 
 --------------------------------------------------------------------------------
 -- Running queries
@@ -193,7 +193,7 @@ main = do
   -- Test 4: Polymorphic identity
   let alpha10 = TyNom 10
       x20 = Nom 20
-      polyId = TLam (TyBind alpha10 (Lam (TVar alpha10) (Bind x20 (Var x20))))
+      polyId = TLam (Bind alpha10 (Lam (TVar alpha10) (Bind x20 (Var x20))))
   putStrLn "4. Typecheck: Lam alpha. lam x:alpha. x"
   putStrLn $ "   Term: " ++ show polyId
   let polyIdResult = takeS 1 (typeofIO Nil polyId)

@@ -66,8 +66,7 @@ import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
 import TypedRedex.DSL.Fresh (LTerm, LVar)
 import TypedRedex.Interp.Format (formatCon, formatConWith, intercalate, TermFormatter(..), DefaultTermFormatter(..), JudgmentFormatter(..), defaultFormatJudgment)
 import TypedRedex.Interp.Stream
-import TypedRedex.Nominal.Nom (Nom(..), TyNom(..), NomState(..), initialNomState, genFreshNom, genFreshTyNom)
-import TypedRedex.Interp.Subst (RedexNom(..))
+import TypedRedex.Interp.Subst (RedexFresh(..))
 import Control.Monad.State
 import Control.Applicative
 import Unsafe.Coerce (unsafeCoerce)
@@ -190,7 +189,7 @@ data TracingState s = TracingState
   , tsNextVar    :: VarRepr                      -- ^ Fresh var counter
   , tsDerivStack :: [DerivFrame s]               -- ^ Derivation stack
   , tsFormatter  :: String -> [String] -> String -- ^ Term formatter function
-  , tsNomState   :: NomState                     -- ^ State for fresh nominal atoms
+  , tsFreshCounter :: !Int                       -- ^ Counter for fresh nominal atoms
   }
 
 emptyState :: TracingState s
@@ -202,7 +201,7 @@ emptyStateWith fmt = TracingState
   , tsNextVar = 0
   , tsDerivStack = [DerivFrame "top" [] []]  -- Start with top-level frame
   , tsFormatter = fmt
-  , tsNomState = initialNomState
+  , tsFreshCounter = 0
   }
 
 varToInt :: V s t -> Int
@@ -371,18 +370,12 @@ instance RedexEval (TracingRedex s) where
       evalLogic (Free v') = derefVar v'
       evalLogic (Ground r) = derefVal evalLogic r
 
-instance RedexNom (TracingRedex s) where
-  freshNom_ k = do
+instance RedexFresh (TracingRedex s) where
+  freshInt = do
     s <- get
-    let (n, ns') = genFreshNom (tsNomState s)
-    put s { tsNomState = ns' }
-    k n
-
-  freshTyNom_ k = do
-    s <- get
-    let (n, ns') = genFreshTyNom (tsNomState s)
-    put s { tsNomState = ns' }
-    k n
+    let n = tsFreshCounter s
+    put s { tsFreshCounter = n + 1 }
+    pure n
 
 --------------------------------------------------------------------------------
 -- Running
