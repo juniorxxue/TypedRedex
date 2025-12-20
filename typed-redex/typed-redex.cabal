@@ -70,3 +70,11 @@ executable example-system-f
     typed-redex,
     mtl  >=2.2  && <3
   default-language: Haskell2010
+
+executable example-mode-indexed
+  hs-source-dirs:   examples/mode-indexed
+  main-is:          Main.hs
+  other-modules:    IndexedRule
+  build-depends:
+    base >=4.12 && <5
+  default-language: Haskell2010
