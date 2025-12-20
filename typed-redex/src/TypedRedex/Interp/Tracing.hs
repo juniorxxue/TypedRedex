@@ -456,6 +456,21 @@ instance RedexHash (TracingRedex s) where
         -- At least one is a variable: store constraint for later
         addHashConstraint nameL' termL'
 
+instance RedexNeg (TracingRedex s) where
+  -- | Negation-as-failure: succeed if goal has no solutions
+  neg goal = do
+    s0 <- get
+    let TracingRedex goalComp = goal
+        answerStream = execStateT goalComp s0
+    case firstAnswer answerStream of
+      Nothing -> pure ()
+      Just _  -> empty
+    where
+      firstAnswer :: Stream a -> Maybe a
+      firstAnswer Empty = Nothing
+      firstAnswer (Mature a _) = Just a
+      firstAnswer (Immature rest) = firstAnswer rest
+
 --------------------------------------------------------------------------------
 -- Running
 --------------------------------------------------------------------------------

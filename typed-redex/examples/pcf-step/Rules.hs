@@ -19,7 +19,7 @@ module Rules
 
 import Prelude hiding ((>>=), (>>), return)
 import Control.Applicative (empty)
-import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, ground, lift1, lift2, lift3)
+import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, ground, lift1, lift2, lift3, neg)
 import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..), Reified)
 import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..))
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
@@ -204,7 +204,7 @@ fix = lift1 fix_
 -- Mode: [I]
 --------------------------------------------------------------------------------
 
-value :: Redex rel
+value :: RedexNeg rel
       => T vs Tm rel
       -> AppliedM rel "value" '[I] '[vs] '[Tm]
 value = defJudge1 @"value" $ \rule ->
@@ -227,7 +227,7 @@ value = defJudge1 @"value" $ \rule ->
 -- subst0 body arg out means [arg/0]body = out
 --------------------------------------------------------------------------------
 
-subst0 :: Redex rel
+subst0 :: RedexNeg rel
        => T vs1 Tm rel -> T vs2 Tm rel -> T vs3 Tm rel
        -> AppliedM rel "subst0" '[I, I, O] '[vs1, vs2, vs3] '[Tm, Tm, Tm]
 subst0 = defJudge3 @"subst0" $ \rule ->
@@ -291,7 +291,7 @@ subst0 = defJudge3 @"subst0" $ \rule ->
 -- Mode: [I, O]
 --------------------------------------------------------------------------------
 
-step :: Redex rel
+step :: RedexNeg rel
      => T vs1 Tm rel -> T vs2 Tm rel
      -> AppliedM rel "step" '[I, O] '[vs1, vs2] '[Tm, Tm]
 step = defJudge2 @"step" $ \rule ->

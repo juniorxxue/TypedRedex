@@ -76,6 +76,7 @@ module TypedRedex.DSL.Moded
     -- * Rule operations
   , fresh, fresh2, fresh3, fresh4, fresh5, fresh6
   , prem
+  , neg
   , concl
   , liftRel
   , liftRelDeferred
@@ -96,7 +97,8 @@ import Control.Applicative (asum)
 import qualified Data.Set as S
 import Data.Set (Set)
 
-import TypedRedex.Core.Internal.Redex (Redex(..), Relation(..), FreshType(..))
+import TypedRedex.Core.Internal.Redex (Redex(..), Relation(..), FreshType(..), RedexNeg)
+import qualified TypedRedex.Core.Internal.Redex as R (neg)
 import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..))
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Define (Applied(..), LTermList(..))
@@ -262,12 +264,17 @@ type family ProdVars (modes :: [Mode]) (vss :: [[Nat]]) :: [Nat] where
   ProdVars ('O ': ms) (vs ': vss) = Union vs (ProdVars ms vss)
   ProdVars _ _ = TypeError ('Text "Mode/arg mismatch")
 
+-- | All variables in all positions (input + output).
+-- Used for negation checking - all vars must be grounded.
+type family AllVars (modes :: [Mode]) (vss :: [[Nat]]) :: [Nat] where
+  AllVars modes vss = Union (ReqVars modes vss) (ProdVars modes vss)
+
 --------------------------------------------------------------------------------
 -- Rule State Machine (Runtime Scheduling)
 --------------------------------------------------------------------------------
 
 data Goal = Goal Symbol [Nat] [Nat]
-data Step = ConcStep Symbol [Nat] | PremStep Goal
+data Step = ConcStep Symbol [Nat] | PremStep Goal | NegStep [Nat]
 data St = St Nat [Step] Bool
 
 -- | Existentially-wrapped premise action for runtime scheduling.
@@ -277,9 +284,16 @@ data PremAction rel = PremAction
   , paGoal :: rel ()   -- ^ Goal to execute
   }
 
--- | An action to execute after concl (either prem or lifted rel)
+-- | Negation action for negation-as-failure.
+data NegAction rel = NegAction
+  { naReq  :: Set Int  -- ^ Variables required (should be grounded before negation)
+  , naGoal :: rel ()   -- ^ Goal to negate (succeeds if this fails)
+  }
+
+-- | An action to execute after concl (prem, neg, or lifted rel)
 data DeferredAction rel
   = PremA (PremAction rel)
+  | NegA (NegAction rel)
   | LiftedA (rel ())
 
 -- | Conclusion action for runtime scheduling.
@@ -519,7 +533,7 @@ mjudge3 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) =
 --   ]
 -- @
 defJudge1 :: forall name modes rel t1.
-             (Redex rel, KnownSymbol name, LogicType t1, UnifyLList rel '[t1], SingModeList modes)
+             (RedexNeg rel, KnownSymbol name, LogicType t1, UnifyLList rel '[t1], SingModeList modes)
           => ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1])
@@ -535,7 +549,7 @@ defJudge1 mkRules = mjudge1 singModeList (mkRules rule)
 
 -- | Define a binary moded judgment with scoped rule builder.
 defJudge2 :: forall name modes rel t1 t2.
-             (Redex rel, KnownSymbol name, LogicType t1, LogicType t2, UnifyLList rel '[t1, t2], SingModeList modes)
+             (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, UnifyLList rel '[t1, t2], SingModeList modes)
           => ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2])
@@ -564,7 +578,7 @@ defJudge2 mkRules = mjudge2 singModeList (mkRules rule)
 --   ]
 -- @
 defJudge3 :: forall name modes rel t1 t2 t3.
-             (Redex rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, UnifyLList rel '[t1, t2, t3], SingModeList modes)
+             (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, UnifyLList rel '[t1, t2, t3], SingModeList modes)
           => ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2, t3] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2, t3])
@@ -624,6 +638,27 @@ prem applied = RuleM $ \env -> pure
   , env { reDeferred = PremA (PremAction (amReqVars applied) (amProdVars applied) (amGoal applied)) : reDeferred env }
   )
 
+-- | Declare negation-as-failure. The goal must fail for the rule to succeed.
+--
+-- Negations are statically checked: ALL variables (both input and output
+-- positions) must be grounded before the negation can execute. This is
+-- because negation-as-failure checks whether the goal has any solutions,
+-- which requires all variables to have known values.
+--
+-- @
+-- -- "x is not in the context" can be expressed as:
+-- neg $ lookupCtx ctx x ty  -- requires ctx, x, AND ty to be grounded
+-- @
+neg :: forall name modes rel vss ts ts' n steps c.
+       Redex rel
+    => AppliedM rel name modes vss ts'
+    -> RuleM rel ts ('St n steps c)
+                 ('St n (Snoc steps ('NegStep (AllVars modes vss))) c) ()
+neg applied = RuleM $ \env -> pure
+  ( ()
+  , env { reDeferred = NegA (NegAction (S.union (amReqVars applied) (amProdVars applied)) (amGoal applied)) : reDeferred env }
+  )
+
 -- | Unify two argument lists.
 class UnifyTArgs rel ts where
   unifyTArgs :: TArgs vss1 ts rel -> TArgs vss2 ts rel -> rel ()
@@ -647,6 +682,23 @@ type family PremGoals (steps :: [Step]) :: [Goal] where
   PremGoals '[] = '[]
   PremGoals ('PremStep g ': rest) = g ': PremGoals rest
   PremGoals ('ConcStep _ _ ': rest) = PremGoals rest
+  PremGoals ('NegStep _ ': rest) = PremGoals rest
+
+-- | Extract negation requirements from steps.
+type family NegReqs (steps :: [Step]) :: [[Nat]] where
+  NegReqs '[] = '[]
+  NegReqs ('NegStep req ': rest) = req ': NegReqs rest
+  NegReqs ('PremStep _ ': rest) = NegReqs rest
+  NegReqs ('ConcStep _ _ ': rest) = NegReqs rest
+
+-- | Compute all variables produced by premises.
+type family AllPremProds (gs :: [Goal]) :: [Nat] where
+  AllPremProds '[] = '[]
+  AllPremProds ('Goal _ _ prod ': rest) = Union prod (AllPremProds rest)
+
+-- | Compute final available variables (concl inputs + all prem outputs).
+type family FinalAvail (steps :: [Step]) :: [Nat] where
+  FinalAvail steps = Union (ConclVars steps) (AllPremProds (PremGoals steps))
 
 type family Ready (avail :: [Nat]) (g :: Goal) :: Bool where
   Ready avail ('Goal _ req _) = Subset req avail
@@ -671,16 +723,33 @@ type family SolveStep (m :: Maybe (Goal, [Goal])) (avail :: [Nat]) (gs :: [Goal]
   SolveStep ('Just '( 'Goal _ _ prod, rest)) avail _ = Solve (Union avail prod) rest
 
 type family CheckSchedule (name :: Symbol) (steps :: [Step]) :: Constraint where
-  CheckSchedule name steps = CheckResult name steps (Solve (ConclVars steps) (PremGoals steps))
+  CheckSchedule name steps =
+    ( CheckPremises name steps (Solve (ConclVars steps) (PremGoals steps))
+    , CheckNegations name steps (FinalAvail steps) (NegReqs steps)
+    )
 
-type family CheckResult (name :: Symbol) (steps :: [Step]) (r :: SolveResult) :: Constraint where
-  CheckResult _ _ 'Solved = ()
-  CheckResult name steps ('Stuck avail gs) = TypeError
+-- | Check that all premises can be scheduled.
+type family CheckPremises (name :: Symbol) (steps :: [Step]) (r :: SolveResult) :: Constraint where
+  CheckPremises _ _ 'Solved = ()
+  CheckPremises name steps ('Stuck avail gs) = TypeError
     ( 'Text "Mode error in \"" ':<>: 'Text name ':<>: 'Text "\":"
         ':$$: 'Text "  grounded: " ':<>: 'ShowType avail
-        ':$$: 'Text "  blocked:"
+        ':$$: 'Text "  blocked premises:"
         ':$$: ShowBlocked avail gs
     )
+
+-- | Check that all negations have their inputs grounded.
+type family CheckNegations (name :: Symbol) (steps :: [Step]) (avail :: [Nat]) (negs :: [[Nat]]) :: Constraint where
+  CheckNegations _ _ _ '[] = ()
+  CheckNegations name steps avail (req ': rest) =
+    If (Subset req avail)
+       (CheckNegations name steps avail rest)
+       (TypeError
+         ( 'Text "Negation error in \"" ':<>: 'Text name ':<>: 'Text "\":"
+             ':$$: 'Text "  grounded after premises: " ':<>: 'ShowType avail
+             ':$$: 'Text "  negation needs: " ':<>: 'ShowType req
+             ':$$: 'Text "  missing: " ':<>: 'ShowType (Diff req avail)
+         ))
 
 type family ShowBlocked (avail :: [Nat]) (gs :: [Goal]) :: ErrorMessage where
   ShowBlocked _ '[] = 'Text ""
@@ -730,33 +799,44 @@ selectReady avail (p:ps)
 --
 -- - The @concl@ declaration executes immediately (required for nominal logic)
 -- - The @prem@ declarations are scheduled based on data dependencies
--- - The @liftRelDeferred@ declarations execute after all premises
+-- - The @neg@ declarations execute after premises (statically verified safe)
+-- - The @liftRelDeferred@ declarations execute after all premises and negations
 --
 -- This approach allows @prem@ declarations to appear in any order—the
 -- runtime scheduler reorders them based on which variables are available.
 ruleM :: forall name rel n steps ts.
-         (Redex rel, CheckSchedule name steps, UnifyLList rel ts)
+         (RedexNeg rel, CheckSchedule name steps, UnifyLList rel ts)
       => String
       -> RuleM rel ts ('St 0 '[] 'False) ('St n steps 'True) ()
       -> ModedRule rel ts
 ruleM name body = ModedRule name $ \args -> do
   let initEnv = RuleEnv (toLTermList args) [] S.empty 0
-  -- Run the body: concl executes immediately, prems/lifted are collected
+  -- Run the body: concl executes immediately, prems/negs/lifted are collected
   ((), finalEnv) <- runRuleM body initEnv
-  -- Separate premises from lifted actions
+  -- Separate deferred actions into premises, negations, and lifted
   let deferred = reverse (reDeferred finalEnv)  -- source order
-      (prems, lifted) = partitionDeferred deferred
+      (prems, negs, lifted) = partitionDeferred deferred
   -- Schedule premises based on data dependencies
   schedulePremises (reAvailVars finalEnv) prems
-  -- Execute lifted actions in source order after all premises
+  -- Execute negations (statically verified to have all inputs grounded)
+  executeNegations negs
+  -- Execute lifted actions in source order after all premises and negations
   executeLifted lifted
 
--- | Partition deferred actions into premises and lifted actions.
-partitionDeferred :: [DeferredAction rel] -> ([PremAction rel], [rel ()])
-partitionDeferred = foldr go ([], [])
+-- | Partition deferred actions into premises, negations, and lifted actions.
+partitionDeferred :: [DeferredAction rel] -> ([PremAction rel], [NegAction rel], [rel ()])
+partitionDeferred = foldr go ([], [], [])
   where
-    go (PremA p)   (ps, ls) = (p:ps, ls)
-    go (LiftedA l) (ps, ls) = (ps, l:ls)
+    go (PremA p)   (ps, ns, ls) = (p:ps, ns, ls)
+    go (NegA n)    (ps, ns, ls) = (ps, n:ns, ls)
+    go (LiftedA l) (ps, ns, ls) = (ps, ns, l:ls)
+
+-- | Execute negations in source order.
+-- Since CheckSchedule guarantees all negation inputs are grounded,
+-- no runtime scheduling is needed.
+executeNegations :: RedexNeg rel => [NegAction rel] -> rel ()
+executeNegations [] = pure ()
+executeNegations (n:ns) = R.neg (naGoal n) Prelude.>> executeNegations ns
 
 -- | Execute lifted actions in order.
 executeLifted :: Redex rel => [rel ()] -> rel ()

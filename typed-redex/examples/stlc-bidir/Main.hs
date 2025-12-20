@@ -113,6 +113,14 @@ checkIII ctx0 e0 ty0 = runSubstRedex $ do
   appGoal $ toApplied $ check (ground ctxL) (ground eL) (ground tyL)
   pure ()
 
+-- SubstRedex: notInCtx in mode (I,I) - uses negation-as-failure
+notInCtxIO :: Ctx -> Nat -> Stream ()
+notInCtxIO ctx0 n0 = runSubstRedex $ do
+  let ctxL = Ground $ project ctx0
+      nL   = Ground $ project n0
+  appGoal $ toApplied $ notInCtx (ground ctxL) (ground nL)
+  pure ()
+
 -- TracingRedex: synthesis with derivation tree
 type TracingStream a = Stream (a, Derivation)
 
@@ -217,4 +225,28 @@ main = do
   putStrLn "  - lookup (I,I,O): ctx and index ground → type output"
   putStrLn "  - synth (I,I,O): ctx and term ground → type output"
   putStrLn "  - check (I,I,I): all positions ground (verification)"
+  putStrLn ""
+
+  putStrLn "=== Negation-as-Failure Example ==="
+  putStrLn ""
+
+  -- notInCtx: succeeds if index is NOT in context
+  let ctx1 = Cons TUnit Nil  -- ctx = [Unit], indices 0 is valid
+  putStrLn "Testing notInCtx with ctx = [Unit]:"
+
+  -- Index 0 IS in context, so notInCtx should fail (no results)
+  putStrLn "  notInCtx [Unit] 0 → (should fail)"
+  print $ takeS 1 (notInCtxIO ctx1 Z)
+
+  -- Index 1 is NOT in context (out of bounds), so notInCtx should succeed
+  putStrLn "  notInCtx [Unit] 1 → (should succeed)"
+  print $ takeS 1 (notInCtxIO ctx1 (S Z))
+
+  -- Index 2 is NOT in context, so notInCtx should succeed
+  putStrLn "  notInCtx [Unit] 2 → (should succeed)"
+  print $ takeS 1 (notInCtxIO ctx1 (S (S Z)))
+
+  -- Empty context: any index is not in it
+  putStrLn "  notInCtx [] 0 → (should succeed, empty ctx)"
+  print $ takeS 1 (notInCtxIO Nil Z)
   putStrLn ""

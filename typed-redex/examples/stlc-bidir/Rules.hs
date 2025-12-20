@@ -17,19 +17,21 @@ module Rules
   , nil, cons
     -- * Judgments
   , lookupCtx, synth, check
+    -- * Negation example
+  , notInCtx
   ) where
 
 import Prelude hiding ((>>=), (>>), return)
 import Control.Applicative (empty)
-import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, ground, lift1, lift2, lift3)
+import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, ground, lift1, lift2, lift3, neg)
 import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..), Reified)
 import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..))
 import TypedRedex.DSL.Type (quote0, quote1, quote2)
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Moded
   ( Mode(..), T(..)
-  , AppliedM(..), defJudge3, ModedRule(..)
-  , fresh, fresh2, fresh3, fresh4, fresh5, prem, concl
+  , AppliedM(..), defJudge2, defJudge3, ModedRule(..)
+  , fresh, fresh2, fresh3, fresh4, fresh5, prem, concl, neg
   , ground, lift1, lift2, Union
   , return, (>>=), (>>)
   )
@@ -265,7 +267,7 @@ cons = lift2 cons_
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
-lookupCtx :: (Redex rel, LogicType Ctx, LogicType Nat, LogicType Ty)
+lookupCtx :: (RedexNeg rel, LogicType Ctx, LogicType Nat, LogicType Ty)
           => T vs1 Ctx rel -> T vs2 Nat rel -> T vs3 Ty rel
           -> AppliedM rel "lookup" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Nat, Ty]
 lookupCtx = defJudge3 @"lookup" $ \rule ->
@@ -284,7 +286,7 @@ lookupCtx = defJudge3 @"lookup" $ \rule ->
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
-synth :: (Redex rel, LogicType Ctx, LogicType Tm, LogicType Ty)
+synth :: (RedexNeg rel, LogicType Ctx, LogicType Tm, LogicType Ty)
       => T vs1 Ctx rel -> T vs2 Tm rel -> T vs3 Ty rel
       -> AppliedM rel "synth" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Tm, Ty]
 synth = defJudge3 @"synth" $ \rule ->
@@ -324,7 +326,7 @@ synth = defJudge3 @"synth" $ \rule ->
 -- Modes: I, I, I
 --------------------------------------------------------------------------------
 
-check :: (Redex rel, LogicType Ctx, LogicType Tm, LogicType Ty)
+check :: (RedexNeg rel, LogicType Ctx, LogicType Tm, LogicType Ty)
       => T vs1 Ctx rel -> T vs2 Tm rel -> T vs3 Ty rel
       -> AppliedM rel "check" '[I, I, I] '[vs1, vs2, vs3] '[Ctx, Tm, Ty]
 check = defJudge3 @"check" $ \rule ->
@@ -339,4 +341,28 @@ check = defJudge3 @"check" $ \rule ->
       (ctx, e, ty) <- fresh3
       concl $ check ctx e ty
       prem $ synth ctx e ty
+  ]
+
+--------------------------------------------------------------------------------
+-- Negation Example: notInCtx Γ n
+-- Mode: I, I
+-- Succeeds if index n is NOT in context Γ (out of bounds)
+--------------------------------------------------------------------------------
+
+notInCtx :: (RedexNeg rel, LogicType Ctx, LogicType Nat)
+         => T vs1 Ctx rel -> T vs2 Nat rel
+         -> AppliedM rel "notInCtx" '[I, I] '[vs1, vs2] '[Ctx, Nat]
+notInCtx = defJudge2 @"notInCtx" $ \rule ->
+  [ -- notInCtx-empty: Any index is not in empty context
+    rule "notInCtx-empty" $ do
+      n <- fresh
+      concl $ notInCtx nil n
+
+  , -- notInCtx-cons: n is not in (ty :: ctx) if n-1 is not in ctx
+    -- This handles "out of bounds" via negation-as-failure
+    rule "notInCtx-cons" $ do
+      (ty, ctx, n) <- fresh3
+      concl $ notInCtx (cons ty ctx) (suc n)
+      neg $ lookupCtx (cons ty ctx) (suc n) ty  -- n is not bound to ty
+      prem $ notInCtx ctx n                     -- recursively check
   ]

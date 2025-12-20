@@ -16,7 +16,7 @@ module Rules
   ) where
 
 import Prelude hiding ((>>=), (>>), return)
-import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, fresh6, ground, lift1, lift2, lift3)
+import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, fresh6, ground, lift1, lift2, lift3, neg)
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Nominal (instantiateTo)
 import TypedRedex.Nominal.Prelude
@@ -37,7 +37,7 @@ import Syntax
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
-lookupTm :: (RedexFresh rel, RedexEval rel)
+lookupTm :: (RedexFresh rel, RedexEval rel, RedexNeg rel)
          => T vs1 Ctx rel -> T vs2 Nom rel -> T vs3 Ty rel
          -> AppliedM rel "lookupTm" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Nom, Ty]
 lookupTm = defJudge3 @"lookupTm" $ \rule ->
@@ -64,7 +64,7 @@ lookupTm = defJudge3 @"lookupTm" $ \rule ->
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
-typeof :: (RedexFresh rel, RedexEval rel)
+typeof :: (RedexFresh rel, RedexEval rel, RedexNeg rel)
        => T vs1 Ctx rel -> T vs2 Tm rel -> T vs3 Ty rel
        -> AppliedM rel "typeof" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Tm, Ty]
 typeof = defJudge3 @"typeof" $ \rule ->
@@ -116,7 +116,7 @@ typeof = defJudge3 @"typeof" $ \rule ->
 
 -- | A helper judgment for demonstrating forced reordering.
 -- Mode [I, I, I]: ALL arguments must be ground (inputs).
-assertEq :: (RedexFresh rel, RedexEval rel)
+assertEq :: (RedexFresh rel, RedexEval rel, RedexNeg rel)
          => T vs1 Ty rel -> T vs2 Ty rel -> T vs3 Tm rel
          -> AppliedM rel "assertEq" '[I, I, I] '[vs1, vs2, vs3] '[Ty, Ty, Tm]
 assertEq = defJudge3 @"assertEq" $ \rule ->
@@ -126,7 +126,7 @@ assertEq = defJudge3 @"assertEq" $ \rule ->
   ]
 
 -- | typeof with DELIBERATELY WRONG premise order.
-typeofWrongOrder :: (RedexFresh rel, RedexEval rel)
+typeofWrongOrder :: (RedexFresh rel, RedexEval rel, RedexNeg rel)
                  => T vs1 Ctx rel -> T vs2 Tm rel -> T vs3 Ty rel
                  -> AppliedM rel "typeof-wrong" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Tm, Ty]
 typeofWrongOrder = defJudge3 @"typeof-wrong" $ \rule ->

@@ -171,6 +171,11 @@ prettyCaptured (CapturedTerm term) = do
 instance EqVar DeepRedex where
   varEq (DVar a) (DVar b) = a == b
 
+-- | Negation-as-failure is a no-op for rule extraction.
+-- We're just extracting rule structure, not executing.
+instance RedexNeg DeepRedex where
+  neg _ = pure ()
+
 --------------------------------------------------------------------------------
 -- Pretty-printing Logic terms
 --------------------------------------------------------------------------------
