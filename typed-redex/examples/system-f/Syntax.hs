@@ -1,20 +1,27 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DataKinds #-}
 
 module Syntax where
 
 import TypedRedex
+import TypedRedex.Core.Internal.Redex (Redex)
 import TypedRedex.Core.Internal.Logic (Logic)
+import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Nominal
+import TypedRedex.Nominal.Bind (mkBindL)
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.PrettyPrint (VarNaming(..), LogicVarNaming(..), ctxNaming, subscriptNum)
 import TypedRedex.DSL.TH (deriveLogicType, deriveLogicTypeNoNaming, (~>))
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
+import TypedRedex.DSL.Moded (T(..), ground, lift1, lift2, lift3, Union)
+import qualified Data.Set as S
 
--- System F Type Checking with Nominal Logic
+-- System F Type Checking with Nominal Logic (Moded Version)
 -- Uses named variables (Nom, TyNom) instead of de Bruijn indices
 --
 -- Types:
@@ -52,11 +59,24 @@ instance LogicVarNaming Ty where
   varNaming = VarNaming "T" (\i -> "ty" ++ show i)
 
 deriveLogicTypeNoNaming ''Ty
-  [ 'TUnit ~> ("TUnit", "tunit")
-  , 'TVar  ~> ("TVar", "tvar")
-  , 'TArr  ~> ("TArr", "tarr")
-  , 'TAll  ~> ("TAll", "tall")
+  [ 'TUnit ~> ("TUnit", "tunit_")
+  , 'TVar  ~> ("TVar", "tvar_")
+  , 'TArr  ~> ("TArr", "tarr_")
+  , 'TAll  ~> ("TAll", "tall_")
   ]
+
+-- Moded constructors for Ty
+tunit :: T '[] Ty rel
+tunit = ground tunit_
+
+tvar :: T vs TyNom rel -> T vs Ty rel
+tvar = lift1 tvar_
+
+tarr :: T vs1 Ty rel -> T vs2 Ty rel -> T (Union vs1 vs2) Ty rel
+tarr = lift2 tarr_
+
+tall :: T vs (Bind TyNom Ty) rel -> T vs Ty rel
+tall = lift1 tall_
 
 --------------------------------------------------------------------------------
 -- Permute instance for Ty (required for Bind)
@@ -121,13 +141,32 @@ instance LogicVarNaming Tm where
   varNaming = VarNaming "E" (\i -> "e" ++ subscriptNum (i + 1))
 
 deriveLogicTypeNoNaming ''Tm
-  [ 'Unit ~> ("Unit", "unit'")
-  , 'Var  ~> ("Var", "var")
-  , 'Lam  ~> ("Lam", "lam")
-  , 'App  ~> ("App", "app")
-  , 'TLam ~> ("TLam", "tlam")
-  , 'TApp ~> ("TApp", "tapp")
+  [ 'Unit ~> ("Unit", "unit_")
+  , 'Var  ~> ("Var", "var_")
+  , 'Lam  ~> ("Lam", "lam_")
+  , 'App  ~> ("App", "app_")
+  , 'TLam ~> ("TLam", "tlam_")
+  , 'TApp ~> ("TApp", "tapp_")
   ]
+
+-- Moded constructors for Tm
+unit :: T '[] Tm rel
+unit = ground unit_
+
+var :: T vs Nom rel -> T vs Tm rel
+var = lift1 var_
+
+lam :: T vs1 Ty rel -> T vs2 (Bind Nom Tm) rel -> T (Union vs1 vs2) Tm rel
+lam = lift2 lam_
+
+app :: T vs1 Tm rel -> T vs2 Tm rel -> T (Union vs1 vs2) Tm rel
+app = lift2 app_
+
+tlam :: T vs (Bind TyNom Tm) rel -> T vs Tm rel
+tlam = lift1 tlam_
+
+tapp :: T vs1 Tm rel -> T vs2 Ty rel -> T (Union vs1 vs2) Tm rel
+tapp = lift2 tapp_
 
 --------------------------------------------------------------------------------
 -- Permute instances for Tm
@@ -186,27 +225,6 @@ instance Hash TyNom Tm where
   occursIn a (TApp t ty) = occursIn a t || occursIn a ty
 
 --------------------------------------------------------------------------------
--- Type substitution in terms (TyNom -> Ty in Tm)
--- Note: This is different from Subst typeclass which is same-type substitution
---------------------------------------------------------------------------------
-
--- | Substitute a type variable with a type in a term
-substTyInTm :: TyNom -> Ty -> Tm -> Tm
-substTyInTm name replacement tm = case tm of
-  Unit -> Unit
-  Var v -> Var v
-  Lam ty bnd -> Lam (subst name replacement ty) (substTyInBind name replacement bnd)
-  App t1 t2 -> App (substTyInTm name replacement t1) (substTyInTm name replacement t2)
-  TLam (Bind v body)
-    | v == name -> TLam (Bind v body)  -- shadowed
-    | otherwise -> TLam (Bind v (substTyInTm name replacement body))
-  TApp t ty -> TApp (substTyInTm name replacement t) (subst name replacement ty)
-
--- Helper: substitute type in term binder
-substTyInBind :: TyNom -> Ty -> Bind Nom Tm -> Bind Nom Tm
-substTyInBind name replacement (Bind n body) = Bind n (substTyInTm name replacement body)
-
---------------------------------------------------------------------------------
 -- Typing context
 --------------------------------------------------------------------------------
 
@@ -222,7 +240,56 @@ instance LogicVarNaming Ctx where
   varNaming = ctxNaming
 
 deriveLogicTypeNoNaming ''Ctx
-  [ 'Nil     ~> ("Nil", "nil")
-  , 'TmBind  ~> ("TmBind", "tmBind")
-  , 'TyBind' ~> ("TyBind'", "tyBind'")
+  [ 'Nil     ~> ("Nil", "nil_")
+  , 'TmBind  ~> ("TmBind", "tmBind_")
+  , 'TyBind' ~> ("TyBind'", "tyBind_")
   ]
+
+-- Moded constructors for Ctx
+nil :: T '[] Ctx rel
+nil = ground nil_
+
+tmBind :: T vs1 Nom rel -> T vs2 Ty rel -> T vs3 Ctx rel
+       -> T (Union vs1 (Union vs2 vs3)) Ctx rel
+tmBind = lift3 tmBind_
+
+tyBind :: T vs1 TyNom rel -> T vs2 Ctx rel -> T (Union vs1 vs2) Ctx rel
+tyBind = lift2 tyBind_
+
+--------------------------------------------------------------------------------
+-- Moded constructors for Bind (nominal binders)
+--------------------------------------------------------------------------------
+
+-- | Create a term binder from a ground Nom and a tracked body
+bindNom :: (Permute Nom body, LogicType body)
+        => Nom -> T vs body rel -> T vs (Bind Nom body) rel
+bindNom n (T vars b) = T vars (bind n b)
+
+-- | Create a type binder from a ground TyNom and a tracked body
+bindTyNom :: (Permute TyNom body, LogicType body)
+          => TyNom -> T vs body rel -> T vs (Bind TyNom body) rel
+bindTyNom n (T vars b) = T vars (bind n b)
+
+-- | Create a term binder pattern with tracked name and body.
+-- The name is a logic variable (can unify with any Nom).
+bindNomPat :: (Redex rel, LogicType body, Permute Nom body)
+           => T vs1 Nom rel -> T vs2 body rel
+           -> T (Union vs1 vs2) (Bind Nom body) rel
+bindNomPat (T vars1 nameL) (T vars2 bodyL) = T (S.union vars1 vars2) (mkBindL nameL bodyL)
+
+-- | Create a type binder pattern with tracked name and body.
+-- The name is a logic variable (can unify with any TyNom).
+bindTyPat :: (Redex rel, LogicType body, Permute TyNom body)
+          => T vs1 TyNom rel -> T vs2 body rel
+          -> T (Union vs1 vs2) (Bind TyNom body) rel
+bindTyPat (T vars1 nameL) (T vars2 bodyL) = T (S.union vars1 vars2) (mkBindL nameL bodyL)
+
+--------------------------------------------------------------------------------
+-- Moded constructors for nominal atoms (ground, no variable tracking)
+--------------------------------------------------------------------------------
+
+nomG :: Nom -> T '[] Nom rel
+nomG = ground . nom
+
+tynomG :: TyNom -> T '[] TyNom rel
+tynomG = ground . tynom

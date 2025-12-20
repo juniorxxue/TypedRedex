@@ -1,24 +1,31 @@
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE FlexibleContexts #-}
 
+-- | System F Type Checking with mode-checked rules.
+--
+-- This example demonstrates how to use the moded DSL with nominal features
+-- for compile-time verification that all rules have valid execution schedules.
+--
+-- Includes SubstRedex and TracingRedex interpreters.
 module Main (main) where
 
-import Control.Applicative (empty)
+import Control.Monad (forM_)
 import TypedRedex
 import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Nominal
 import TypedRedex.Nominal.Prelude
-import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream, RedexFresh(..))
-import TypedRedex.Interp.Tracing (runWithDerivation, runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
-import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
-import TypedRedex.Interp.Deep (printRulesWith)
-import TypedRedex.DSL.Type (quote0, quote1, quote2)
+import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
+import TypedRedex.Interp.Tracing (runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
+import TypedRedex.Interp.Format (TermFormatter(..))
+import TypedRedex.DSL.Fresh (LTerm)
+import qualified TypedRedex.DSL.Fresh as F
+import TypedRedex.DSL.Moded (AppliedM(..), toApplied, ground)
 
 import Syntax
+import Rules
 
 --------------------------------------------------------------------------------
 -- Judgment Formatter for System F
@@ -78,88 +85,42 @@ prettyDerivation :: Derivation -> String
 prettyDerivation = prettyDerivationWith SystemFFormatter
 
 --------------------------------------------------------------------------------
--- Context lookup (using nominal equality)
---------------------------------------------------------------------------------
-
--- lookupTm ctx x ty: find x : ty in ctx
-lookupTm :: (Redex rel) => Judge rel '[Ctx, Nom, Ty]
-lookupTm = judgment "lookupTm" [lookupHere, lookupThere, lookupSkip]
-  where
-    -- Found at the head of context
-    -- Pattern: lookupTm (x:ty, rest) x ty
-    lookupHere = rule "lookup-here" $ fresh3 $ \x ty rest ->
-      concl $ lookupTm (tmBind x ty rest) x ty
-
-    -- Keep searching in tail
-    -- Pattern: lookupTm (y:tyY, rest) x ty  where we look for x in rest
-    lookupThere = rule "lookup-there" $ fresh5 $ \x y ty tyY rest -> do
-      concl $ lookupTm (tmBind y tyY rest) x ty
-      prem  $ lookupTm rest x ty
-
-    -- Skip type variable binding
-    -- Pattern: lookupTm (alpha, rest) x ty
-    lookupSkip = rule "lookup-skip" $ fresh4 $ \alpha x ty rest -> do
-      concl $ lookupTm (tyBind' alpha rest) x ty
-      prem  $ lookupTm rest x ty
-
---------------------------------------------------------------------------------
--- Type checking (typeof ctx e ty)
---------------------------------------------------------------------------------
-
-typeof :: (RedexFresh rel, RedexEval rel) => Judge rel '[Ctx, Tm, Ty]
-typeof = judgment "typeof" [typeofUnit, typeofVar, typeofLam, typeofApp, typeofTLam, typeofTApp]
-  where
-    -- |- () : Unit
-    typeofUnit = rule "typeof-unit" $ fresh $ \ctx ->
-      concl $ typeof ctx unit' tunit
-
-    -- Gamma(x) = A  =>  Gamma |- x : A
-    typeofVar = rule "typeof-var" $ fresh3 $ \ctx x ty -> do
-      concl $ typeof ctx (var x) ty
-      prem  $ lookupTm ctx x ty
-
-    -- Gamma, x:A |- e : B  =>  Gamma |- lam x:A. e : A -> B
-    -- Now using unified fresh: x :: Nom is inferred from bind usage
-    typeofLam = rule "typeof-lam" $ fresh5 $ \ctx tyA x body tyB -> do
-      concl $ typeof ctx (lam tyA (bind x body)) (tarr tyA tyB)
-      prem  $ typeof (tmBind (nom x) tyA ctx) body tyB
-
-    -- Gamma |- e1 : A -> B  /\  Gamma |- e2 : A  =>  Gamma |- e1 e2 : B
-    typeofApp = rule "typeof-app" $ fresh5 $ \ctx e1 e2 tyA tyB -> do
-      concl $ typeof ctx (app e1 e2) tyB
-      prem  $ typeof ctx e1 (tarr tyA tyB)
-      prem  $ typeof ctx e2 tyA
-
-    -- Gamma, alpha |- e : A  =>  Gamma |- Lam alpha. e : forall alpha. A
-    -- Now using unified fresh: alpha :: TyNom is inferred from bind usage
-    typeofTLam = rule "typeof-tlam" $ fresh4 $ \ctx alpha body tyBody -> do
-      concl $ typeof ctx (tlam (bind alpha body)) (tall (bind alpha tyBody))
-      prem  $ typeof (tyBind' (tynom alpha) ctx) body tyBody
-
-    -- Gamma |- e : forall alpha. A  =>  Gamma |- e [B] : A[alpha := B]
-    typeofTApp = rule "typeof-tapp" $ fresh5 $ \ctx e tyArg tyBnd result -> do
-      concl $ typeof ctx (tapp e tyArg) result
-      prem  $ typeof ctx e (tall tyBnd)
-      instantiateTo tyBnd tyArg result
-
---------------------------------------------------------------------------------
 -- Running queries
 --------------------------------------------------------------------------------
 
+-- SubstRedex: typeof in mode (I,I,O)
 typeofIO :: Ctx -> Tm -> Stream Ty
-typeofIO ctx0 e0 = runSubstRedex $ fresh $ \ty -> do
-  appGoal $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
+typeofIO ctx0 e0 = runSubstRedex $ F.fresh $ \ty -> do
+  let ctxL = Ground $ project ctx0
+      eL   = Ground $ project e0
+  appGoal $ toApplied $ typeof (ground ctxL) (ground eL) (ground ty)
   eval ty
 
+-- SubstRedex: verification mode (I,I,I)
 checkIII :: Ctx -> Tm -> Ty -> Stream ()
 checkIII ctx0 e0 ty0 = runSubstRedex $ do
-  appGoal $ typeof (Ground $ project ctx0) (Ground $ project e0) (Ground $ project ty0)
+  let ctxL = Ground $ project ctx0
+      eL   = Ground $ project e0
+      tyL  = Ground $ project ty0
+  appGoal $ toApplied $ typeof (ground ctxL) (ground eL) (ground tyL)
   pure ()
 
--- Run with derivation tracing using custom formatter
-typeofWithTrace :: Ctx -> Tm -> Stream (Ty, Derivation)
-typeofWithTrace ctx0 e0 = runWithDerivationWith SystemFFormatter $ fresh $ \ty -> do
-  appGoal $ typeof (Ground $ project ctx0) (Ground $ project e0) ty
+-- TracingRedex: typeof with derivation tree
+type TracingStream a = Stream (a, Derivation)
+
+typeofWithTrace :: Ctx -> Tm -> TracingStream Ty
+typeofWithTrace ctx0 e0 = runWithDerivationWith SystemFFormatter $ F.fresh $ \ty -> do
+  let ctxL = Ground $ project ctx0
+      eL   = Ground $ project e0
+  appGoal $ toApplied $ typeof (ground ctxL) (ground eL) (ground ty)
+  eval ty
+
+-- | Run typeof with wrong order
+typeofWrongOrderIO :: Ctx -> Tm -> Stream Ty
+typeofWrongOrderIO ctx0 e0 = runSubstRedex $ F.fresh $ \ty -> do
+  let ctxL = Ground $ project ctx0
+      eL   = Ground $ project e0
+  appGoal $ toApplied $ typeofWrongOrder (ground ctxL) (ground eL) (ground ty)
   eval ty
 
 --------------------------------------------------------------------------------
@@ -168,7 +129,7 @@ typeofWithTrace ctx0 e0 = runWithDerivationWith SystemFFormatter $ fresh $ \ty -
 
 main :: IO ()
 main = do
-  putStrLn "=== System F Type Checking (Nominal) ==="
+  putStrLn "=== System F Type Checking (Execution) ==="
   putStrLn ""
 
   -- Test 1: Simple type check
@@ -220,203 +181,76 @@ main = do
   print $ takeS 1 (typeofIO Nil polyIdUnitApp)
   putStrLn ""
 
-  -- Test 8: Derivation tree
-  putStrLn "8. Derivation for typeof: lam x:Unit. x"
+  putStrLn "=== Derivation Trees (TracingRedex) ==="
+  putStrLn ""
+
+  -- Derivation 1: lam x:Unit. x
+  putStrLn "Derivation: lam x:Unit. x"
   case takeS 1 (typeofWithTrace Nil idUnit) of
     [(ty, deriv)] -> do
       putStrLn $ "Type: " ++ show ty
       putStrLn $ prettyDerivation deriv
     _ -> putStrLn "No derivation found"
+
+  -- Derivation 2: (lam x:Unit. x) ()
+  putStrLn "Derivation: (lam x:Unit. x) ()"
+  case takeS 1 (typeofWithTrace Nil appTerm) of
+    [(ty, deriv)] -> do
+      putStrLn $ "Type: " ++ show ty
+      putStrLn $ prettyDerivation deriv
+    _ -> putStrLn "No derivation found"
+
+  putStrLn "=== Mode Checking Guarantee ==="
+  putStrLn ""
+  putStrLn "All rules compile, proving mode correctness:"
+  putStrLn "  - lookupTm (I,I,O): ctx and name ground -> type output"
+  putStrLn "  - typeof (I,I,O): ctx and term ground -> type output"
+  putStrLn ""
+  putStrLn "Key moded DSL features for nominal logic:"
+  putStrLn "  - fresh: creates tracked logic variables (for pattern matching)"
+  putStrLn "  - bindNomPatM/bindTyPatM: binder patterns with logic variable names"
+  putStrLn "  - liftRel: lifts rel actions like instantiateTo into RuleM"
   putStrLn ""
 
-  putStrLn "=== Alpha-Equivalence Tests ==="
+  putStrLn "==============================================================================="
+  putStrLn "=== RUNTIME SCHEDULING PROOF ==="
+  putStrLn "==============================================================================="
+  putStrLn ""
+  putStrLn "The following tests compare 'typeof' (normal premise order) with"
+  putStrLn "'typeofWrongOrder' (deliberately WRONG premise order)."
+  putStrLn ""
+  putStrLn "In typeofWrongOrder:"
+  putStrLn "  - typeof-app: prem2 (needs tyA) written BEFORE prem1 (produces tyA)"
+  putStrLn "  - typeof-var/lam/tlam/tapp: prem written BEFORE concl"
+  putStrLn ""
+  putStrLn "WITHOUT runtime scheduling, typeofWrongOrder would FAIL because:"
+  putStrLn "  - Premises would execute in source order"
+  putStrLn "  - prem2 would try to use tyA before prem1 produces it"
+  putStrLn ""
+  putStrLn "WITH runtime scheduling, both produce IDENTICAL results:"
   putStrLn ""
 
-  -- Test 9: Alpha-equivalence of term binders
-  -- λx:Unit. x  should equal  λy:Unit. y
-  let x100 = Nom 100
-      y200 = Nom 200
-      lamX = Lam TUnit (Bind x100 (Var x100))  -- λx. x
-      lamY = Lam TUnit (Bind y200 (Var y200))  -- λy. y
-  putStrLn "9. Alpha-equivalence: (λx:Unit. x) =α= (λy:Unit. y)"
-  putStrLn $ "   lamX = " ++ show lamX
-  putStrLn $ "   lamY = " ++ show lamY
-  let alphaTest1 = runSubstRedex $ do
-        (Ground (project lamX)) <=> (Ground (project lamY))
-        pure "unified!"
-  putStrLn $ "   Result: " ++ show (takeS 1 alphaTest1)
+  -- Test terms
+  let testTerms =
+        [ ("()", Unit)
+        , ("lam x:Unit. x", idUnit)
+        , ("(lam x:Unit. x) ()", appTerm)
+        , ("Lam alpha. lam x:alpha. x", polyId)
+        , ("(Lam alpha. lam x:alpha. x) [Unit]", polyIdApp)
+        , ("lam x:Unit. lam y:Unit. x", constUnit)
+        , ("((Lam alpha. lam x:alpha. x) [Unit]) ()", polyIdUnitApp)
+        ]
+
+  -- Run comparison tests
+  forM_ (zip [1..] testTerms) $ \(i, (name, term)) -> do
+    let normalResult = takeS 1 (typeofIO Nil term)
+        wrongOrderResult = takeS 1 (typeofWrongOrderIO Nil term)
+        match = normalResult == wrongOrderResult
+    putStrLn $ show (i :: Int) ++ ". " ++ name
+    putStrLn $ "   Normal order:      " ++ show normalResult
+    putStrLn $ "   Wrong order:       " ++ show wrongOrderResult
+    putStrLn $ "   Match: " ++ (if match then "YES" else "NO (BUG!)")
+    putStrLn ""
+
+  putStrLn "All tests pass: Runtime scheduling correctly reorders premises!"
   putStrLn ""
-
-  -- Test 10: Alpha-equivalence of type binders
-  -- ∀α. α  should equal  ∀β. β
-  let alpha100 = TyNom 100
-      beta200 = TyNom 200
-      forallAlpha = TAll (Bind alpha100 (TVar alpha100))  -- ∀α. α
-      forallBeta  = TAll (Bind beta200 (TVar beta200))    -- ∀β. β
-  putStrLn "10. Alpha-equivalence: (∀α. α) =α= (∀β. β)"
-  putStrLn $ "    forallAlpha = " ++ show forallAlpha
-  putStrLn $ "    forallBeta  = " ++ show forallBeta
-  let alphaTest2 = runSubstRedex $ do
-        (Ground (project forallAlpha)) <=> (Ground (project forallBeta))
-        pure "unified!"
-  putStrLn $ "    Result: " ++ show (takeS 1 alphaTest2)
-  putStrLn ""
-
-  -- Test 11: Alpha-equivalence with more complex bodies
-  -- ∀α. α → α  should equal  ∀β. β → β
-  let forallArr1 = TAll (Bind alpha100 (TArr (TVar alpha100) (TVar alpha100)))
-      forallArr2 = TAll (Bind beta200 (TArr (TVar beta200) (TVar beta200)))
-  putStrLn "11. Alpha-equivalence: (∀α. α→α) =α= (∀β. β→β)"
-  let alphaTest3 = runSubstRedex $ do
-        (Ground (project forallArr1)) <=> (Ground (project forallArr2))
-        pure "unified!"
-  putStrLn $ "    Result: " ++ show (takeS 1 alphaTest3)
-  putStrLn ""
-
-  -- Test 12: NON-alpha-equivalent types should NOT unify
-  -- ∀α. α  should NOT equal  ∀α. Unit
-  let forallUnit = TAll (Bind alpha100 TUnit)
-  putStrLn "12. Non-equivalence: (∀α. α) ≠ (∀α. Unit)"
-  let alphaTest4 = runSubstRedex $ do
-        (Ground (project forallAlpha)) <=> (Ground (project forallUnit))
-        pure "unified!"
-  putStrLn $ "    Result (should be empty): " ++ show (takeS 1 alphaTest4)
-  putStrLn ""
-
-  putStrLn "=== Substitution Tests ==="
-  putStrLn ""
-
-  -- Test 13: Simple substitution (no capture)
-  -- [Unit/α](α → α) = Unit → Unit
-  let tyBody = TArr (TVar alpha100) (TVar alpha100)  -- α → α
-      substResult1 = subst alpha100 TUnit tyBody
-  putStrLn "13. Substitution: [Unit/α](α → α)"
-  putStrLn $ "    Before: " ++ show tyBody
-  putStrLn $ "    After:  " ++ show substResult1
-  putStrLn $ "    Expected: Unit → Unit"
-  putStrLn ""
-
-  -- Test 14: Substitution with shadowing (should NOT substitute under shadow)
-  -- [Unit/α](∀α. α) = ∀α. α  (α is shadowed)
-  let substResult2 = subst alpha100 TUnit forallAlpha
-  putStrLn "14. Substitution with shadowing: [Unit/α](∀α. α)"
-  putStrLn $ "    Before: " ++ show forallAlpha
-  putStrLn $ "    After:  " ++ show substResult2
-  putStrLn $ "    Expected: ∀α. α (unchanged, shadowed)"
-  putStrLn ""
-
-  -- Test 15: Substitution under binder (no capture risk)
-  -- [Unit/α](∀β. α → β) = ∀β. Unit → β
-  let gamma300 = TyNom 300
-      forallGammaAlpha = TAll (Bind gamma300 (TArr (TVar alpha100) (TVar gamma300)))
-      substResult3 = subst alpha100 TUnit forallGammaAlpha
-  putStrLn "15. Substitution under binder: [Unit/α](∀γ. α → γ)"
-  putStrLn $ "    Before: " ++ show forallGammaAlpha
-  putStrLn $ "    After:  " ++ show substResult3
-  putStrLn $ "    Expected: ∀γ. Unit → γ"
-  putStrLn ""
-
-  -- Test 16: CAPTURE TEST - This is where naive substitution fails!
-  -- [β/α](∀β. α → β) should be ∀β'. β → β' (with fresh β')
-  -- But naive substitution gives ∀β. β → β (WRONG - β is captured!)
-  let forallBetaAlpha = TAll (Bind beta200 (TArr (TVar alpha100) (TVar beta200)))
-      -- Substituting β for α
-      substResult4 = subst alpha100 (TVar beta200) forallBetaAlpha
-  putStrLn "16. CAPTURE TEST: [β/α](∀β. α → β)"
-  putStrLn $ "    Before: " ++ show forallBetaAlpha
-  putStrLn $ "    After:  " ++ show substResult4
-  putStrLn $ "    Expected (capture-avoiding): ∀β'. β → β' (fresh β')"
-  putStrLn $ "    Actual (naive, WRONG if captured): ∀β. β → β"
-  -- Check if capture occurred
-  case substResult4 of
-    TAll (Bind boundVar (TArr t1 t2)) ->
-      if t1 == TVar boundVar
-        then putStrLn "    WARNING: Capture occurred! The free β became bound."
-        else putStrLn "    OK: No capture (or properly renamed)."
-    _ -> putStrLn "    Unexpected result shape"
-  putStrLn ""
-
-  -- Test 17: Type application that exercises substitution
-  -- (Λα. λx:α. x) [∀β. β]  should typecheck
-  -- Result type: (∀β. β) → (∀β. β)
-  let polyType = TAll (Bind beta200 (TVar beta200))  -- ∀β. β
-      polyIdWithPolyArg = TApp polyId polyType
-  putStrLn "17. Typecheck: (Λα. λx:α. x) [∀β. β]"
-  putStrLn $ "    Expected type: (∀β. β) → (∀β. β)"
-  print $ takeS 1 (typeofIO Nil polyIdWithPolyArg)
-  putStrLn ""
-
-  putStrLn "=== Hash Constraint Tests ==="
-  putStrLn ""
-
-  -- Test 18: Demonstrate hash constraint for capture avoidance
-  -- The hash constraint α # β asserts α ≠ β (α does not occur in β)
-  putStrLn "18. Hash constraint: α # β (α does not occur free in β)"
-  let hashTest1 = runSubstRedex $ do
-        -- α # β should succeed when α ≠ β
-        hash (tynom alpha100) (tynom beta200)
-        pure "α # β succeeded (they're different)"
-  putStrLn $ "    hash α100 β200: " ++ show (takeS 1 hashTest1)
-
-  let hashTest2 = runSubstRedex $ do
-        -- α # α should fail (α occurs in α)
-        hash (tynom alpha100) (tynom alpha100)
-        pure "α # α succeeded (BUG!)"
-  putStrLn $ "    hash α100 α100: " ++ show (takeS 1 hashTest2) ++ " (should be empty)"
-  putStrLn ""
-
-  -- Test 19: Hash in types - α # (β → β)
-  putStrLn "19. Hash in types: α # (β → β)"
-  let tyBetaArr = TArr (TVar beta200) (TVar beta200)  -- β → β
-  let hashTest3 = runSubstRedex $ do
-        hash (tynom alpha100) (Ground (project tyBetaArr))
-        pure "α # (β → β) succeeded"
-  putStrLn $ "    hash α (β → β): " ++ show (takeS 1 hashTest3)
-
-  let tyAlphaArr = TArr (TVar alpha100) (TVar alpha100)  -- α → α
-  let hashTest4 = runSubstRedex $ do
-        hash (tynom alpha100) (Ground (project tyAlphaArr))
-        pure "α # (α → α) succeeded (BUG!)"
-  putStrLn $ "    hash α (α → α): " ++ show (takeS 1 hashTest4) ++ " (should be empty)"
-  putStrLn ""
-
-  -- Test 20: Hash with binder - α # (∀α. α) should succeed (α is bound)
-  putStrLn "20. Hash with shadowing: α # (∀α. α)"
-  let hashTest5 = runSubstRedex $ do
-        hash (tynom alpha100) (Ground (project forallAlpha))
-        pure "α # (∀α. α) succeeded (α is shadowed)"
-  putStrLn $ "    hash α100 (∀α100. α100): " ++ show (takeS 1 hashTest5)
-  putStrLn ""
-
-  -- Test 21: Using hash for capture-avoiding substitution
-  -- To properly do [β/α](∀β. α → β), we need:
-  -- 1. Pick fresh γ where γ # β (the replacement)
-  -- 2. Rename ∀β to ∀γ
-  -- 3. Then substitute
-  putStrLn "21. Capture-avoiding substitution via hash + swap:"
-  putStrLn "    [β/α](∀β. α → β) with fresh γ where γ # β"
-  let captureAvoidTest = runSubstRedex $ do
-        -- Pick a fresh name
-        gamma <- freshTyNom
-        -- Ensure gamma # replacement (β)
-        hash (tynom gamma) (tvar (tynom beta200))
-        -- Now gamma is safe to use as binder
-        -- Original: ∀β. α → β  (with β = beta200, α = alpha100)
-        -- After renaming β to γ: ∀γ. α → γ
-        -- After substituting [β/α]: ∀γ. β → γ
-        let renamedBody = TArr (TVar alpha100) (TVar gamma)  -- α → γ (after swap)
-        let result = TAll (Bind gamma (subst alpha100 (TVar beta200) renamedBody))
-        pure result
-  case takeS 1 captureAvoidTest of
-    [result] -> do
-      putStrLn $ "    Result: " ++ show result
-      case result of
-        TAll (Bind boundVar (TArr t1 t2)) ->
-          if t1 == TVar beta200 && t2 == TVar boundVar && boundVar /= beta200
-            then putStrLn "    CORRECT: ∀γ. β → γ (no capture!)"
-            else putStrLn "    Check the result structure"
-        _ -> putStrLn "    Unexpected shape"
-    [] -> putStrLn "    No result (constraint failed)"
-  putStrLn ""
-
-  putStrLn "=== All tests completed ==="

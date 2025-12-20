@@ -64,10 +64,6 @@ module TypedRedex
     -- | Build named relations from Haskell functions
   , relation, relation2, relation3, relation4, relation5
 
-    -- * Defining inference rules (for derivation tracking)
-    -- | Build relations in rule style with conclusion patterns
-  , rule
-
     -- * Invoking relations
   , call       -- ^ Invoke a relation with fair interleaving
   , callDirect -- ^ Invoke a relation without suspension (direct execution)
@@ -88,24 +84,25 @@ module TypedRedex
     -- * Negation
   , neg    -- ^ Constructive negation: succeed if goal has no solutions
 
-    -- * Clean DSL syntax (judgment/rule/concl/prem)
-  , Applied(..)     -- Unified Applied rel ts (replaces Applied2, Applied3, etc.)
-  , Judge           -- Type alias: Judge rel '[A,B,C] = LTerm A rel -> LTerm B rel -> LTerm C rel -> Applied rel '[A,B,C]
-  , LTermList(..)   -- Heterogeneous list of logic terms
-  , Conclude(..)    -- concl method + ConcludePat type family
-  , Premise(..)     -- prem method
-  , Rule(..)        -- Unified Rule rel ts
-  , judgment        -- Unified judgment (works for any arity)
-
     -- * Moded DSL (compile-time mode checking)
-    -- | See "TypedRedex.DSL.Moded" for full documentation.
-    -- Import qualified: @import qualified TypedRedex.DSL.Moded as R@
+    -- | The moded DSL provides compile-time verification that all rules
+    -- have valid execution schedules. Use qualified import:
+    -- @import qualified TypedRedex.DSL.Moded as R@
+    --
+    -- Key combinators:
+    -- - @fresh@: Create tracked logic variables
+    -- - @concl@: Specify rule conclusion
+    -- - @prem@: Add rule premises
+    -- - @liftRel@: Lift rel actions into RuleM
+    -- - @mjudge1@, @mjudge2@, @mjudge3@: Define mode-checked judgments
+    -- - @ruleM@: Define mode-checked rules
   , Mode(..)
   , ModeList(..)
   , T(..)
   , TArgs(..)
   , AppliedM(..)
   , mjudge
+  , mjudge1, mjudge2, mjudge3
   , toApplied
   , ToLTermList(..)
   , ModedRule(..)
@@ -114,6 +111,10 @@ module TypedRedex
   , ground
   , lift1, lift2, lift3
   , Union
+
+    -- * Core types from Define (for interpreter compatibility)
+  , Applied(..)
+  , LTermList(..)
   ) where
 
 -- Core types
@@ -123,11 +124,11 @@ import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Var, Reified, C
 -- DSL: Fresh variables and type aliases
 import TypedRedex.DSL.Fresh (LTerm, LVar, Freshable(..), fresh, fresh2, fresh3, fresh4, fresh5, fresh6, fresh7, argument, argument2, argument3, argument4, argument5)
 
--- DSL: Define judgment/rule syntax
-import TypedRedex.DSL.Define (Applied(..), Judge, LTermList(..), Conclude(..), Premise(..), Rule(..), rule, judgment)
-
 -- DSL: Moded (compile-time mode checking)
-import TypedRedex.DSL.Moded (Mode(..), ModeList(..), T(..), TArgs(..), AppliedM(..), mjudge, toApplied, ToLTermList(..), ModedRule(..), ruleM, CheckSchedule, ground, lift1, lift2, lift3, Union)
+import TypedRedex.DSL.Moded (Mode(..), ModeList(..), T(..), TArgs(..), AppliedM(..), mjudge, mjudge1, mjudge2, mjudge3, toApplied, ToLTermList(..), ModedRule(..), ruleM, CheckSchedule, ground, lift1, lift2, lift3, Union)
+
+-- DSL: Core types (for interpreter compatibility)
+import TypedRedex.DSL.Define (Applied(..), LTermList(..))
 
 -- Relation primitives
 import TypedRedex.Core.Internal.Relation (relation, relation2, relation3, relation4, relation5, call, callDirect, (<=>), conde)
