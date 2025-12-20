@@ -96,6 +96,24 @@ module TypedRedex
   , Premise(..)     -- prem method
   , Rule(..)        -- Unified Rule rel ts
   , judgment        -- Unified judgment (works for any arity)
+
+    -- * Moded DSL (compile-time mode checking)
+    -- | See "TypedRedex.DSL.Moded" for full documentation.
+    -- Import qualified: @import qualified TypedRedex.DSL.Moded as R@
+  , Mode(..)
+  , ModeList(..)
+  , T(..)
+  , TArgs(..)
+  , AppliedM(..)
+  , mjudge
+  , toApplied
+  , ToLTermList(..)
+  , ModedRule(..)
+  , ruleM
+  , CheckSchedule
+  , ground
+  , lift1, lift2, lift3
+  , Union
   ) where
 
 -- Core types
@@ -107,6 +125,9 @@ import TypedRedex.DSL.Fresh (LTerm, LVar, Freshable(..), fresh, fresh2, fresh3, 
 
 -- DSL: Define judgment/rule syntax
 import TypedRedex.DSL.Define (Applied(..), Judge, LTermList(..), Conclude(..), Premise(..), Rule(..), rule, judgment)
+
+-- DSL: Moded (compile-time mode checking)
+import TypedRedex.DSL.Moded (Mode(..), ModeList(..), T(..), TArgs(..), AppliedM(..), mjudge, toApplied, ToLTermList(..), ModedRule(..), ruleM, CheckSchedule, ground, lift1, lift2, lift3, Union)
 
 -- Relation primitives
 import TypedRedex.Core.Internal.Relation (relation, relation2, relation3, relation4, relation5, call, callDirect, (<=>), conde)

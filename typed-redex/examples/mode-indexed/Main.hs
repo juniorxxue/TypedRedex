@@ -29,7 +29,7 @@ good =
     concl (h x)
 
 -- Uncomment to see a compile-time mode error:
---
+
 -- bad =
 --   rule $ R.do
 --     x <- fresh

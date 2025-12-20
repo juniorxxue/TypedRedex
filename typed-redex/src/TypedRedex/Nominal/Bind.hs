@@ -25,6 +25,7 @@ module TypedRedex.Nominal.Bind
   , Permute(..)
     -- * Smart Constructor
   , mkBind
+  , mkBindL
   ) where
 
 import Control.Applicative (empty)
@@ -135,3 +136,12 @@ instance (NominalAtom name, LogicType body, Permute name body) => LogicType (Bin
 mkBind :: (NominalAtom name, LogicType body, Permute name body)
        => name -> Logic body var -> Logic (Bind name body) var
 mkBind n body = Ground (BindR (Ground (project n)) body)
+
+-- | Create a Bind logic term from two logic terms (name and body can both be variables).
+--
+-- @
+-- mkBindL nameVar bodyVar  -- creates Bind ?name ?body where both are logic variables
+-- @
+mkBindL :: (NominalAtom name, LogicType name, LogicType body, Permute name body)
+        => Logic name var -> Logic body var -> Logic (Bind name body) var
+mkBindL nameL bodyL = Ground (BindR nameL bodyL)

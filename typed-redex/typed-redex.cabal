@@ -27,6 +27,7 @@ library
     -- DSL layer (user-facing)
     TypedRedex.DSL.Fresh
     TypedRedex.DSL.Define
+    TypedRedex.DSL.Moded
     TypedRedex.DSL.Type
     TypedRedex.DSL.TH
     -- Interpreter layer
@@ -77,4 +78,32 @@ executable example-mode-indexed
   other-modules:    IndexedRule
   build-depends:
     base >=4.12 && <5
+  default-language: Haskell2010
+
+executable example-moded-demo
+  hs-source-dirs:   examples/moded-demo
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-stlc-bidir-moded
+  hs-source-dirs:   examples/stlc-bidir-moded
+  main-is:          Main.hs
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+executable example-system-f-moded
+  hs-source-dirs:   examples/system-f-moded
+  main-is:          Main.hs
+  other-modules:    Syntax
+  build-depends:
+    base >=4.12 && <5,
+    typed-redex,
+    mtl  >=2.2  && <3
   default-language: Haskell2010

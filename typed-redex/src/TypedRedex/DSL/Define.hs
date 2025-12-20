@@ -53,6 +53,8 @@ module TypedRedex.DSL.Define
   , AllLogicType
   , Curried
   , CurriedR
+    -- * Building helpers (for Moded DSL)
+  , BuildLTermList(..)
   ) where
 
 import TypedRedex.Core.Internal.Redex
