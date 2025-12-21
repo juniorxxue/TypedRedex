@@ -77,14 +77,3 @@ executable example-system-f
     typed-redex,
     mtl  >=2.2  && <3
   default-language: Haskell2010
-
-executable example-neg-test
-  hs-source-dirs:   examples/neg-test, examples/stlc-bidir
-  main-is:          Main.hs
-  other-modules:    NegRules, Rules
-  build-depends:
-    base >=4.12 && <5,
-    containers >=0.6 && <1,
-    typed-redex,
-    mtl  >=2.2  && <3
-  default-language: Haskell2010
