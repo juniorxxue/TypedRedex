@@ -8,7 +8,7 @@ module Main (main) where
 
 import TypedRedex
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
-import TypedRedex.Interp.Deep (runDeepWith, formatRule, deepVar)
+import TypedRedex.Interp.Typesetting (runTypesettingWith, formatRule, typesettingVar)
 import TypedRedex.Interp.Tracing (runWithDerivationWith, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.DSL.Fresh (LTerm)
@@ -102,11 +102,11 @@ stepWithTrace t0 = runWithDerivationWith PCFFormatter $ F.fresh $ \t' -> do
   appGoal $ toApplied $ step (ground $ Ground $ project t0) (ground t')
   eval t'
 
--- Extract rules using DeepRedex
+-- Extract rules using TypesettingRedex
 printStepRules :: IO ()
 printStepRules = do
-  let rules = runDeepWith PCFFormatter $ do
-        appGoal $ toApplied $ step (ground (deepVar 0)) (ground (deepVar 1))
+  let rules = runTypesettingWith PCFFormatter $ do
+        appGoal $ toApplied $ step (ground (typesettingVar 0)) (ground (typesettingVar 1))
   mapM_ (putStrLn . formatRule PCFFormatter "step") rules
 
 --------------------------------------------------------------------------------
@@ -115,7 +115,7 @@ printStepRules = do
 
 main :: IO ()
 main = do
-  putStrLn "=== Automatic Rule Extraction (DeepRedex) ==="
+  putStrLn "=== Automatic Rule Extraction (TypesettingRedex) ==="
   putStrLn ""
 
   -- Extract all step rules automatically

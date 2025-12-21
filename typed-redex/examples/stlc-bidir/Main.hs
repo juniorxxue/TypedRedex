@@ -9,12 +9,12 @@
 -- This example demonstrates how to use the moded DSL for compile-time
 -- verification that all rules have valid execution schedules.
 --
--- Includes all three interpreters: SubstRedex, TracingRedex, DeepRedex
+-- Includes all three interpreters: SubstRedex, TracingRedex, TypesettingRedex
 module Main (main) where
 
 import TypedRedex
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
-import TypedRedex.Interp.Deep (runDeepWith, formatRule, deepVar)
+import TypedRedex.Interp.Typesetting (runTypesettingWith, formatRule, typesettingVar)
 import TypedRedex.Interp.Tracing (runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.DSL.Fresh (LTerm)
@@ -139,17 +139,17 @@ checkWithTrace ctx0 e0 ty0 = runWithDerivationWith BidirFormatter $ do
   appGoal $ toApplied $ check (ground ctxL) (ground eL) (ground tyL)
   pure ()
 
--- DeepRedex: extract rules
+-- TypesettingRedex: extract rules
 printSynthRules :: IO ()
 printSynthRules = do
-  let rules = runDeepWith BidirFormatter $ do
-        appGoal $ toApplied $ synth (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2))
+  let rules = runTypesettingWith BidirFormatter $ do
+        appGoal $ toApplied $ synth (ground (typesettingVar 0)) (ground (typesettingVar 1)) (ground (typesettingVar 2))
   mapM_ (putStrLn . formatRule BidirFormatter "synth") rules
 
 printCheckRules :: IO ()
 printCheckRules = do
-  let rules = runDeepWith BidirFormatter $ do
-        appGoal $ toApplied $ check (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2))
+  let rules = runTypesettingWith BidirFormatter $ do
+        appGoal $ toApplied $ check (ground (typesettingVar 0)) (ground (typesettingVar 1)) (ground (typesettingVar 2))
   mapM_ (putStrLn . formatRule BidirFormatter "check") rules
 
 --------------------------------------------------------------------------------
@@ -158,7 +158,7 @@ printCheckRules = do
 
 main :: IO ()
 main = do
-  putStrLn "=== Automatic Rule Extraction (DeepRedex) ==="
+  putStrLn "=== Automatic Rule Extraction (TypesettingRedex) ==="
   putStrLn ""
 
   putStrLn "Synth rules:"

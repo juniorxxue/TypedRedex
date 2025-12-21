@@ -12,8 +12,6 @@
 module Rules
   ( -- * Judgments
     lookupTm, typeof, substTy
-    -- * Wrong-order version (for testing runtime scheduling)
-  , assertEq, typeofWrongOrder
   ) where
 
 import Prelude hiding ((>>=), (>>), return)
@@ -120,60 +118,4 @@ typeof = defJudge3 @"typeof" $ \rule ->
       prem $ typeof ctx e (tall (bindTyPat alpha tyBody))
       prem $ substTy alpha tyArg tyBody result
       concl $ typeof ctx (tapp e tyArg) result
-  ]
-
---------------------------------------------------------------------------------
--- WRONG ORDER typeof: Demonstrates runtime scheduling
---------------------------------------------------------------------------------
-
--- | A helper judgment for demonstrating forced reordering.
--- Mode [I, I, I]: ALL arguments must be ground (inputs).
-assertEq :: SystemFRel rel => Judgment3 rel "assertEq" '[I, I, I] Ty Ty Tm
-assertEq = defJudge3 @"assertEq" $ \rule ->
-  [ rule "eq" $ do
-      ty <- fresh
-      concl $ assertEq ty ty unit
-  ]
-
--- | typeof with DELIBERATELY WRONG premise order.
-typeofWrongOrder :: SystemFRel rel => Judgment3 rel "typeof-wrong" '[I, I, O] Ctx Tm Ty
-typeofWrongOrder = defJudge3 @"typeof-wrong" $ \rule ->
-  [ -- typeof-unit: normal order (baseline)
-    rule "typeof-unit" $ do
-      ctx <- fresh
-      concl $ typeofWrongOrder ctx unit tunit
-
-  , -- typeof-var: prem BEFORE concl (wrong order)
-    rule "typeof-var" $ do
-      (ctx, x, ty) <- fresh3
-      prem $ lookupTm ctx x ty  -- prem first!
-      concl $ typeofWrongOrder ctx (var x) ty
-
-  , -- typeof-lam: prem BEFORE concl (wrong order)
-    rule "typeof-lam" $ do
-      (ctx, tyA, x, body, tyB) <- fresh5
-      prem $ typeofWrongOrder (tmBind x tyA ctx) body tyB  -- prem first!
-      concl $ typeofWrongOrder ctx (lam tyA (bindNomPat x body)) (tarr tyA tyB)
-
-  , -- typeof-app: FORCED REORDERING TEST
-    rule "typeof-app" $ do
-      (ctx, e1, e2, tyA, tyB, tyA2) <- fresh6
-      -- WRONG ORDER - would fail without scheduling:
-      prem $ assertEq tyA tyA2 unit                        -- needs {3,5} - NOT READY initially
-      prem $ typeofWrongOrder ctx e2 tyA2                  -- needs {0,2}, produces {5}
-      prem $ typeofWrongOrder ctx e1 (tarr tyA tyB)        -- needs {0,1}, produces {3,4}
-      concl $ typeofWrongOrder ctx (app e1 e2) tyB
-
-  , -- typeof-tlam: prem BEFORE concl (wrong order)
-    rule "typeof-tlam" $ do
-      (ctx, alpha, body, tyBody) <- fresh4
-      prem $ typeofWrongOrder (tyBind alpha ctx) body tyBody  -- prem first!
-      concl $ typeofWrongOrder ctx (tlam (bindTyPat alpha body)) (tall (bindTyPat alpha tyBody))
-
-  , -- typeof-tapp: prem BEFORE concl (wrong order)
-    rule "typeof-tapp" $ do
-      (ctx, e, tyArg, alpha, tyBody, result) <- fresh6
-      prem $ typeofWrongOrder ctx e (tall (bindTyPat alpha tyBody))  -- prem first!
-      prem $ substTy alpha tyArg tyBody result
-      concl $ typeofWrongOrder ctx (tapp e tyArg) result
   ]

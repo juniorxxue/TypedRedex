@@ -14,7 +14,7 @@ import TypedRedex.Nominal.Bind (mkBindL)
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.PrettyPrint (VarNaming(..), LogicVarNaming(..), ctxNaming, subscriptNum)
-import TypedRedex.DSL.TH (deriveLogicType, deriveLogicTypeNoNaming, (~>))
+import TypedRedex.DSL.TH (deriveLogicTypeNoNaming, derivePermute, deriveHash, deriveSubst, (~>))
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.DSL.Moded (T(..), ground, lift1, lift2, lift3, Union)
 import qualified Data.Set as S
@@ -56,70 +56,33 @@ data Ty
 instance LogicVarNaming Ty where
   varNaming = VarNaming "T" (\i -> "ty" ++ show i)
 
-deriveLogicTypeNoNaming ''Ty
-  [ 'TUnit ~> ("TUnit", "tunit_")
-  , 'TVar  ~> ("TVar", "tvar_")
-  , 'TArr  ~> ("TArr", "tarr_")
-  , 'TAll  ~> ("TAll", "tall_")
-  ]
+-- NOTE: Permute must be derived BEFORE LogicType because Bind needs it
+-- Generates: instance Permute TyNom Ty (structural swap)
+derivePermute ''Ty [''TyNom]
 
--- Moded constructors for Ty
-tunit :: T '[] Ty rel
-tunit = ground tunit_
-
-tvar :: T vs TyNom rel -> T vs Ty rel
-tvar = lift1 tvar_
-
-tarr :: T vs1 Ty rel -> T vs2 Ty rel -> T (Union vs1 vs2) Ty rel
-tarr = lift2 tarr_
-
-tall :: T vs (Bind TyNom Ty) rel -> T vs Ty rel
-tall = lift1 tall_
-
---------------------------------------------------------------------------------
--- Permute instance for Ty (required for Bind)
---------------------------------------------------------------------------------
-
--- Permute TyNom in Ty (for alpha-equivalence in type binders)
-instance Permute TyNom Ty where
-  swap a b TUnit = TUnit
-  swap a b (TVar v) = TVar (swap a b v)
-  swap a b (TArr t1 t2) = TArr (swap a b t1) (swap a b t2)
-  swap a b (TAll bnd) = TAll (swap a b bnd)
-
--- Nom doesn't affect Ty
+-- Nom doesn't affect Ty (identity swap)
 instance Permute Nom Ty where
   swap _ _ ty = ty
 
---------------------------------------------------------------------------------
--- Subst instance for Ty (required for instantiate)
---------------------------------------------------------------------------------
+-- Generates: LogicType instance and moded constructors (tunit, tvar, tarr, tall)
+deriveLogicTypeNoNaming ''Ty
+  [ 'TUnit ~> ("TUnit", "tunit")
+  , 'TVar  ~> ("TVar", "tvar")
+  , 'TArr  ~> ("TArr", "tarr")
+  , 'TAll  ~> ("TAll", "tall")
+  ]
 
-instance Subst TyNom Ty where
-  subst name replacement ty = case ty of
-    TUnit -> TUnit
-    TVar v
-      | v == name -> replacement
-      | otherwise -> TVar v
-    TArr t1 t2 -> TArr (subst name replacement t1) (subst name replacement t2)
-    TAll bnd -> TAll (substBind name replacement bnd)
+-- Generates: instance Hash TyNom Ty (with TAll shadowing)
+deriveHash ''Ty [''TyNom]
 
---------------------------------------------------------------------------------
--- Hash instances for Ty (checking if name occurs free)
---------------------------------------------------------------------------------
-
--- Check if TyNom occurs free in Ty
-instance Hash TyNom Ty where
-  occursIn a TUnit = False
-  occursIn a (TVar v) = a == v
-  occursIn a (TArr t1 t2) = occursIn a t1 || occursIn a t2
-  occursIn a (TAll (Bind b body))
-    | a == b    = False  -- shadowed
-    | otherwise = occursIn a body
-
--- Nom never occurs in Ty (different namespace)
+-- Nom never occurs in Ty
 instance Hash Nom Ty where
   occursIn _ _ = False
+
+-- Generates: instance Subst TyNom Ty (with substBind for TAll)
+deriveSubst ''Ty ''TyNom
+  [ ('TAll, [| \n r bnd -> TAll (substBind n r bnd) |])
+  ]
 
 --------------------------------------------------------------------------------
 -- Terms
@@ -138,87 +101,47 @@ data Tm
 instance LogicVarNaming Tm where
   varNaming = VarNaming "E" (\i -> "e" ++ subscriptNum (i + 1))
 
-deriveLogicTypeNoNaming ''Tm
-  [ 'Unit ~> ("Unit", "unit_")
-  , 'Var  ~> ("Var", "var_")
-  , 'Lam  ~> ("Lam", "lam_")
-  , 'App  ~> ("App", "app_")
-  , 'TLam ~> ("TLam", "tlam_")
-  , 'TApp ~> ("TApp", "tapp_")
-  ]
+-- NOTE: Permute must be derived BEFORE LogicType because Bind needs it
+-- Generates: instance Permute Nom Tm, instance Permute TyNom Tm
+derivePermute ''Tm [''Nom, ''TyNom]
 
--- Moded constructors for Tm
-unit :: T '[] Tm rel
-unit = ground unit_
-
-var :: T vs Nom rel -> T vs Tm rel
-var = lift1 var_
-
-lam :: T vs1 Ty rel -> T vs2 (Bind Nom Tm) rel -> T (Union vs1 vs2) Tm rel
-lam = lift2 lam_
-
-app :: T vs1 Tm rel -> T vs2 Tm rel -> T (Union vs1 vs2) Tm rel
-app = lift2 app_
-
-tlam :: T vs (Bind TyNom Tm) rel -> T vs Tm rel
-tlam = lift1 tlam_
-
-tapp :: T vs1 Tm rel -> T vs2 Ty rel -> T (Union vs1 vs2) Tm rel
-tapp = lift2 tapp_
-
---------------------------------------------------------------------------------
--- Permute instances for Tm
---------------------------------------------------------------------------------
-
--- Permute Nom in Tm (for alpha-equivalence in term binders)
-instance Permute Nom Tm where
-  swap a b Unit = Unit
-  swap a b (Var v) = Var (swap a b v)
-  swap a b (Lam ty bnd) = Lam ty (swap a b bnd)  -- ty doesn't contain Nom
-  swap a b (App t1 t2) = App (swap a b t1) (swap a b t2)
-  swap a b (TLam bnd) = TLam (swap a b bnd)
-  swap a b (TApp t ty) = TApp (swap a b t) ty  -- ty doesn't contain Nom
-
--- Permute TyNom in Tm (type variables in terms)
-instance Permute TyNom Tm where
-  swap a b Unit = Unit
-  swap a b (Var v) = Var v  -- term vars unaffected by type var swap
-  swap a b (Lam ty bnd) = Lam (swap a b ty) (swap a b bnd)
-  swap a b (App t1 t2) = App (swap a b t1) (swap a b t2)
-  swap a b (TLam bnd) = TLam (swap a b bnd)
-  swap a b (TApp t ty) = TApp (swap a b t) (swap a b ty)
-
--- Cross: Nom in Bind TyNom Tm (Nom swap doesn't affect TyNom)
+-- Cross-namespace Permute instances (Nom swap in Bind TyNom, and vice versa)
+-- These can't be auto-derived because they cross binding namespaces
 instance Permute Nom (Bind TyNom Tm) where
   swap a b (Bind n body) = Bind n (swap a b body)
 
--- Cross: TyNom in Bind Nom Tm (TyNom swap doesn't affect Nom)
 instance Permute TyNom (Bind Nom Tm) where
   swap a b (Bind n body) = Bind n (swap a b body)
 
---------------------------------------------------------------------------------
--- Hash instances for Tm (checking if name occurs free)
---------------------------------------------------------------------------------
+-- Generates: LogicType instance and moded constructors
+deriveLogicTypeNoNaming ''Tm
+  [ 'Unit ~> ("Unit", "unit")
+  , 'Var  ~> ("Var", "var")
+  , 'Lam  ~> ("Lam", "lam")
+  , 'App  ~> ("App", "app")
+  , 'TLam ~> ("TLam", "tlam")
+  , 'TApp ~> ("TApp", "tapp")
+  ]
 
--- Check if Nom occurs free in Tm
+-- Hash instances for Tm - manual because of cross-binder complexity
+-- (Lam binds Nom but doesn't shadow TyNom, TLam binds TyNom but doesn't shadow Nom)
 instance Hash Nom Tm where
   occursIn a Unit = False
   occursIn a (Var v) = a == v
   occursIn a (Lam _ (Bind b body))
-    | a == b    = False  -- shadowed
+    | a == b    = False  -- shadowed by term binder
     | otherwise = occursIn a body
   occursIn a (App t1 t2) = occursIn a t1 || occursIn a t2
   occursIn a (TLam (Bind _ body)) = occursIn a body  -- TyNom doesn't shadow Nom
   occursIn a (TApp t _) = occursIn a t  -- ty has no Nom
 
--- Check if TyNom occurs free in Tm
 instance Hash TyNom Tm where
   occursIn _ Unit = False
   occursIn _ (Var _) = False  -- term vars don't contain type vars
-  occursIn a (Lam ty (Bind _ body)) = occursIn a ty || occursIn a body
+  occursIn a (Lam ty (Bind _ body)) = occursIn a ty || occursIn a body  -- Nom doesn't shadow TyNom
   occursIn a (App t1 t2) = occursIn a t1 || occursIn a t2
   occursIn a (TLam (Bind b body))
-    | a == b    = False  -- shadowed
+    | a == b    = False  -- shadowed by type binder
     | otherwise = occursIn a body
   occursIn a (TApp t ty) = occursIn a t || occursIn a ty
 
@@ -237,22 +160,12 @@ data Ctx
 instance LogicVarNaming Ctx where
   varNaming = ctxNaming
 
+-- Generates: LogicType instance and moded constructors
 deriveLogicTypeNoNaming ''Ctx
-  [ 'Nil     ~> ("Nil", "nil_")
-  , 'TmBind  ~> ("TmBind", "tmBind_")
-  , 'TyBind' ~> ("TyBind'", "tyBind_")
+  [ 'Nil     ~> ("Nil", "nil")
+  , 'TmBind  ~> ("TmBind", "tmBind")
+  , 'TyBind' ~> ("TyBind'", "tyBind")
   ]
-
--- Moded constructors for Ctx
-nil :: T '[] Ctx rel
-nil = ground nil_
-
-tmBind :: T vs1 Nom rel -> T vs2 Ty rel -> T vs3 Ctx rel
-       -> T (Union vs1 (Union vs2 vs3)) Ctx rel
-tmBind = lift3 tmBind_
-
-tyBind :: T vs1 TyNom rel -> T vs2 Ctx rel -> T (Union vs1 vs2) Ctx rel
-tyBind = lift2 tyBind_
 
 --------------------------------------------------------------------------------
 -- Moded constructors for Bind (nominal binders)

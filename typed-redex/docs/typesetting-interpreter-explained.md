@@ -1,10 +1,10 @@
-# Deep Interpreter: How Rule Extraction Works
+# Typesetting Interpreter: How Rule Extraction Works
 
-This document explains the logic in `TypedRedex.Interp.Deep`, which extracts human-readable inference rules from relation definitions.
+This document explains the logic in `TypedRedex.Interp.Typesetting`, which extracts human-readable inference rules from relation definitions.
 
 ## Overview
 
-The deep interpreter transforms executable relation definitions into printable inference rules. Given a judgment like:
+The typesetting interpreter transforms executable relation definitions into printable inference rules. Given a judgment like:
 
 ```haskell
 synth :: Judge rel '[Ctx, Tm, Ty]
@@ -21,7 +21,7 @@ It produces output like:
 
 ## Architecture: Direct Rule Building
 
-The key insight is that `concl` and `prem` emit **structural markers** that the deep interpreter uses to build `ExtractedRule` directly—no intermediate AST needed.
+The key insight is that `concl` and `prem` emit **structural markers** that the typesetting interpreter uses to build `ExtractedRule` directly—no intermediate AST needed.
 
 ### Data Structures
 
@@ -73,37 +73,37 @@ instance Redex rel => Premise (Applied rel ts) rel where
     g                                      -- Then run the goal
 ```
 
-## DeepRedex Implementation
+## TypesettingRedex Implementation
 
 The interpreter traces rule execution and builds `ExtractedRule` directly:
 
 ```haskell
-instance Redex DeepRedex where
+instance Redex TypesettingRedex where
   -- markConclusion: switch to "recording conclusion patterns" mode
   markConclusion = modify $ \s ->
-    s { dsBuilder = (dsBuilder s) { rbInConclusion = True } }
+    s { tsBuilder = (tsBuilder s) { rbInConclusion = True } }
 
   -- unify: if in conclusion mode, record the pattern
   unify x y = do
-    inConcl <- gets (rbInConclusion . dsBuilder)
+    inConcl <- gets (rbInConclusion . tsBuilder)
     when inConcl $ do
-      fmt <- gets dsFormatter
+      fmt <- gets tsFormatter
       let rhs = prettyLFmt fmt y
-      modify $ \s -> s { dsBuilder = ... { rbPatterns = rhs : rbPatterns ... } }
+      modify $ \s -> s { tsBuilder = ... { rbPatterns = rhs : rbPatterns ... } }
 
   -- markPremise: record the premise call with its arguments
   markPremise name args = do
     argStrs <- mapM prettyCaptured args
-    modify $ \s -> s { dsBuilder = ... { rbPremises = (name, argStrs) : ... } }
+    modify $ \s -> s { tsBuilder = ... { rbPremises = (name, argStrs) : ... } }
 
   -- call_: depth 0→1 enters a rule, depth >0 stops expansion
   call_ _ rel = do
-    depth <- gets dsDepth
+    depth <- gets tsDepth
     if depth == 0
       then do
-        modify $ \s -> s { dsBuilder = ... { rbName = relName rel }, dsDepth = 1 }
+        modify $ \s -> s { tsBuilder = ... { rbName = relName rel }, tsDepth = 1 }
         relBody rel
-        modify $ \s -> s { dsDepth = 0 }
+        modify $ \s -> s { tsDepth = 0 }
       else pure ()  -- Don't expand nested calls
 ```
 
@@ -112,25 +112,25 @@ instance Redex DeepRedex where
 When rules have disjunctions (`<|>`), each branch produces a separate rule:
 
 ```haskell
-instance Alternative DeepRedex where
+instance Alternative TypesettingRedex where
   a <|> b = do
     s0 <- get
     -- Run branch a, collect rules
-    put $ s0 { dsBuilder = emptyBuilder, dsRules = [] }
+    put $ s0 { tsBuilder = emptyBuilder, tsRules = [] }
     _ <- a
     rulesA <- collectRules
     -- Run branch b, collect rules
-    put $ s0 { dsBuilder = emptyBuilder, dsRules = [] }
+    put $ s0 { tsBuilder = emptyBuilder, tsRules = [] }
     _ <- b
     rulesB <- collectRules
     -- Combine all rules
-    put $ s0 { dsRules = dsRules s0 ++ rulesA ++ rulesB }
+    put $ s0 { tsRules = tsRules s0 ++ rulesA ++ rulesB }
 ```
 
 ## Data Flow
 
 ```
-User code                    DeepRedex monad                    Output
+User code                    TypesettingRedex monad             Output
 ─────────────────────────────────────────────────────────────────────────
 rule "β" $ ... -> do
   concl $ ...              ─▶  markConclusion + unify (record patterns)
@@ -175,7 +175,7 @@ e = App(e₁, e₂)
 
 **After** (direct rule building):
 - `concl` and `prem` emit structural markers
-- DeepRedex builds `ExtractedRule` directly during tracing
+- TypesettingRedex builds `ExtractedRule` directly during tracing
 - No intermediate AST, no extraction phase
 - ~370 lines instead of ~630 lines
 
@@ -185,4 +185,4 @@ e = App(e₁, e₂)
 |------|------|
 | `Core/Internal/Redex.hs` | Defines `markConclusion`, `markPremise` (default no-op) |
 | `DSL/Define.hs` | `concl`/`prem` emit markers; `Applied` stores judgment name |
-| `Interp/Deep.hs` | `DeepRedex` interpreter builds `ExtractedRule` directly |
+| `Interp/Typesetting.hs` | `TypesettingRedex` interpreter builds `ExtractedRule` directly |

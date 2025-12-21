@@ -34,7 +34,7 @@ library
     TypedRedex.Interp.Stream
     TypedRedex.Interp.Subst
     TypedRedex.Interp.Tracing
-    TypedRedex.Interp.Deep
+    TypedRedex.Interp.Typesetting
     TypedRedex.Interp.Run
     TypedRedex.Interp.Format
     TypedRedex.Interp.PrettyPrint

@@ -243,13 +243,13 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
   call_ Transparent rel = relBody rel
 
   ---------------------------------------------------------------------------
-  -- Deep interpretation markers (no-op by default)
+  -- Typesetting interpretation markers (no-op by default)
   ---------------------------------------------------------------------------
 
   -- | Mark the start of a conclusion pattern.
   --
   -- Called by 'concl' before unifying the conclusion arguments.
-  -- Deep interpreters override this to record conclusion structure.
+  -- Typesetting interpreters override this to record conclusion structure.
   --
   -- Default: no-op.
   markConclusion :: Goal rel
@@ -258,7 +258,7 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
   -- | Mark a premise call with judgment name and captured arguments.
   --
   -- Called by 'prem' before executing the premise goal.
-  -- Deep interpreters override this to record premise structure.
+  -- Typesetting interpreters override this to record premise structure.
   --
   -- Default: no-op.
   markPremise :: String -> [CapturedTerm rel] -> Goal rel
@@ -266,7 +266,7 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
 
   -- | Whether to skip execution of lifted (deferred) actions.
   --
-  -- Rule extractors like DeepRedex return True to avoid executing
+  -- Rule extractors like TypesettingRedex return True to avoid executing
   -- substitution operations that would fail without proper evaluation.
   --
   -- Default: False (execute lifted actions normally).

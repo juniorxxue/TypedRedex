@@ -3,25 +3,25 @@
 {-# LANGUAGE GADTs, RankNTypes, TypeApplications, ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds, TypeOperators, AllowAmbiguousTypes #-}
 
--- | DeepRedex: Rule extraction interpreter for TypedRedex
+-- | TypesettingRedex: Rule extraction interpreter for TypedRedex
 --
 -- Directly builds inference rules from relation definitions.
 -- No intermediate AST - the structure IS the extraction.
-module TypedRedex.Interp.Deep
+module TypedRedex.Interp.Typesetting
   ( -- * Core types
-    DeepRedex
+    TypesettingRedex
   , ExtractedRule(..)
     -- * Running the interpreter
-  , runDeep
-  , runDeepWith
+  , runTypesetting
+  , runTypesettingWith
     -- * Formatting
   , formatRule
   , formatRuleWith
-  , deepVar
+  , typesettingVar
     -- * Pretty-printing extracted rules (generic for any arity)
   , printRules
   , printRulesWith
-  , ApplyDeepVars(..)
+  , ApplyTypesettingVars(..)
   ) where
 
 import TypedRedex.Core.Internal.Redex
@@ -70,168 +70,168 @@ finishRule rb = ExtractedRule
   }
 
 --------------------------------------------------------------------------------
--- Deep Interpreter State
+-- Typesetting Interpreter State
 --------------------------------------------------------------------------------
 
-data DeepState = DeepState
-  { dsVarCounter :: Int
-  , dsBuilder    :: RuleBuilder           -- ^ Current rule being built
-  , dsRules      :: [ExtractedRule]       -- ^ Completed rules
-  , dsDepth      :: Int                   -- ^ Expansion depth
-  , dsFormatter  :: String -> [String] -> String
+data TypesettingState = TypesettingState
+  { tsVarCounter :: Int
+  , tsBuilder    :: RuleBuilder           -- ^ Current rule being built
+  , tsRules      :: [ExtractedRule]       -- ^ Completed rules
+  , tsDepth      :: Int                   -- ^ Expansion depth
+  , tsFormatter  :: String -> [String] -> String
   }
 
-initState :: DeepState
+initState :: TypesettingState
 initState = initStateWith formatCon
 
-initStateWith :: (String -> [String] -> String) -> DeepState
-initStateWith fmt = DeepState 0 emptyBuilder [] 0 fmt
+initStateWith :: (String -> [String] -> String) -> TypesettingState
+initStateWith fmt = TypesettingState 0 emptyBuilder [] 0 fmt
 
 --------------------------------------------------------------------------------
--- Deep Redex Interpreter
+-- Typesetting Redex Interpreter
 --------------------------------------------------------------------------------
 
-newtype DeepRedex a = DeepRedex (State DeepState a)
-  deriving (Functor, Applicative, Monad, MonadState DeepState)
+newtype TypesettingRedex a = TypesettingRedex (State TypesettingState a)
+  deriving (Functor, Applicative, Monad, MonadState TypesettingState)
 
-instance Alternative DeepRedex where
-  empty = DeepRedex $ pure (error "DeepRedex: empty")
+instance Alternative TypesettingRedex where
+  empty = TypesettingRedex $ pure (error "TypesettingRedex: empty")
   a <|> b = do
     s0 <- get
     -- Run branch a
-    put $ s0 { dsBuilder = emptyBuilder, dsRules = [] }
+    put $ s0 { tsBuilder = emptyBuilder, tsRules = [] }
     _ <- a
-    rulesA <- gets dsRules
-    builderA <- gets dsBuilder
+    rulesA <- gets tsRules
+    builderA <- gets tsBuilder
     let rulesA' = if null (rbName builderA) then rulesA else finishRule builderA : rulesA
     -- Run branch b
-    put $ s0 { dsBuilder = emptyBuilder, dsRules = [] }
+    put $ s0 { tsBuilder = emptyBuilder, tsRules = [] }
     _ <- b
-    rulesB <- gets dsRules
-    builderB <- gets dsBuilder
+    rulesB <- gets tsRules
+    builderB <- gets tsBuilder
     let rulesB' = if null (rbName builderB) then rulesB else finishRule builderB : rulesB
     -- Combine rules
-    put $ s0 { dsRules = dsRules s0 ++ reverse rulesA' ++ reverse rulesB' }
-    pure (error "DeepRedex: <|> result")
+    put $ s0 { tsRules = tsRules s0 ++ reverse rulesA' ++ reverse rulesB' }
+    pure (error "TypesettingRedex: <|> result")
 
 --------------------------------------------------------------------------------
 -- Redex Instance
 --------------------------------------------------------------------------------
 
-instance Redex DeepRedex where
-  newtype RVar DeepRedex t = DVar Int
+instance Redex TypesettingRedex where
+  newtype RVar TypesettingRedex t = TVar Int
     deriving (Functor)
 
   fresh_ FreshVar k = do
-    n <- gets dsVarCounter
-    modify $ \s -> s { dsVarCounter = n + 1 }
-    k (Var (DVar n))
+    n <- gets tsVarCounter
+    modify $ \s -> s { tsVarCounter = n + 1 }
+    k (Var (TVar n))
   fresh_ (ArgVar (Free v)) k = k v
   fresh_ (ArgVar (Ground _)) k = do
-    n <- gets dsVarCounter
-    modify $ \s -> s { dsVarCounter = n + 1 }
-    k (Var (DVar n))
+    n <- gets tsVarCounter
+    modify $ \s -> s { tsVarCounter = n + 1 }
+    k (Var (TVar n))
 
   unify x y = do
-    inConcl <- gets (rbInConclusion . dsBuilder)
+    inConcl <- gets (rbInConclusion . tsBuilder)
     when inConcl $ do
-      fmt <- gets dsFormatter
+      fmt <- gets tsFormatter
       -- Capture x (the pattern/term), not y (the fresh variable)
       let pattern = prettyLFmt fmt x
-      modify $ \s -> s { dsBuilder = (dsBuilder s) { rbPatterns = pattern : rbPatterns (dsBuilder s) } }
+      modify $ \s -> s { tsBuilder = (tsBuilder s) { rbPatterns = pattern : rbPatterns (tsBuilder s) } }
 
   suspend = id
 
   call_ _ rel = do
-    depth <- gets dsDepth
+    depth <- gets tsDepth
     if depth == 0
       then do
         -- Depth 0→1: This is a rule call, set the rule name
-        modify $ \s -> s { dsBuilder = (dsBuilder s) { rbName = relName rel }, dsDepth = 1 }
+        modify $ \s -> s { tsBuilder = (tsBuilder s) { rbName = relName rel }, tsDepth = 1 }
         relBody rel
-        modify $ \s -> s { dsDepth = 0 }
+        modify $ \s -> s { tsDepth = 0 }
       else
         -- Depth > 0: Inside rule body, don't expand further
         pure ()
 
-  displayVar (DVar n) = "e" ++ subscriptNum n
+  displayVar (TVar n) = "e" ++ subscriptNum n
 
   markConclusion = modify $ \s ->
-    s { dsBuilder = (dsBuilder s) { rbInConclusion = True } }
+    s { tsBuilder = (tsBuilder s) { rbInConclusion = True } }
 
   markPremise name args = do
     argStrs <- mapM prettyCaptured args
-    modify $ \s -> s { dsBuilder = (dsBuilder s) {
-      rbPremises = (name, argStrs) : rbPremises (dsBuilder s)
+    modify $ \s -> s { tsBuilder = (tsBuilder s) {
+      rbPremises = (name, argStrs) : rbPremises (tsBuilder s)
     } }
 
   -- Skip lifted actions since we're just extracting rule structure
   skipLiftedActions _ = True
 
-prettyCaptured :: CapturedTerm DeepRedex -> DeepRedex String
+prettyCaptured :: CapturedTerm TypesettingRedex -> TypesettingRedex String
 prettyCaptured (CapturedTerm term) = do
-  fmt <- gets dsFormatter
+  fmt <- gets tsFormatter
   pure $ prettyLFmt fmt term
 
-instance EqVar DeepRedex where
-  varEq (DVar a) (DVar b) = a == b
+instance EqVar TypesettingRedex where
+  varEq (TVar a) (TVar b) = a == b
 
 -- | Negation-as-failure is a no-op for rule extraction.
 -- We're just extracting rule structure, not executing.
-instance RedexNeg DeepRedex where
+instance RedexNeg TypesettingRedex where
   neg _ = pure ()
 
 -- | Fresh integer generation for nominal atoms.
--- DeepRedex reuses the variable counter for fresh integers.
-instance RedexFresh DeepRedex where
+-- TypesettingRedex reuses the variable counter for fresh integers.
+instance RedexFresh TypesettingRedex where
   freshInt = do
-    n <- gets dsVarCounter
-    modify $ \s -> s { dsVarCounter = n + 1 }
+    n <- gets tsVarCounter
+    modify $ \s -> s { tsVarCounter = n + 1 }
     pure n
 
 -- | Evaluation is a no-op for rule extraction.
 -- This should never be called since we skip lifted actions.
-instance RedexEval DeepRedex where
-  derefVar _ = error "DeepRedex: derefVar should not be called during rule extraction"
+instance RedexEval TypesettingRedex where
+  derefVar _ = error "TypesettingRedex: derefVar should not be called during rule extraction"
 
 --------------------------------------------------------------------------------
 -- Pretty-printing Logic terms
 --------------------------------------------------------------------------------
 
-prettyLFmt :: forall a. LogicType a => (String -> [String] -> String) -> Logic a (RVar DeepRedex) -> String
+prettyLFmt :: forall a. LogicType a => (String -> [String] -> String) -> Logic a (RVar TypesettingRedex) -> String
 prettyLFmt _ (Free v) =
   case unVar v of
-    DVar n -> "«" ++ vnTag (varNaming @a) ++ ":" ++ show n ++ "»"
+    TVar n -> "«" ++ vnTag (varNaming @a) ++ ":" ++ show n ++ "»"
 prettyLFmt fmt (Ground r) = prettyReifiedFmt fmt r
 
-prettyReifiedFmt :: LogicType a => (String -> [String] -> String) -> Reified a (RVar DeepRedex) -> String
+prettyReifiedFmt :: LogicType a => (String -> [String] -> String) -> Reified a (RVar TypesettingRedex) -> String
 prettyReifiedFmt fmt r =
   let (con, fields) = quote r
   in fmt (constructorName con) (map (prettyFieldFmt fmt) fields)
 
-prettyFieldFmt :: (String -> [String] -> String) -> Field a (RVar DeepRedex) -> String
+prettyFieldFmt :: (String -> [String] -> String) -> Field a (RVar TypesettingRedex) -> String
 prettyFieldFmt fmt (Field _ logic) = prettyLogicAnyFmt fmt logic
 
-prettyLogicAnyFmt :: forall t. LogicType t => (String -> [String] -> String) -> Logic t (RVar DeepRedex) -> String
+prettyLogicAnyFmt :: forall t. LogicType t => (String -> [String] -> String) -> Logic t (RVar TypesettingRedex) -> String
 prettyLogicAnyFmt _ (Free v) =
   case unVar v of
-    DVar n -> "«" ++ vnTag (varNaming @t) ++ ":" ++ show n ++ "»"
+    TVar n -> "«" ++ vnTag (varNaming @t) ++ ":" ++ show n ++ "»"
 prettyLogicAnyFmt fmt (Ground r) = prettyReifiedFmt fmt r
 
 --------------------------------------------------------------------------------
 -- Running and extracting
 --------------------------------------------------------------------------------
 
--- | Run a DeepRedex computation and extract all rules
-runDeep :: DeepRedex () -> [ExtractedRule]
-runDeep = runDeepWith DefaultTermFormatter
+-- | Run a TypesettingRedex computation and extract all rules
+runTypesetting :: TypesettingRedex () -> [ExtractedRule]
+runTypesetting = runTypesettingWith DefaultTermFormatter
 
 -- | Run with a custom formatter
-runDeepWith :: TermFormatter fmt => fmt -> DeepRedex () -> [ExtractedRule]
-runDeepWith fmt (DeepRedex m) =
+runTypesettingWith :: TermFormatter fmt => fmt -> TypesettingRedex () -> [ExtractedRule]
+runTypesettingWith fmt (TypesettingRedex m) =
   let finalState = execState m (initStateWith (formatConWith fmt))
-      builder = dsBuilder finalState
-      rules = dsRules finalState
+      builder = tsBuilder finalState
+      rules = tsRules finalState
   in if null (rbName builder)
      then reverse rules
      else reverse (finishRule builder : rules)
@@ -316,23 +316,23 @@ formatRuleWith = formatRule DefaultTermFormatter
 --------------------------------------------------------------------------------
 
 -- | Create a logic variable for rule extraction
-deepVar :: Int -> Logic a (RVar DeepRedex)
-deepVar n = Free (Var (DVar n))
+typesettingVar :: Int -> Logic a (RVar TypesettingRedex)
+typesettingVar n = Free (Var (TVar n))
 
 --------------------------------------------------------------------------------
--- Applying deepVar to curried functions
+-- Applying typesettingVar to curried functions
 --------------------------------------------------------------------------------
 
--- | Type class for applying deepVar with incrementing indices to curried functions.
+-- | Type class for applying typesettingVar with incrementing indices to curried functions.
 -- This allows a single generic printRules to work for any arity.
-class ApplyDeepVars ts where
-  applyDeepVarsTo :: Proxy ts -> Int -> CurriedR DeepRedex ts result -> result
+class ApplyTypesettingVars ts where
+  applyTypesettingVarsTo :: Proxy ts -> Int -> CurriedR TypesettingRedex ts result -> result
 
-instance ApplyDeepVars '[] where
-  applyDeepVarsTo _ _ r = r
+instance ApplyTypesettingVars '[] where
+  applyTypesettingVarsTo _ _ r = r
 
-instance (LogicType t, ApplyDeepVars ts) => ApplyDeepVars (t ': ts) where
-  applyDeepVarsTo _ n f = applyDeepVarsTo (Proxy @ts) (n + 1) (f (deepVar n))
+instance (LogicType t, ApplyTypesettingVars ts) => ApplyTypesettingVars (t ': ts) where
+  applyTypesettingVarsTo _ n f = applyTypesettingVarsTo (Proxy @ts) (n + 1) (f (typesettingVar n))
 
 --------------------------------------------------------------------------------
 -- Pretty-printing extracted rules (generic)
@@ -345,24 +345,24 @@ instance (LogicType t, ApplyDeepVars ts) => ApplyDeepVars (t ': ts) where
 -- printRules \@'[Tm, Tm] \"step\" step
 -- printRules \@'[Ctx, Tm, Ty] \"typeof\" typeof
 -- @
-printRules :: forall ts. ApplyDeepVars ts
+printRules :: forall ts. ApplyTypesettingVars ts
            => String
-           -> CurriedR DeepRedex ts (Applied DeepRedex ts)
+           -> CurriedR TypesettingRedex ts (Applied TypesettingRedex ts)
            -> IO ()
 printRules judgmentName rel = do
-  let applied :: Applied DeepRedex ts
-      applied = applyDeepVarsTo (Proxy @ts) 0 rel
-  let rules = runDeep $ appGoal applied
+  let applied :: Applied TypesettingRedex ts
+      applied = applyTypesettingVarsTo (Proxy @ts) 0 rel
+  let rules = runTypesetting $ appGoal applied
   mapM_ (\r -> putStrLn (formatRuleWith judgmentName r) >> putStrLn "") rules
 
 -- | Print extracted rules with a custom formatter.
-printRulesWith :: forall ts fmt. (ApplyDeepVars ts, TermFormatter fmt, JudgmentFormatter fmt)
+printRulesWith :: forall ts fmt. (ApplyTypesettingVars ts, TermFormatter fmt, JudgmentFormatter fmt)
                => fmt
                -> String
-               -> CurriedR DeepRedex ts (Applied DeepRedex ts)
+               -> CurriedR TypesettingRedex ts (Applied TypesettingRedex ts)
                -> IO ()
 printRulesWith fmt judgmentName rel = do
-  let applied :: Applied DeepRedex ts
-      applied = applyDeepVarsTo (Proxy @ts) 0 rel
-  let rules = runDeepWith fmt $ appGoal applied
+  let applied :: Applied TypesettingRedex ts
+      applied = applyTypesettingVarsTo (Proxy @ts) 0 rel
+  let rules = runTypesettingWith fmt $ appGoal applied
   mapM_ (\r -> putStrLn (formatRule fmt judgmentName r) >> putStrLn "") rules

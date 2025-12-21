@@ -18,7 +18,7 @@ import TypedRedex.Nominal
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Tracing (runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
-import TypedRedex.Interp.Deep (runDeepWith, formatRule, deepVar)
+import TypedRedex.Interp.Typesetting (runTypesettingWith, formatRule, typesettingVar)
 import TypedRedex.Interp.Format (TermFormatter(..))
 import TypedRedex.DSL.Fresh (LTerm)
 import qualified TypedRedex.DSL.Fresh as F
@@ -129,37 +129,29 @@ typeofWithTrace ctx0 e0 = runWithDerivationWith SystemFFormatter $ F.fresh $ \ty
   appGoal $ toApplied $ typeof (ground ctxL) (ground eL) (ground ty)
   eval ty
 
--- | Run typeof with wrong order
-typeofWrongOrderIO :: Ctx -> Tm -> Stream Ty
-typeofWrongOrderIO ctx0 e0 = runSubstRedex $ F.fresh $ \ty -> do
-  let ctxL = Ground $ project ctx0
-      eL   = Ground $ project e0
-  appGoal $ toApplied $ typeofWrongOrder (ground ctxL) (ground eL) (ground ty)
-  eval ty
-
 --------------------------------------------------------------------------------
--- Deep Interpreter: Rule Extraction
+-- Typesetting Interpreter: Rule Extraction
 --------------------------------------------------------------------------------
 
--- | Extract and print typeof rules using deep interpreter
+-- | Extract and print typeof rules using typesetting interpreter
 printTypeofRules :: IO ()
 printTypeofRules = do
-  let rules = runDeepWith SystemFFormatter $ do
-        appGoal $ toApplied $ typeof (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2))
+  let rules = runTypesettingWith SystemFFormatter $ do
+        appGoal $ toApplied $ typeof (ground (typesettingVar 0)) (ground (typesettingVar 1)) (ground (typesettingVar 2))
   mapM_ (\r -> putStrLn (formatRule SystemFFormatter "typeof" r) >> putStrLn "") rules
 
--- | Extract and print lookupTm rules using deep interpreter
+-- | Extract and print lookupTm rules using typesetting interpreter
 printLookupRules :: IO ()
 printLookupRules = do
-  let rules = runDeepWith SystemFFormatter $ do
-        appGoal $ toApplied $ lookupTm (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2))
+  let rules = runTypesettingWith SystemFFormatter $ do
+        appGoal $ toApplied $ lookupTm (ground (typesettingVar 0)) (ground (typesettingVar 1)) (ground (typesettingVar 2))
   mapM_ (\r -> putStrLn (formatRule SystemFFormatter "lookupTm" r) >> putStrLn "") rules
 
--- | Extract and print substTy rules using deep interpreter
+-- | Extract and print substTy rules using typesetting interpreter
 printSubstTyRules :: IO ()
 printSubstTyRules = do
-  let rules = runDeepWith SystemFFormatter $ do
-        appGoal $ toApplied $ substTy (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2)) (ground (deepVar 3))
+  let rules = runTypesettingWith SystemFFormatter $ do
+        appGoal $ toApplied $ substTy (ground (typesettingVar 0)) (ground (typesettingVar 1)) (ground (typesettingVar 2)) (ground (typesettingVar 3))
   mapM_ (\r -> putStrLn (formatRule SystemFFormatter "substTy" r) >> putStrLn "") rules
 
 --------------------------------------------------------------------------------
@@ -169,10 +161,10 @@ printSubstTyRules = do
 main :: IO ()
 main = do
   putStrLn "==============================================================================="
-  putStrLn "=== System F Typing Rules (Deep Interpreter) ==="
+  putStrLn "=== System F Typing Rules (Typesetting Interpreter) ==="
   putStrLn "==============================================================================="
   putStrLn ""
-  putStrLn "The deep interpreter extracts inference rules from the relation definitions."
+  putStrLn "The typesetting interpreter extracts inference rules from the relation definitions."
   putStrLn "These are the rules themselves, as you would write in a paper:"
   putStrLn ""
 
@@ -278,40 +270,5 @@ main = do
   putStrLn "==============================================================================="
   putStrLn ""
   putStrLn "The following tests compare 'typeof' (normal premise order) with"
-  putStrLn "'typeofWrongOrder' (deliberately WRONG premise order)."
-  putStrLn ""
-  putStrLn "In typeofWrongOrder:"
-  putStrLn "  - typeof-app: prem2 (needs tyA) written BEFORE prem1 (produces tyA)"
-  putStrLn "  - typeof-var/lam/tlam/tapp: prem written BEFORE concl"
-  putStrLn ""
-  putStrLn "WITHOUT runtime scheduling, typeofWrongOrder would FAIL because:"
-  putStrLn "  - Premises would execute in source order"
-  putStrLn "  - prem2 would try to use tyA before prem1 produces it"
-  putStrLn ""
-  putStrLn "WITH runtime scheduling, both produce IDENTICAL results:"
-  putStrLn ""
-
-  -- Test terms
-  let testTerms =
-        [ ("()", Unit)
-        , ("lam x:Unit. x", idUnit)
-        , ("(lam x:Unit. x) ()", appTerm)
-        , ("Lam alpha. lam x:alpha. x", polyId)
-        , ("(Lam alpha. lam x:alpha. x) [Unit]", polyIdApp)
-        , ("lam x:Unit. lam y:Unit. x", constUnit)
-        , ("((Lam alpha. lam x:alpha. x) [Unit]) ()", polyIdUnitApp)
-        ]
-
-  -- Run comparison tests
-  forM_ (zip [1..] testTerms) $ \(i, (name, term)) -> do
-    let normalResult = takeS 1 (typeofIO Nil term)
-        wrongOrderResult = takeS 1 (typeofWrongOrderIO Nil term)
-        match = normalResult == wrongOrderResult
-    putStrLn $ show (i :: Int) ++ ". " ++ name
-    putStrLn $ "   Normal order:      " ++ show normalResult
-    putStrLn $ "   Wrong order:       " ++ show wrongOrderResult
-    putStrLn $ "   Match: " ++ (if match then "YES" else "NO (BUG!)")
-    putStrLn ""
-
-  putStrLn "All tests pass: Runtime scheduling correctly reorders premises!"
+  putStrLn "'typeof' (deliberately WRONG premise order)."
   putStrLn ""

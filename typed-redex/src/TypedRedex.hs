@@ -39,7 +39,7 @@
 -- 7. **Interpreters**: Different ways to run relations
 --    - SubstRedex: substitution-based with interleaving
 --    - TracingRedex: tracks derivation trees for proof output
---    - DeepRedex: builds AST for rule extraction
+--    - TypesettingRedex: builds AST for rule extraction
 
 module TypedRedex
   (
