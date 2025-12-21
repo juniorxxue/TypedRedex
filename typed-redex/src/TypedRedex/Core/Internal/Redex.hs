@@ -71,7 +71,8 @@
 
 module TypedRedex.Core.Internal.Redex
   ( -- * Core Types
-    Relation(..)
+    Goal
+  , Relation(..)
   , CapturedTerm(..)
   , FreshType(..)
   , CallType(..)
@@ -93,6 +94,13 @@ import TypedRedex.Core.Internal.Logic
 --------------------------------------------------------------------------------
 -- Core Types
 --------------------------------------------------------------------------------
+
+-- | A logic goal (i.e. a relation body).
+--
+-- Goals live in the interpreter monad @rel@ and signal success/failure via
+-- 'Alternative'. Most user-facing combinators therefore operate on @Goal rel@
+-- rather than arbitrary @rel a@ computations.
+type Goal rel = rel ()
 
 -- | A captured logic term for deferred pretty-printing.
 --
@@ -119,7 +127,7 @@ data CapturedTerm (rel :: Type -> Type) where
 data Relation (rel :: Type -> Type) = Relation
   { relName  :: String              -- ^ Relation name (e.g., "step", "value")
   , relTerms :: [CapturedTerm rel]  -- ^ Captured terms (resolved at render time)
-  , relBody  :: rel ()              -- ^ The computation
+  , relBody  :: Goal rel            -- ^ The computation
   }
 
 -- | How to allocate a fresh variable.
@@ -163,8 +171,8 @@ data CallType = Opaque | Transparent
 -- @
 -- instance Redex MyInterp where
 --   data RVar MyInterp t = MyVar Int
---   fresh_ FreshVar k   = allocFreshVar >>= k
---   fresh_ (ArgVar x) k = allocBoundVar x >>= k
+--   fresh_ FreshVar k   = allocFreshVar >>= k . Var
+--   fresh_ (ArgVar x) k = allocBoundVar x >>= k . Var
 --   unify = myUnify
 --   displayVar (MyVar n) = "x" ++ show n
 --   suspend = mySuspend  -- or 'id' if no interleaving
@@ -199,7 +207,7 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
   -- * @Ground a@ with @Ground b@: recursively unify
   -- * Different constructors: fail (@empty@)
   -- * Occurs check failure: fail
-  unify :: (LogicType a) => Logic a (RVar rel) -> Logic a (RVar rel) -> rel ()
+  unify :: (LogicType a) => Logic a (RVar rel) -> Logic a (RVar rel) -> Goal rel
 
   -- | Display a variable as a string.
   --
@@ -230,7 +238,7 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
   --
   -- Interpreters that track structure (like TracingRedex) should override
   -- this to call 'onRuleEnter'/'onRuleExit' from 'RedexStructure'.
-  call_ :: CallType -> Relation rel -> rel ()
+  call_ :: CallType -> Relation rel -> Goal rel
   call_ Opaque rel = suspend (relBody rel)
   call_ Transparent rel = relBody rel
 
@@ -244,7 +252,7 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
   -- Deep interpreters override this to record conclusion structure.
   --
   -- Default: no-op.
-  markConclusion :: rel ()
+  markConclusion :: Goal rel
   markConclusion = pure ()
 
   -- | Mark a premise call with judgment name and captured arguments.
@@ -253,7 +261,7 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
   -- Deep interpreters override this to record premise structure.
   --
   -- Default: no-op.
-  markPremise :: String -> [CapturedTerm rel] -> rel ()
+  markPremise :: String -> [CapturedTerm rel] -> Goal rel
   markPremise _ _ = pure ()
 
 --------------------------------------------------------------------------------
@@ -313,7 +321,7 @@ class (Redex rel) => RedexNeg rel where
   --
   -- WARNING: This will not terminate if @g@ diverges before producing
   -- its first answer. Use with care on potentially infinite computations.
-  neg :: rel () -> rel ()
+  neg :: Goal rel -> Goal rel
 
 --------------------------------------------------------------------------------
 -- RedexStructure: Derivation Tracking
@@ -349,7 +357,7 @@ class (Redex rel) => RedexStructure rel where
   -- @
   -- onRuleEnter "⇒App" ["Γ", "e1 e2", "B"]
   -- @
-  onRuleEnter :: String -> [String] -> rel ()
+  onRuleEnter :: String -> [String] -> Goal rel
 
   -- | Called when exiting a rule body.
   --
@@ -358,7 +366,7 @@ class (Redex rel) => RedexStructure rel where
   -- @
   -- onRuleExit "⇒App"
   -- @
-  onRuleExit :: String -> rel ()
+  onRuleExit :: String -> Goal rel
 
   -- | Wrap a premise call for tracking.
   --

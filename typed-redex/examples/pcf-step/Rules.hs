@@ -20,13 +20,12 @@ module Rules
 import Prelude hiding ((>>=), (>>), return)
 import Control.Applicative (empty)
 import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, ground, lift1, lift2, lift3, neg)
-import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..), Reified)
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..))
+import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), natNaming, tmNaming)
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Moded
   ( Mode(..), T(..)
-  , AppliedM(..), defJudge1, defJudge2, defJudge3, ModedRule(..)
+  , AppliedM(..), Judgment1, Judgment2, Judgment3, defJudge1, defJudge2, defJudge3, ModedRule(..)
   , fresh, fresh2, fresh3, fresh4, fresh5, prem, concl
   , ground, lift1, lift2, lift3, Union
   , return, (>>=), (>>)
@@ -38,7 +37,8 @@ import TypedRedex.DSL.Moded
 
 data Nat = Z | S Nat deriving (Eq, Show)
 
-instance LogicVarNaming Nat
+instance LogicVarNaming Nat where
+  varNaming = natNaming
 
 instance LogicType Nat where
   data Reified Nat var = ZR | SR (Logic Nat var)
@@ -89,7 +89,8 @@ data Tm
   | Fix Tm             -- fix e (fixpoint combinator)
   deriving (Eq, Show)
 
-instance LogicVarNaming Tm
+instance LogicVarNaming Tm where
+  varNaming = tmNaming
 
 instance LogicType Tm where
   data Reified Tm var
@@ -204,9 +205,7 @@ fix = lift1 fix_
 -- Mode: [I]
 --------------------------------------------------------------------------------
 
-value :: RedexNeg rel
-      => T vs Tm rel
-      -> AppliedM rel "value" '[I] '[vs] '[Tm]
+value :: RedexNeg rel => Judgment1 rel "value" '[I] Tm
 value = defJudge1 @"value" $ \rule ->
   [ rule "value-lam" $ do
       b <- fresh
@@ -227,9 +226,7 @@ value = defJudge1 @"value" $ \rule ->
 -- subst0 body arg out means [arg/0]body = out
 --------------------------------------------------------------------------------
 
-subst0 :: RedexNeg rel
-       => T vs1 Tm rel -> T vs2 Tm rel -> T vs3 Tm rel
-       -> AppliedM rel "subst0" '[I, I, O] '[vs1, vs2, vs3] '[Tm, Tm, Tm]
+subst0 :: RedexNeg rel => Judgment3 rel "subst0" '[I, I, O] Tm Tm Tm
 subst0 = defJudge3 @"subst0" $ \rule ->
   [ -- Lambda: don't substitute under binder (naive, non-capture-avoiding)
     rule "subst0-lam" $ do
@@ -291,9 +288,7 @@ subst0 = defJudge3 @"subst0" $ \rule ->
 -- Mode: [I, O]
 --------------------------------------------------------------------------------
 
-step :: RedexNeg rel
-     => T vs1 Tm rel -> T vs2 Tm rel
-     -> AppliedM rel "step" '[I, O] '[vs1, vs2] '[Tm, Tm]
+step :: RedexNeg rel => Judgment2 rel "step" '[I, O] Tm Tm
 step = defJudge2 @"step" $ \rule ->
   [ -- Beta reduction
     rule "β" $ do

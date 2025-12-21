@@ -8,8 +8,6 @@
 module Syntax where
 
 import TypedRedex
-import TypedRedex.Core.Internal.Redex (Redex)
-import TypedRedex.Core.Internal.Logic (Logic)
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Nominal
 import TypedRedex.Nominal.Bind (mkBindL)

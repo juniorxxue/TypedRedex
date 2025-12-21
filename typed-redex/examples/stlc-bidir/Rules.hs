@@ -24,13 +24,12 @@ module Rules
 import Prelude hiding ((>>=), (>>), return)
 import Control.Applicative (empty)
 import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, ground, lift1, lift2, lift3, neg)
-import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..), Reified)
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..))
+import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), ctxNaming, natNaming, tmNaming, tyNaming)
 import TypedRedex.DSL.Type (quote0, quote1, quote2)
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Moded
   ( Mode(..), T(..)
-  , AppliedM(..), defJudge2, defJudge3, ModedRule(..)
+  , AppliedM(..), Judgment2, Judgment3, defJudge2, defJudge3, ModedRule(..)
   , fresh, fresh2, fresh3, fresh4, fresh5, prem, concl, neg
   , ground, lift1, lift2, Union
   , return, (>>=), (>>)
@@ -42,7 +41,8 @@ import TypedRedex.DSL.Moded
 
 data Nat = Z | S Nat deriving (Eq, Show)
 
-instance LogicVarNaming Nat
+instance LogicVarNaming Nat where
+  varNaming = natNaming
 
 instance LogicType Nat where
   data Reified Nat var = ZR | SR (Logic Nat var)
@@ -84,7 +84,8 @@ suc = lift1 suc_
 
 data Ty = TUnit | TArr Ty Ty deriving (Eq, Show)
 
-instance LogicVarNaming Ty
+instance LogicVarNaming Ty where
+  varNaming = tyNaming
 
 instance LogicType Ty where
   data Reified Ty var
@@ -134,7 +135,8 @@ data Tm
   | Ann Tm Ty         -- (e : A)
   deriving (Eq, Show)
 
-instance LogicVarNaming Tm
+instance LogicVarNaming Tm where
+  varNaming = tmNaming
 
 instance LogicType Tm where
   data Reified Tm var
@@ -225,7 +227,8 @@ ann = lift2 ann_
 
 data Ctx = Nil | Cons Ty Ctx deriving (Eq, Show)
 
-instance LogicVarNaming Ctx
+instance LogicVarNaming Ctx where
+  varNaming = ctxNaming
 
 instance LogicType Ctx where
   data Reified Ctx var
@@ -267,9 +270,7 @@ cons = lift2 cons_
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
-lookupCtx :: (RedexNeg rel, LogicType Ctx, LogicType Nat, LogicType Ty)
-          => T vs1 Ctx rel -> T vs2 Nat rel -> T vs3 Ty rel
-          -> AppliedM rel "lookup" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Nat, Ty]
+lookupCtx :: RedexNeg rel => Judgment3 rel "lookup" '[I, I, O] Ctx Nat Ty
 lookupCtx = defJudge3 @"lookup" $ \rule ->
   [ rule "lookup-here" $ do
       (ty, rest) <- fresh2
@@ -286,9 +287,7 @@ lookupCtx = defJudge3 @"lookup" $ \rule ->
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
-synth :: (RedexNeg rel, LogicType Ctx, LogicType Tm, LogicType Ty)
-      => T vs1 Ctx rel -> T vs2 Tm rel -> T vs3 Ty rel
-      -> AppliedM rel "synth" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Tm, Ty]
+synth :: RedexNeg rel => Judgment3 rel "synth" '[I, I, O] Ctx Tm Ty
 synth = defJudge3 @"synth" $ \rule ->
   [ -- ⇒Var: Γ(x) = A  ⟹  Γ ⊢ x ⇒ A
     rule "⇒Var" $ do
@@ -326,9 +325,7 @@ synth = defJudge3 @"synth" $ \rule ->
 -- Modes: I, I, I
 --------------------------------------------------------------------------------
 
-check :: (RedexNeg rel, LogicType Ctx, LogicType Tm, LogicType Ty)
-      => T vs1 Ctx rel -> T vs2 Tm rel -> T vs3 Ty rel
-      -> AppliedM rel "check" '[I, I, I] '[vs1, vs2, vs3] '[Ctx, Tm, Ty]
+check :: RedexNeg rel => Judgment3 rel "check" '[I, I, I] Ctx Tm Ty
 check = defJudge3 @"check" $ \rule ->
   [ -- ⇐λ: Γ,A ⊢ e ⇐ B  ⟹  Γ ⊢ λx.e ⇐ A→B
     rule "⇐λ" $ do
@@ -349,9 +346,7 @@ check = defJudge3 @"check" $ \rule ->
 -- Succeeds if index n is NOT in context Γ (out of bounds)
 --------------------------------------------------------------------------------
 
-notInCtx :: (RedexNeg rel, LogicType Ctx, LogicType Nat)
-         => T vs1 Ctx rel -> T vs2 Nat rel
-         -> AppliedM rel "notInCtx" '[I, I] '[vs1, vs2] '[Ctx, Nat]
+notInCtx :: RedexNeg rel => Judgment2 rel "notInCtx" '[I, I] Ctx Nat
 notInCtx = defJudge2 @"notInCtx" $ \rule ->
   [ -- notInCtx-empty: Any index is not in empty context
     rule "notInCtx-empty" $ do

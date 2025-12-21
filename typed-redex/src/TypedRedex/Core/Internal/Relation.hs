@@ -25,23 +25,23 @@ import Control.Applicative (asum)
 --------------------------------------------------------------------------------
 
 -- | Define a unary relation.
-relation :: (Redex rel, LogicType a) => String -> (LTerm a rel -> rel ()) -> LTerm a rel -> Relation rel
+relation :: (Redex rel, LogicType a) => String -> (LTerm a rel -> Goal rel) -> LTerm a rel -> Relation rel
 relation n f a_ = Relation n [CapturedTerm a_] $ argument a_ f
 
 -- | Define a binary relation.
-relation2 :: (Redex rel, LogicType a, LogicType b) => String -> (LTerm a rel -> LTerm b rel -> rel ()) -> LTerm a rel -> LTerm b rel -> Relation rel
+relation2 :: (Redex rel, LogicType a, LogicType b) => String -> (LTerm a rel -> LTerm b rel -> Goal rel) -> LTerm a rel -> LTerm b rel -> Relation rel
 relation2 n f a_ b_ = Relation n [CapturedTerm a_, CapturedTerm b_] $ argument2 a_ b_ f
 
 -- | Define a ternary relation.
-relation3 :: (Redex rel, LogicType a, LogicType b, LogicType c) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> rel ()) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> Relation rel
+relation3 :: (Redex rel, LogicType a, LogicType b, LogicType c) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> Goal rel) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> Relation rel
 relation3 n f a_ b_ c_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_] $ argument3 a_ b_ c_ f
 
 -- | Define a quaternary relation.
-relation4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> rel ()) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> Relation rel
+relation4 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> Goal rel) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> Relation rel
 relation4 n f a_ b_ c_ d_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_] $ argument4 a_ b_ c_ d_ f
 
 -- | Define a 5-ary relation.
-relation5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel -> rel ()) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel -> Relation rel
+relation5 :: (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel -> Goal rel) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel -> Relation rel
 relation5 n f a_ b_ c_ d_ e_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_, CapturedTerm e_] $ argument5 a_ b_ c_ d_ e_ f
 
 --------------------------------------------------------------------------------
@@ -52,7 +52,7 @@ relation5 n f a_ b_ c_ d_ e_ = Relation n [CapturedTerm a_, CapturedTerm b_, Cap
 --
 -- This is the standard way to call a relation. The suspension ensures
 -- fair interleaving in the search, preventing one branch from starving others.
-call :: (Redex rel) => Relation rel -> rel ()
+call :: (Redex rel) => Relation rel -> Goal rel
 call = call_ Opaque
 
 -- | Invoke a relation without suspension (direct/transparent execution).
@@ -65,7 +65,7 @@ call = call_ Opaque
 --   callDirect $ f x  -- Execute without suspension
 --   eval x
 -- @
-callDirect :: (Redex rel) => Relation rel -> rel ()
+callDirect :: (Redex rel) => Relation rel -> Goal rel
 callDirect = call_ Transparent
 
 --------------------------------------------------------------------------------
@@ -81,7 +81,7 @@ callDirect = call_ Transparent
 --   x <=> y           -- Unify two logic variables
 --   x <=> Ground (project someValue)  -- Unify with a ground value
 -- @
-(<=>) :: (LogicType a, Redex rel) => LTerm a rel -> LTerm a rel -> rel ()
+(<=>) :: (LogicType a, Redex rel) => LTerm a rel -> LTerm a rel -> Goal rel
 a <=> b = unify a b
 
 --------------------------------------------------------------------------------
@@ -89,5 +89,5 @@ a <=> b = unify a b
 --------------------------------------------------------------------------------
 
 -- | Try multiple alternatives (disjunction).
-conde :: (Redex rel) => [rel a] -> rel a
+conde :: (Redex rel) => [Goal rel] -> Goal rel
 conde = asum

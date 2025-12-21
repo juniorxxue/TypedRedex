@@ -17,7 +17,7 @@ module TypedRedex.Interp.Subst
   ) where
 
 import TypedRedex.Core.Internal.Redex
-import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), reify)
+import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Var(..), unVar, reify)
 import TypedRedex.Core.Internal.Unify (flatteningUnify, occursCheck)
 import TypedRedex.Core.Internal.SubstCore (VarRepr, displayVarInt)
 import TypedRedex.DSL.Fresh (LTerm, LVar)
@@ -78,7 +78,7 @@ makeVar :: Maybe (LTerm a (R s)) -> R s (LVar a (R s))
 makeVar x = do
     v <- SVar <$> gets nextVar
     modify $ succVar . updateSubst v x
-    return v
+    pure (Var v)
 
 instance Redex (R s) where
     newtype instance (RVar (R s)) t = SVar VarRepr deriving (Functor, Show)
@@ -90,10 +90,10 @@ instance Redex (R s) where
         where
             unif v y | occursCheck v y = empty
                      | otherwise = do
-                        x <- readVar v
+                        x <- readVar (unVar v)
                         case x of
                           Nothing -> do
-                            modify $ updateSubst v (Just y)
+                            modify $ updateSubst (unVar v) (Just y)
                             recheckHashConstraints  -- Check hash constraints after binding
                           Just x' -> unify y x'
 
@@ -103,8 +103,8 @@ instance Redex (R s) where
 
 instance RedexEval (R s) where
     derefVar v = do
-        x <- gets $ readSubst v
-        maybe (error $ "Unbound variable: " ++ displayVar v) eval x
+        x <- gets $ readSubst (unVar v)
+        maybe (error $ "Unbound variable: " ++ displayVar (unVar v)) eval x
 
 instance RedexNeg (R s) where
   -- | Negation-as-failure: succeed if goal has no solutions
@@ -161,7 +161,7 @@ instance RedexFresh (R s) where
 walkL :: LogicType a => LTerm a (R s) -> R s (LTerm a (R s))
 walkL (Ground r) = pure (Ground r)
 walkL (Free v) = do
-  mx <- readVar v
+  mx <- readVar (unVar v)
   case mx of
     Nothing -> pure (Free v)  -- Unbound variable
     Just lt -> walkL lt       -- Follow the binding

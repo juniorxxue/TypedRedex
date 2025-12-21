@@ -124,12 +124,12 @@ instance Redex DeepRedex where
   fresh_ FreshVar k = do
     n <- gets dsVarCounter
     modify $ \s -> s { dsVarCounter = n + 1 }
-    k (DVar n)
-  fresh_ (ArgVar (Free (DVar n))) k = k (DVar n)
+    k (Var (DVar n))
+  fresh_ (ArgVar (Free v)) k = k v
   fresh_ (ArgVar (Ground _)) k = do
     n <- gets dsVarCounter
     modify $ \s -> s { dsVarCounter = n + 1 }
-    k (DVar n)
+    k (Var (DVar n))
 
   unify x y = do
     inConcl <- gets (rbInConclusion . dsBuilder)
@@ -181,19 +181,23 @@ instance RedexNeg DeepRedex where
 --------------------------------------------------------------------------------
 
 prettyLFmt :: forall a. LogicType a => (String -> [String] -> String) -> Logic a (RVar DeepRedex) -> String
-prettyLFmt _ (Free (DVar n)) = "«" ++ vnTag (varNaming @a) ++ ":" ++ show n ++ "»"
+prettyLFmt _ (Free v) =
+  case unVar v of
+    DVar n -> "«" ++ vnTag (varNaming @a) ++ ":" ++ show n ++ "»"
 prettyLFmt fmt (Ground r) = prettyReifiedFmt fmt r
 
 prettyReifiedFmt :: LogicType a => (String -> [String] -> String) -> Reified a (RVar DeepRedex) -> String
 prettyReifiedFmt fmt r =
   let (con, fields) = quote r
-  in fmt (name con) (map (prettyFieldFmt fmt) fields)
+  in fmt (constructorName con) (map (prettyFieldFmt fmt) fields)
 
 prettyFieldFmt :: (String -> [String] -> String) -> Field a (RVar DeepRedex) -> String
 prettyFieldFmt fmt (Field _ logic) = prettyLogicAnyFmt fmt logic
 
 prettyLogicAnyFmt :: forall t. LogicType t => (String -> [String] -> String) -> Logic t (RVar DeepRedex) -> String
-prettyLogicAnyFmt _ (Free (DVar n)) = "«" ++ vnTag (varNaming @t) ++ ":" ++ show n ++ "»"
+prettyLogicAnyFmt _ (Free v) =
+  case unVar v of
+    DVar n -> "«" ++ vnTag (varNaming @t) ++ ":" ++ show n ++ "»"
 prettyLogicAnyFmt fmt (Ground r) = prettyReifiedFmt fmt r
 
 --------------------------------------------------------------------------------
@@ -295,7 +299,7 @@ formatRuleWith = formatRule DefaultTermFormatter
 
 -- | Create a logic variable for rule extraction
 deepVar :: Int -> Logic a (RVar DeepRedex)
-deepVar n = Free (DVar n)
+deepVar n = Free (Var (DVar n))
 
 --------------------------------------------------------------------------------
 -- Applying deepVar to curried functions

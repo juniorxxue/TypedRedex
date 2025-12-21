@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RebindableSyntax #-}
 
 -- | Mode-checked System F typing rules.
@@ -17,14 +18,13 @@ module Rules
 
 import Prelude hiding ((>>=), (>>), return)
 import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, fresh6, ground, lift1, lift2, lift3, neg)
-import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Nominal (instantiateTo)
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Interp.Subst (RedexFresh(..))
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Moded
   ( Mode(..), T(..)
-  , AppliedM(..), defJudge3, ModedRule(..)
+  , AppliedM(..), Judgment3, defJudge3, ModedRule(..)
   , fresh, fresh2, fresh3, fresh4, fresh5, fresh6, prem, concl, liftRelDeferred
   , ground, Union
   , return, (>>=), (>>)
@@ -37,9 +37,9 @@ import Syntax
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
-lookupTm :: (RedexFresh rel, RedexEval rel, RedexNeg rel)
-         => T vs1 Ctx rel -> T vs2 Nom rel -> T vs3 Ty rel
-         -> AppliedM rel "lookupTm" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Nom, Ty]
+type SystemFRel rel = (RedexFresh rel, RedexEval rel, RedexNeg rel)
+
+lookupTm :: SystemFRel rel => Judgment3 rel "lookupTm" '[I, I, O] Ctx Nom Ty
 lookupTm = defJudge3 @"lookupTm" $ \rule ->
   [ -- lookup-here: lookupTm (x:ty, rest) x ty
     rule "lookup-here" $ do
@@ -64,9 +64,7 @@ lookupTm = defJudge3 @"lookupTm" $ \rule ->
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
-typeof :: (RedexFresh rel, RedexEval rel, RedexNeg rel)
-       => T vs1 Ctx rel -> T vs2 Tm rel -> T vs3 Ty rel
-       -> AppliedM rel "typeof" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Tm, Ty]
+typeof :: SystemFRel rel => Judgment3 rel "typeof" '[I, I, O] Ctx Tm Ty
 typeof = defJudge3 @"typeof" $ \rule ->
   [ -- typeof-unit: typeof ctx () Unit
     rule "typeof-unit" $ do
@@ -105,8 +103,8 @@ typeof = defJudge3 @"typeof" $ \rule ->
     --              ← typeof ctx e (forall. tyBnd) ∧ instantiateTo tyBnd tyArg result
     rule "typeof-tapp" $ do
       (ctx, e, tyArg, tyBnd, result) <- fresh5
-      concl $ typeof ctx (tapp e tyArg) result
       prem $ typeof ctx e (tall tyBnd)
+      concl $ typeof ctx (tapp e tyArg) result
       liftRelDeferred $ instantiateTo (tTerm tyBnd) (tTerm tyArg) (tTerm result)
   ]
 
@@ -116,9 +114,7 @@ typeof = defJudge3 @"typeof" $ \rule ->
 
 -- | A helper judgment for demonstrating forced reordering.
 -- Mode [I, I, I]: ALL arguments must be ground (inputs).
-assertEq :: (RedexFresh rel, RedexEval rel, RedexNeg rel)
-         => T vs1 Ty rel -> T vs2 Ty rel -> T vs3 Tm rel
-         -> AppliedM rel "assertEq" '[I, I, I] '[vs1, vs2, vs3] '[Ty, Ty, Tm]
+assertEq :: SystemFRel rel => Judgment3 rel "assertEq" '[I, I, I] Ty Ty Tm
 assertEq = defJudge3 @"assertEq" $ \rule ->
   [ rule "eq" $ do
       ty <- fresh
@@ -126,9 +122,7 @@ assertEq = defJudge3 @"assertEq" $ \rule ->
   ]
 
 -- | typeof with DELIBERATELY WRONG premise order.
-typeofWrongOrder :: (RedexFresh rel, RedexEval rel, RedexNeg rel)
-                 => T vs1 Ctx rel -> T vs2 Tm rel -> T vs3 Ty rel
-                 -> AppliedM rel "typeof-wrong" '[I, I, O] '[vs1, vs2, vs3] '[Ctx, Tm, Ty]
+typeofWrongOrder :: SystemFRel rel => Judgment3 rel "typeof-wrong" '[I, I, O] Ctx Tm Ty
 typeofWrongOrder = defJudge3 @"typeof-wrong" $ \rule ->
   [ -- typeof-unit: normal order (baseline)
     rule "typeof-unit" $ do

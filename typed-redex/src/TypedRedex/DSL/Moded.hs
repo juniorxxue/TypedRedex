@@ -65,6 +65,9 @@ module TypedRedex.DSL.Moded
   , TArgs(..)
     -- * Moded judgments
   , AppliedM(..)
+  , Judgment1
+  , Judgment2
+  , Judgment3
   , mjudge, mjudge1, mjudge2, mjudge3
   , defJudge1, defJudge2, defJudge3
   , toApplied
@@ -97,7 +100,7 @@ import Control.Applicative (asum)
 import qualified Data.Set as S
 import Data.Set (Set)
 
-import TypedRedex.Core.Internal.Redex (Redex(..), Relation(..), FreshType(..), RedexNeg)
+import TypedRedex.Core.Internal.Redex (Redex(..), Relation(..), CapturedTerm(..), FreshType(..), RedexNeg)
 import qualified TypedRedex.Core.Internal.Redex as R (neg)
 import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..))
 import TypedRedex.DSL.Fresh (LTerm)
@@ -452,6 +455,34 @@ data AppliedM rel (name :: Symbol) (modes :: [Mode]) (vss :: [[Nat]]) (ts :: [Ty
   , amProdVars :: Set Int         -- ^ Runtime: variables produced (outputs)
   }
 
+-- | Type alias for a unary moded judgment function.
+--
+-- Useful for readable signatures in examples (avoids spelling out @AppliedM@
+-- indices like @vss@ and @ts@).
+type Judgment1 rel (name :: Symbol) (modes :: [Mode]) (t1 :: Type) =
+  forall vs1.
+    ( InputVars modes '[vs1] '[t1]
+    , OutputVars modes '[vs1] '[t1]
+    ) =>
+    T vs1 t1 rel -> AppliedM rel name modes '[vs1] '[t1]
+
+-- | Type alias for a binary moded judgment function.
+type Judgment2 rel (name :: Symbol) (modes :: [Mode]) (t1 :: Type) (t2 :: Type) =
+  forall vs1 vs2.
+    ( InputVars modes '[vs1, vs2] '[t1, t2]
+    , OutputVars modes '[vs1, vs2] '[t1, t2]
+    ) =>
+    T vs1 t1 rel -> T vs2 t2 rel -> AppliedM rel name modes '[vs1, vs2] '[t1, t2]
+
+-- | Type alias for a ternary moded judgment function.
+type Judgment3 rel (name :: Symbol) (modes :: [Mode]) (t1 :: Type) (t2 :: Type) (t3 :: Type) =
+  forall vs1 vs2 vs3.
+    ( InputVars modes '[vs1, vs2, vs3] '[t1, t2, t3]
+    , OutputVars modes '[vs1, vs2, vs3] '[t1, t2, t3]
+    ) =>
+    T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel ->
+    AppliedM rel name modes '[vs1, vs2, vs3] '[t1, t2, t3]
+
 -- | Convert TArgs to LTermList (strip variable tracking).
 class ToLTermList (vss :: [[Nat]]) (ts :: [Type]) where
   toLTermList :: TArgs vss ts rel -> LTermList rel ts
@@ -623,8 +654,13 @@ concl :: forall name modes rel vss ts n steps.
       -> RuleM rel ts ('St n steps 'False)
                    ('St n (Snoc steps ('ConcStep name (ReqVars modes vss))) 'True) ()
 concl applied = RuleM $ \env -> do
+  markConclusion
   unifyLList (amArgs applied) (reArgs env)
   pure ((), env { reAvailVars = amReqVars applied })
+
+captureArgs :: LTermList rel ts -> [CapturedTerm rel]
+captureArgs TNil = []
+captureArgs (x :> xs) = CapturedTerm x : captureArgs xs
 
 -- | Declare premise. Collects for later execution.
 -- The premise will be executed after the conclusion, in declaration order.
@@ -633,10 +669,12 @@ prem :: forall name modes rel vss ts ts' n steps c.
      => AppliedM rel name modes vss ts'
      -> RuleM rel ts ('St n steps c)
                   ('St n (Snoc steps ('PremStep ('Goal name (ReqVars modes vss) (ProdVars modes vss)))) c) ()
-prem applied = RuleM $ \env -> pure
-  ( ()
-  , env { reDeferred = PremA (PremAction (amReqVars applied) (amProdVars applied) (amGoal applied)) : reDeferred env }
-  )
+prem applied = RuleM $ \env -> do
+  markPremise (amName applied) (captureArgs (amArgs applied))
+  pure
+    ( ()
+    , env { reDeferred = PremA (PremAction (amReqVars applied) (amProdVars applied) (amGoal applied)) : reDeferred env }
+    )
 
 -- | Declare negation-as-failure. The goal must fail for the rule to succeed.
 --

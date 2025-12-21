@@ -7,9 +7,8 @@
 module Main (main) where
 
 import TypedRedex
-import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
-import TypedRedex.Interp.Deep (runDeepWith, formatRule)
+import TypedRedex.Interp.Deep (runDeepWith, formatRule, deepVar)
 import TypedRedex.Interp.Tracing (runWithDerivationWith, prettyDerivationWith, substInDerivation, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.DSL.Fresh (LTerm)
@@ -71,7 +70,7 @@ instance TermFormatter PCFFormatter where
     _ -> Nothing
     where
       parseAndShowVar n = case parseNat n of
-        Just k  -> "x" ++ subscriptNum (show k)
+        Just k  -> "x" ++ subscriptNum k
         Nothing -> n
       parseNat "0" = Just 0
       parseNat ('S':'(':rest) = case parseNat (init rest) of
@@ -107,7 +106,7 @@ stepWithTrace t0 = runWithDerivationWith PCFFormatter $ F.fresh $ \t' -> do
 printStepRules :: IO ()
 printStepRules = do
   let rules = runDeepWith PCFFormatter $ do
-        appGoal $ toApplied $ step (ground $ Free undefined) (ground $ Free undefined)
+        appGoal $ toApplied $ step (ground (deepVar 0)) (ground (deepVar 1))
   mapM_ (putStrLn . formatRule PCFFormatter "step") rules
 
 --------------------------------------------------------------------------------

@@ -13,9 +13,8 @@
 module Main (main) where
 
 import TypedRedex
-import TypedRedex.Core.Internal.Logic (Logic (Ground, Free), LogicType (..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
-import TypedRedex.Interp.Deep (runDeepWith, formatRule)
+import TypedRedex.Interp.Deep (runDeepWith, formatRule, deepVar)
 import TypedRedex.Interp.Tracing (runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Format (TermFormatter(..), subscriptNum)
 import TypedRedex.DSL.Fresh (LTerm)
@@ -78,7 +77,7 @@ instance TermFormatter BidirFormatter where
     _ -> Nothing
     where
       parseAndShowVar n = case parseNat n of
-        Just k  -> "x" ++ subscriptNum (show k)
+        Just k  -> "x" ++ subscriptNum k
         Nothing -> n
       parseNat "0" = Just 0
       parseNat ('S':'(':rest) = case parseNat (init rest) of
@@ -144,13 +143,13 @@ checkWithTrace ctx0 e0 ty0 = runWithDerivationWith BidirFormatter $ do
 printSynthRules :: IO ()
 printSynthRules = do
   let rules = runDeepWith BidirFormatter $ do
-        appGoal $ toApplied $ synth (ground $ Free undefined) (ground $ Free undefined) (ground $ Free undefined)
+        appGoal $ toApplied $ synth (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2))
   mapM_ (putStrLn . formatRule BidirFormatter "synth") rules
 
 printCheckRules :: IO ()
 printCheckRules = do
   let rules = runDeepWith BidirFormatter $ do
-        appGoal $ toApplied $ check (ground $ Free undefined) (ground $ Free undefined) (ground $ Free undefined)
+        appGoal $ toApplied $ check (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2))
   mapM_ (putStrLn . formatRule BidirFormatter "check") rules
 
 --------------------------------------------------------------------------------

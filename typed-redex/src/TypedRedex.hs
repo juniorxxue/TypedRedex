@@ -46,6 +46,7 @@ module TypedRedex
     -- * Core types
     Relation(..)          -- ^ Named logic relations with name, terms, and body
   , CapturedTerm(..)      -- ^ Existentially wrapped logic terms for deferred resolution
+  , Goal                  -- ^ Type alias for relation goals: rel ()
   , Redex(RVar)           -- ^ Typeclass for logic programming monads
   , RedexEval             -- ^ Extract ground values from logic terms
   , RedexNeg              -- ^ Negation support
@@ -101,6 +102,9 @@ module TypedRedex
   , T(..)
   , TArgs(..)
   , AppliedM(..)
+  , Judgment1
+  , Judgment2
+  , Judgment3
   , mjudge
   , mjudge1, mjudge2, mjudge3
   , toApplied
@@ -118,14 +122,14 @@ module TypedRedex
   ) where
 
 -- Core types
-import TypedRedex.Core.Internal.Redex (Redex(..), RedexEval(..), RedexNeg(..), RedexStructure(..), Relation(..), CapturedTerm(..), EqVar(..))
+import TypedRedex.Core.Internal.Redex (Redex(..), RedexEval(..), RedexNeg(..), RedexStructure(..), Relation(..), CapturedTerm(..), Goal, EqVar(..))
 import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Var, Reified, Constructor(..), Field(..))
 
 -- DSL: Fresh variables and type aliases
 import TypedRedex.DSL.Fresh (LTerm, LVar, Freshable(..), fresh, fresh2, fresh3, fresh4, fresh5, fresh6, fresh7, argument, argument2, argument3, argument4, argument5)
 
 -- DSL: Moded (compile-time mode checking)
-import TypedRedex.DSL.Moded (Mode(..), ModeList(..), T(..), TArgs(..), AppliedM(..), mjudge, mjudge1, mjudge2, mjudge3, toApplied, ToLTermList(..), ModedRule(..), ruleM, CheckSchedule, ground, lift1, lift2, lift3, Union)
+import TypedRedex.DSL.Moded (Mode(..), ModeList(..), T(..), TArgs(..), AppliedM(..), Judgment1, Judgment2, Judgment3, mjudge, mjudge1, mjudge2, mjudge3, toApplied, ToLTermList(..), ModedRule(..), ruleM, CheckSchedule, ground, lift1, lift2, lift3, Union)
 
 -- DSL: Core types (for interpreter compatibility)
 import TypedRedex.DSL.Define (Applied(..), LTermList(..))

@@ -29,7 +29,7 @@ flatteningUnify unifyVar (Ground a) (Ground b) = unifyVal (flatteningUnify unify
 
 -- | Check if a variable occurs in a logic term (occurs check).
 occursCheck :: (LogicType b, EqVar rel) => Var a (RVar rel) -> Logic b (RVar rel) -> Bool
-occursCheck x (Free y) = x `varEq` y
+occursCheck x (Free y) = unVar x `varEq` unVar y
 occursCheck x (Ground y) = let (_, ys) = quote y in any (\(Field _ y') -> occursCheck x y') ys
 
 -- | Build eval from a variable-reading function.
@@ -40,4 +40,4 @@ evalFromRead :: (Redex rel, LogicType a)
 evalFromRead readVar (Ground x) = derefVal (evalFromRead readVar) x
 evalFromRead readVar (Free v) = do
     x <- readVar v
-    pure $ fromMaybe (error $ "Unbound variable: " ++ displayVar v) x
+    pure $ fromMaybe (error $ "Unbound variable: " ++ displayVar (unVar v)) x

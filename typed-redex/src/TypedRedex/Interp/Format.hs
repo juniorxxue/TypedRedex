@@ -37,15 +37,12 @@ module TypedRedex.Interp.Format
   , intercalate
     -- * Re-exports from PrettyPrint
   , subscriptNum
+  , subscriptStr
   ) where
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Interp.PrettyPrint (subscriptStr)
-
--- | Re-export subscriptStr as subscriptNum for backward compatibility.
-subscriptNum :: String -> String
-subscriptNum = subscriptStr
+import TypedRedex.Interp.PrettyPrint (subscriptNum, subscriptStr)
 
 --------------------------------------------------------------------------------
 -- Term Formatting Typeclass
@@ -144,19 +141,19 @@ prettyLogic = prettyLogicWith DefaultTermFormatter
 -- | Pretty-print a logic value with a custom term formatter.
 -- Used by tracing interpreters to capture relation arguments.
 prettyLogicWith :: (Redex rel, LogicType a, TermFormatter fmt) => fmt -> Logic a (RVar rel) -> String
-prettyLogicWith fmt (Free v) = displayVar v
+prettyLogicWith _ (Free v) = displayVar (unVar v)
 prettyLogicWith fmt (Ground r) = prettyReified fmt r
   where
     prettyReified :: (Redex rel, LogicType a, TermFormatter f) => f -> Reified a (RVar rel) -> String
     prettyReified f r' =
       let (con, fields) = quote r'
-      in formatConWith f (name con) (map (prettyField f) fields)
+      in formatConWith f (constructorName con) (map (prettyField f) fields)
 
     prettyField :: (Redex rel, TermFormatter f) => f -> Field a (RVar rel) -> String
     prettyField f (Field _ logic) = prettyLogicAny f logic
 
     prettyLogicAny :: (Redex rel, LogicType t, TermFormatter f) => f -> Logic t (RVar rel) -> String
-    prettyLogicAny f (Free v) = displayVar v
+    prettyLogicAny _ (Free v) = displayVar (unVar v)
     prettyLogicAny f (Ground r') = prettyReified f r'
 
 --------------------------------------------------------------------------------

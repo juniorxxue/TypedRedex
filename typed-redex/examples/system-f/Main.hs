@@ -14,7 +14,6 @@ module Main (main) where
 
 import Control.Monad (forM_)
 import TypedRedex
-import TypedRedex.Core.Internal.Logic (Logic (Ground), LogicType (..))
 import TypedRedex.Nominal
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)

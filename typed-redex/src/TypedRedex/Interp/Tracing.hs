@@ -265,12 +265,12 @@ instance Redex (TracingRedex s) where
   fresh_ FreshVar k = do
     v <- TVar <$> gets tsNextVar
     modify $ succVar . updateSubst v Nothing
-    k v
+    k (Var v)
 
   fresh_ (ArgVar x) k = do
     v <- TVar <$> gets tsNextVar
     modify $ succVar . updateSubst v (Just x)
-    k v
+    k (Var v)
 
   -- | Unification
   unify = flatteningUnify unif
@@ -278,10 +278,10 @@ instance Redex (TracingRedex s) where
       unif v y
         | occursCheck v y = empty
         | otherwise = do
-            x <- gets (readSubst v)
+            x <- gets (readSubst (unVar v))
             case x of
               Nothing -> do
-                modify $ updateSubst v (Just y)
+                modify $ updateSubst (unVar v) (Just y)
                 recheckHashConstraints  -- Check hash constraints after binding
               Just x' -> unify y x'
 
@@ -328,30 +328,30 @@ resolveCaptured (CapturedTerm term) = prettyResolved term
 -- | Pretty-print a logic term after resolving through substitution.
 prettyResolved :: LogicType a => LTerm a (TracingRedex s) -> TracingRedex s String
 prettyResolved (Free v) = do
-  mx <- gets (readSubst v)
+  mx <- gets (readSubst (unVar v))
   case mx of
-    Nothing -> pure $ displayVar v  -- Still unbound, show variable name
+    Nothing -> pure $ displayVar (unVar v)  -- Still unbound, show variable name
     Just x  -> prettyResolved x     -- Bound, resolve and recurse
 prettyResolved (Ground r) = do
   fmt <- gets tsFormatter
   let (con, fields) = quote r
   fieldStrs <- mapM prettyField fields
-  pure $ fmt (name con) fieldStrs
+  pure $ fmt (constructorName con) fieldStrs
   where
     prettyField :: Field a (RVar (TracingRedex s)) -> TracingRedex s String
     prettyField (Field _ logic) = prettyResolvedAny logic
 
     prettyResolvedAny :: LogicType t => Logic t (RVar (TracingRedex s)) -> TracingRedex s String
     prettyResolvedAny (Free v) = do
-      mx <- gets (readSubst v)
+      mx <- gets (readSubst (unVar v))
       case mx of
-        Nothing -> pure $ displayVar v
+        Nothing -> pure $ displayVar (unVar v)
         Just x  -> prettyResolvedAny x
     prettyResolvedAny (Ground r') = do
       fmt <- gets tsFormatter
       let (con', fields') = quote r'
       fieldStrs' <- mapM prettyField fields'
-      pure $ fmt (name con') fieldStrs'
+      pure $ fmt (constructorName con') fieldStrs'
 
 --------------------------------------------------------------------------------
 -- RedexStructure Instance (Derivation Tracking)
@@ -375,9 +375,9 @@ instance EqVar (TracingRedex s) where
 
 instance RedexEval (TracingRedex s) where
   derefVar v = do
-    x <- gets (readSubst v)
+    x <- gets (readSubst (unVar v))
     case x of
-      Nothing -> error $ "Unbound variable: " ++ displayVar v
+      Nothing -> error $ "Unbound variable: " ++ displayVar (unVar v)
       Just val -> evalLogic val
     where
       evalLogic :: LogicType a => LTerm a (TracingRedex s) -> TracingRedex s a
@@ -399,7 +399,7 @@ instance RedexFresh (TracingRedex s) where
 walkL :: LogicType a => LTerm a (TracingRedex s) -> TracingRedex s (LTerm a (TracingRedex s))
 walkL (Ground r) = pure (Ground r)
 walkL (Free v) = do
-  mx <- gets (readSubst v)
+  mx <- gets (readSubst (unVar v))
   case mx of
     Nothing -> pure (Free v)  -- Unbound variable
     Just lt -> walkL lt       -- Follow the binding
