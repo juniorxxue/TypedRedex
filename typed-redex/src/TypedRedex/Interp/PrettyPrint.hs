@@ -14,6 +14,8 @@ module TypedRedex.Interp.PrettyPrint
   , tyNaming
   , tmNaming
   , natNaming
+  , nomNaming
+  , tyNomNaming
   , defaultNaming
   , namingByTag
     -- * Variable naming functions (for direct use)
@@ -21,6 +23,8 @@ module TypedRedex.Interp.PrettyPrint
   , tyVarName
   , tmVarName
   , natVarName
+  , nomVarName
+  , tyNomVarName
   , defaultVarName
     -- * Type class for variable naming
   , LogicVarNaming(..)
@@ -70,13 +74,21 @@ tmNaming = VarNaming "E" tmVarName
 natNaming :: VarNaming
 natNaming = VarNaming "N" natVarName
 
+-- | Nom (term variable name) naming: tag "X", names x, y, z, x₁, y₁, z₁, ...
+nomNaming :: VarNaming
+nomNaming = VarNaming "X" nomVarName
+
+-- | TyNom (type variable name) naming: tag "A", names α, β, σ, α₁, β₁, σ₁, ...
+tyNomNaming :: VarNaming
+tyNomNaming = VarNaming "A" tyNomVarName
+
 -- | Default naming: tag "V", names v₀, v₁, v₂, ...
 defaultNaming :: VarNaming
 defaultNaming = VarNaming "V" defaultVarName
 
 -- | All known naming schemes (for tag lookup)
 allNamings :: [VarNaming]
-allNamings = [ctxNaming, tyNaming, tmNaming, natNaming, defaultNaming]
+allNamings = [ctxNaming, tyNaming, tmNaming, natNaming, nomNaming, tyNomNaming, defaultNaming]
 
 -- | Look up a naming scheme by its tag. Returns defaultNaming if not found.
 namingByTag :: String -> VarNaming
@@ -107,6 +119,18 @@ natVarName :: Int -> String
 natVarName i = let (q, r) = i `divMod` 3
                    base = ["n", "m", "k"] !! r
                in if q == 0 then base else base ++ subscriptNum q
+
+-- | Nom (term variable name) variables: x, y, z, x₁, y₁, z₁, ...
+nomVarName :: Int -> String
+nomVarName i = let (q, r) = i `divMod` 3
+                   base = ["x", "y", "z"] !! r
+               in if q == 0 then base else base ++ subscriptNum q
+
+-- | TyNom (type variable name) variables: α, β, σ, α₁, β₁, σ₁, ...
+tyNomVarName :: Int -> String
+tyNomVarName i = let (q, r) = i `divMod` 3
+                     base = ["α", "β", "σ"] !! r
+                 in if q == 0 then base else base ++ subscriptNum q
 
 -- | Default variable naming: v₀, v₁, v₂, ...
 defaultVarName :: Int -> String

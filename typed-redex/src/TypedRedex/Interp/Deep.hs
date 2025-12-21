@@ -29,6 +29,7 @@ import TypedRedex.Core.Internal.Logic
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Interp.Format (formatCon, formatConWith, intercalate, TermFormatter(..), DefaultTermFormatter(..), JudgmentFormatter(..))
 import TypedRedex.Interp.PrettyPrint (VarNaming(..), LogicVarNaming(..), namingByTag, subscriptNum)
+import TypedRedex.Interp.Subst (RedexFresh(..))
 import TypedRedex.DSL.Define (Applied(..), CurriedR)
 import Control.Applicative
 import Control.Monad (when)
@@ -135,8 +136,9 @@ instance Redex DeepRedex where
     inConcl <- gets (rbInConclusion . dsBuilder)
     when inConcl $ do
       fmt <- gets dsFormatter
-      let rhs = prettyLFmt fmt y
-      modify $ \s -> s { dsBuilder = (dsBuilder s) { rbPatterns = rhs : rbPatterns (dsBuilder s) } }
+      -- Capture x (the pattern/term), not y (the fresh variable)
+      let pattern = prettyLFmt fmt x
+      modify $ \s -> s { dsBuilder = (dsBuilder s) { rbPatterns = pattern : rbPatterns (dsBuilder s) } }
 
   suspend = id
 
@@ -163,6 +165,9 @@ instance Redex DeepRedex where
       rbPremises = (name, argStrs) : rbPremises (dsBuilder s)
     } }
 
+  -- Skip lifted actions since we're just extracting rule structure
+  skipLiftedActions _ = True
+
 prettyCaptured :: CapturedTerm DeepRedex -> DeepRedex String
 prettyCaptured (CapturedTerm term) = do
   fmt <- gets dsFormatter
@@ -175,6 +180,19 @@ instance EqVar DeepRedex where
 -- We're just extracting rule structure, not executing.
 instance RedexNeg DeepRedex where
   neg _ = pure ()
+
+-- | Fresh integer generation for nominal atoms.
+-- DeepRedex reuses the variable counter for fresh integers.
+instance RedexFresh DeepRedex where
+  freshInt = do
+    n <- gets dsVarCounter
+    modify $ \s -> s { dsVarCounter = n + 1 }
+    pure n
+
+-- | Evaluation is a no-op for rule extraction.
+-- This should never be called since we skip lifted actions.
+instance RedexEval DeepRedex where
+  derefVar _ = error "DeepRedex: derefVar should not be called during rule extraction"
 
 --------------------------------------------------------------------------------
 -- Pretty-printing Logic terms

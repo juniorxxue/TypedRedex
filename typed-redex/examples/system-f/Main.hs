@@ -18,6 +18,7 @@ import TypedRedex.Nominal
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Tracing (runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
+import TypedRedex.Interp.Deep (runDeepWith, formatRule, deepVar)
 import TypedRedex.Interp.Format (TermFormatter(..))
 import TypedRedex.DSL.Fresh (LTerm)
 import qualified TypedRedex.DSL.Fresh as F
@@ -41,6 +42,9 @@ instance JudgmentFormatter SystemFFormatter where
     -- Context lookup
     ("lookupTm", [ctx, n, ty]) -> ctx ++ "(" ++ n ++ ") = " ++ ty
     (n, [ctx, idx, ty]) | "lookup" `isPrefixOf` n -> ctx ++ "(" ++ idx ++ ") = " ++ ty
+    -- Type substitution: [tyArg/alpha]tyBody = result
+    ("substTy", [alpha, tyArg, tyBody, result]) -> "[" ++ tyArg ++ "/" ++ alpha ++ "]" ++ tyBody ++ " = " ++ result
+    (n, [alpha, tyArg, tyBody, result]) | "subst" `isPrefixOf` n -> "[" ++ tyArg ++ "/" ++ alpha ++ "]" ++ tyBody ++ " = " ++ result
     -- Default
     _ -> defaultFormatConclusion name args
     where
@@ -53,31 +57,42 @@ instance TermFormatter SystemFFormatter where
   formatTerm _ name args = case (name, args) of
     -- Terms
     ("App", [f, a]) -> Just $ "(" ++ f ++ " " ++ a ++ ")"
-    ("Lam", [ty, b]) -> Just $ "(lam:" ++ ty ++ ". " ++ b ++ ")"
-    ("Var", [n]) -> Just $ n
+    -- Lam: extract var from Bind format "var.body" and format as (λvar:ty. body)
+    ("Lam", [ty, b]) ->
+      let (var, rest) = break (== '.') b
+      in Just $ "(λ" ++ var ++ ":" ++ ty ++ ". " ++ drop 1 rest ++ ")"
+    ("Var", [n]) -> Just n
     ("Unit", []) -> Just "()"
-    ("TLam", [b]) -> Just $ "(Lam." ++ b ++ ")"
+    -- TLam: extract var from Bind format "var.body" and format as (Λvar. body)
+    ("TLam", [b]) ->
+      let (var, rest) = break (== '.') b
+      in Just $ "(Λ" ++ var ++ ". " ++ drop 1 rest ++ ")"
     ("TApp", [e, ty]) -> Just $ "(" ++ e ++ " [" ++ ty ++ "])"
     -- Types
     ("TUnit", []) -> Just "Unit"
     ("TVar", [n]) -> Just n
-    ("TArr", [a, b]) -> Just $ "(" ++ a ++ " -> " ++ b ++ ")"
-    ("TAll", [ty]) -> Just $ "(forall. " ++ ty ++ ")"
-    -- Binders (now unified as Bind)
-    ("Bind", [n, body]) -> Just $ "(\\" ++ n ++ ". " ++ body ++ ")"
+    ("TArr", [a, b]) -> Just $ "(" ++ a ++ " → " ++ b ++ ")"
+    -- TAll: extract var from Bind format "var.body" and format as (∀var. body)
+    ("TAll", [b]) ->
+      let (var, rest) = break (== '.') b
+      in Just $ "(∀" ++ var ++ ". " ++ drop 1 rest ++ ")"
+    -- Binders: output "var.body" format for parent to parse
+    ("Bind", [n, body]) -> Just $ n ++ "." ++ body
     -- Contexts
-    ("Nil", []) -> Just "."
+    ("Nil", []) -> Just "·"
     ("TmBind", [n, ty, ctx]) -> Just $ ctx ++ ", " ++ n ++ ":" ++ ty
     ("TyBind'", [alpha, ctx]) -> Just $ ctx ++ ", " ++ alpha
     -- Nominal atoms
-    ("x0", []) -> Just "x0"
-    ("x1", []) -> Just "x1"
-    ("x2", []) -> Just "x2"
-    ('x':rest, []) -> Just $ "x" ++ rest
-    ('a':rest, []) | all isDigit rest -> Just $ "a" ++ rest
+    ('x':rest, []) | all isDigit rest -> Just $ "x" ++ subscriptDigits rest
+    ('a':rest, []) | all isDigit rest -> Just $ "α" ++ subscriptDigits rest
     _ -> Nothing
     where
       isDigit c = c `elem` "0123456789"
+      subscriptDigits = map toSubscript
+      toSubscript '0' = '₀'; toSubscript '1' = '₁'; toSubscript '2' = '₂'
+      toSubscript '3' = '₃'; toSubscript '4' = '₄'; toSubscript '5' = '₅'
+      toSubscript '6' = '₆'; toSubscript '7' = '₇'; toSubscript '8' = '₈'
+      toSubscript '9' = '₉'; toSubscript c = c
 
 -- | Pretty-print derivation with System F formatting
 prettyDerivation :: Derivation -> String
@@ -123,12 +138,59 @@ typeofWrongOrderIO ctx0 e0 = runSubstRedex $ F.fresh $ \ty -> do
   eval ty
 
 --------------------------------------------------------------------------------
+-- Deep Interpreter: Rule Extraction
+--------------------------------------------------------------------------------
+
+-- | Extract and print typeof rules using deep interpreter
+printTypeofRules :: IO ()
+printTypeofRules = do
+  let rules = runDeepWith SystemFFormatter $ do
+        appGoal $ toApplied $ typeof (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2))
+  mapM_ (\r -> putStrLn (formatRule SystemFFormatter "typeof" r) >> putStrLn "") rules
+
+-- | Extract and print lookupTm rules using deep interpreter
+printLookupRules :: IO ()
+printLookupRules = do
+  let rules = runDeepWith SystemFFormatter $ do
+        appGoal $ toApplied $ lookupTm (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2))
+  mapM_ (\r -> putStrLn (formatRule SystemFFormatter "lookupTm" r) >> putStrLn "") rules
+
+-- | Extract and print substTy rules using deep interpreter
+printSubstTyRules :: IO ()
+printSubstTyRules = do
+  let rules = runDeepWith SystemFFormatter $ do
+        appGoal $ toApplied $ substTy (ground (deepVar 0)) (ground (deepVar 1)) (ground (deepVar 2)) (ground (deepVar 3))
+  mapM_ (\r -> putStrLn (formatRule SystemFFormatter "substTy" r) >> putStrLn "") rules
+
+--------------------------------------------------------------------------------
 -- Main
 --------------------------------------------------------------------------------
 
 main :: IO ()
 main = do
+  putStrLn "==============================================================================="
+  putStrLn "=== System F Typing Rules (Deep Interpreter) ==="
+  putStrLn "==============================================================================="
+  putStrLn ""
+  putStrLn "The deep interpreter extracts inference rules from the relation definitions."
+  putStrLn "These are the rules themselves, as you would write in a paper:"
+  putStrLn ""
+
+  putStrLn "--- typeof rules ---"
+  putStrLn ""
+  printTypeofRules
+
+  putStrLn "--- substTy rules ---"
+  putStrLn ""
+  printSubstTyRules
+
+  putStrLn "--- lookupTm rules ---"
+  putStrLn ""
+  printLookupRules
+
+  putStrLn "==============================================================================="
   putStrLn "=== System F Type Checking (Execution) ==="
+  putStrLn "==============================================================================="
   putStrLn ""
 
   -- Test 1: Simple type check

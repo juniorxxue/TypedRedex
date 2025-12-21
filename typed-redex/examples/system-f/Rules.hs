@@ -11,7 +11,7 @@
 -- This module uses RebindableSyntax so rule bodies can use plain 'do'.
 module Rules
   ( -- * Judgments
-    lookupTm, typeof
+    lookupTm, typeof, substTy
     -- * Wrong-order version (for testing runtime scheduling)
   , assertEq, typeofWrongOrder
   ) where
@@ -24,7 +24,7 @@ import TypedRedex.Interp.Subst (RedexFresh(..))
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Moded
   ( Mode(..), T(..)
-  , AppliedM(..), Judgment3, defJudge3, ModedRule(..)
+  , AppliedM(..), Judgment3, Judgment4, defJudge3, defJudge4, ModedRule(..)
   , fresh, fresh2, fresh3, fresh4, fresh5, fresh6, prem, concl, liftRelDeferred
   , ground, Union
   , return, (>>=), (>>)
@@ -57,6 +57,20 @@ lookupTm = defJudge3 @"lookupTm" $ \rule ->
       (alpha, x, ty, rest) <- fresh4
       concl $ lookupTm (tyBind alpha rest) x ty
       prem $ lookupTm rest x ty
+  ]
+
+--------------------------------------------------------------------------------
+-- Type substitution: substTy alpha tyArg tyBody result
+-- Represents: [tyArg/alpha]tyBody = result
+-- Modes: I, I, I, O
+--------------------------------------------------------------------------------
+
+substTy :: SystemFRel rel => Judgment4 rel "substTy" '[I, I, I, O] TyNom Ty Ty Ty
+substTy = defJudge4 @"substTy" $ \rule ->
+  [ rule "subst" $ do
+      (alpha, tyArg, tyBody, result) <- fresh4
+      concl $ substTy alpha tyArg tyBody result
+      liftRelDeferred $ instantiateTo (tTerm (bindTyPat alpha tyBody)) (tTerm tyArg) (tTerm result)
   ]
 
 --------------------------------------------------------------------------------
@@ -100,12 +114,12 @@ typeof = defJudge3 @"typeof" $ \rule ->
       concl $ typeof ctx (tlam (bindTyPat alpha body)) (tall (bindTyPat alpha tyBody))
 
   , -- typeof-tapp: typeof ctx (TApp e tyArg) result
-    --              ← typeof ctx e (forall. tyBnd) ∧ instantiateTo tyBnd tyArg result
+    --              ← typeof ctx e (forall alpha. tyBody) ∧ [tyArg/alpha]tyBody = result
     rule "typeof-tapp" $ do
-      (ctx, e, tyArg, tyBnd, result) <- fresh5
-      prem $ typeof ctx e (tall tyBnd)
+      (ctx, e, tyArg, alpha, tyBody, result) <- fresh6
+      prem $ typeof ctx e (tall (bindTyPat alpha tyBody))
+      prem $ substTy alpha tyArg tyBody result
       concl $ typeof ctx (tapp e tyArg) result
-      liftRelDeferred $ instantiateTo (tTerm tyBnd) (tTerm tyArg) (tTerm result)
   ]
 
 --------------------------------------------------------------------------------
@@ -158,8 +172,8 @@ typeofWrongOrder = defJudge3 @"typeof-wrong" $ \rule ->
 
   , -- typeof-tapp: prem BEFORE concl (wrong order)
     rule "typeof-tapp" $ do
-      (ctx, e, tyArg, tyBnd, result) <- fresh5
-      prem $ typeofWrongOrder ctx e (tall tyBnd)  -- prem first!
+      (ctx, e, tyArg, alpha, tyBody, result) <- fresh6
+      prem $ typeofWrongOrder ctx e (tall (bindTyPat alpha tyBody))  -- prem first!
+      prem $ substTy alpha tyArg tyBody result
       concl $ typeofWrongOrder ctx (tapp e tyArg) result
-      liftRelDeferred $ instantiateTo (tTerm tyBnd) (tTerm tyArg) (tTerm result)
   ]

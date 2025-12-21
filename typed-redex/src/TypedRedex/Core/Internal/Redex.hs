@@ -264,6 +264,15 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
   markPremise :: String -> [CapturedTerm rel] -> Goal rel
   markPremise _ _ = pure ()
 
+  -- | Whether to skip execution of lifted (deferred) actions.
+  --
+  -- Rule extractors like DeepRedex return True to avoid executing
+  -- substitution operations that would fail without proper evaluation.
+  --
+  -- Default: False (execute lifted actions normally).
+  skipLiftedActions :: proxy rel -> Bool
+  skipLiftedActions _ = False
+
 --------------------------------------------------------------------------------
 -- RedexEval: Evaluation
 --------------------------------------------------------------------------------

@@ -68,8 +68,9 @@ module TypedRedex.DSL.Moded
   , Judgment1
   , Judgment2
   , Judgment3
-  , mjudge, mjudge1, mjudge2, mjudge3
-  , defJudge1, defJudge2, defJudge3
+  , Judgment4
+  , mjudge, mjudge1, mjudge2, mjudge3, mjudge4
+  , defJudge1, defJudge2, defJudge3, defJudge4
   , toApplied
   , ToLTermList(..)
     -- * Rule building
@@ -483,6 +484,15 @@ type Judgment3 rel (name :: Symbol) (modes :: [Mode]) (t1 :: Type) (t2 :: Type) 
     T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel ->
     AppliedM rel name modes '[vs1, vs2, vs3] '[t1, t2, t3]
 
+-- | Type alias for a quaternary moded judgment function.
+type Judgment4 rel (name :: Symbol) (modes :: [Mode]) (t1 :: Type) (t2 :: Type) (t3 :: Type) (t4 :: Type) =
+  forall vs1 vs2 vs3 vs4.
+    ( InputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4]
+    , OutputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4]
+    ) =>
+    T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel ->
+    AppliedM rel name modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4]
+
 -- | Convert TArgs to LTermList (strip variable tracking).
 class ToLTermList (vss :: [[Nat]]) (ts :: [Type]) where
   toLTermList :: TArgs vss ts rel -> LTermList rel ts
@@ -507,7 +517,7 @@ mjudge :: forall name modes rel ts vss.
        -> TArgs vss ts rel
        -> AppliedM rel name modes vss ts
 mjudge modes rules args = AppliedM
-  { amGoal = asum [ call $ Relation name [] (body args)
+  { amGoal = asum [ call $ Relation name (captureArgs (toLTermList args)) (body args)
                   | ModedRule name body <- rules
                   ]
   , amName = symbolVal (Proxy @name)
@@ -549,6 +559,18 @@ mjudge3 :: forall name modes rel t1 t2 t3.
             -> AppliedM rel name modes '[vs1, vs2, vs3] '[t1, t2, t3])
 mjudge3 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) =
   let args = t1 :! t2 :! t3 :! ANil
+  in mjudge modes rules args
+
+-- | Convenience for 4-argument judgments.
+mjudge4 :: forall name modes rel t1 t2 t3 t4.
+           (Redex rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4)
+        => ModeList modes
+        -> [ModedRule rel '[t1, t2, t3, t4]]
+        -> (forall vs1 vs2 vs3 vs4. (InputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4], OutputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4])
+            => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel
+            -> AppliedM rel name modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4])
+mjudge4 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) =
+  let args = t1 :! t2 :! t3 :! t4 :! ANil
   in mjudge modes rules args
 
 -- | Define a unary moded judgment with scoped rule builder.
@@ -622,6 +644,23 @@ defJudge3 mkRules = mjudge3 singModeList (mkRules rule)
     rule :: forall n steps. CheckSchedule name steps
          => String -> RuleM rel '[t1, t2, t3] ('St 0 '[] 'False) ('St n steps 'True) ()
          -> ModedRule rel '[t1, t2, t3]
+    rule = ruleM @name
+
+-- | Define a quaternary moded judgment with scoped rule builder.
+defJudge4 :: forall name modes rel t1 t2 t3 t4.
+             (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, UnifyLList rel '[t1, t2, t3, t4], SingModeList modes)
+          => ((forall n steps. CheckSchedule name steps
+               => String -> RuleM rel '[t1, t2, t3, t4] ('St 0 '[] 'False) ('St n steps 'True) ()
+               -> ModedRule rel '[t1, t2, t3, t4])
+              -> [ModedRule rel '[t1, t2, t3, t4]])
+          -> (forall vs1 vs2 vs3 vs4. (InputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4], OutputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4])
+              => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel
+              -> AppliedM rel name modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4])
+defJudge4 mkRules = mjudge4 singModeList (mkRules rule)
+  where
+    rule :: forall n steps. CheckSchedule name steps
+         => String -> RuleM rel '[t1, t2, t3, t4] ('St 0 '[] 'False) ('St n steps 'True) ()
+         -> ModedRule rel '[t1, t2, t3, t4]
     rule = ruleM @name
 
 -- | Convert AppliedM to Applied for running queries.
@@ -871,7 +910,8 @@ ruleM name body = ModedRule name $ \args -> do
   -- Execute negations (statically verified to have all inputs grounded)
   executeNegations negs
   -- Execute lifted actions in source order after all premises and negations
-  executeLifted lifted
+  -- (unless the interpreter is a rule extractor that wants to skip them)
+  if skipLiftedActions (Proxy :: Proxy rel) then pure () else executeLifted lifted
 
 -- | Partition deferred actions into premises, negations, and lifted actions.
 partitionDeferred :: [DeferredAction rel] -> ([PremAction rel], [NegAction rel], [rel ()])
