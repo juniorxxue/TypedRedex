@@ -256,13 +256,13 @@ type family ReqVars (modes :: [Mode]) (vss :: [[Nat]]) :: [Nat] where
   ReqVars '[] '[] = '[]
   ReqVars ('I ': ms) (vs ': vss) = Union vs (ReqVars ms vss)
   ReqVars ('O ': ms) (_ ': vss) = ReqVars ms vss
-  ReqVars _ _ = TypeError ('Text "Mode/arg mismatch")
+  ReqVars _ _ = TypeError ('Text "Mode list length does not match argument list length")
 
 type family ProdVars (modes :: [Mode]) (vss :: [[Nat]]) :: [Nat] where
   ProdVars '[] '[] = '[]
   ProdVars ('I ': ms) (_ ': vss) = ProdVars ms vss
   ProdVars ('O ': ms) (vs ': vss) = Union vs (ProdVars ms vss)
-  ProdVars _ _ = TypeError ('Text "Mode/arg mismatch")
+  ProdVars _ _ = TypeError ('Text "Mode list length does not match argument list length")
 
 -- | All variables in all positions (input + output).
 -- Used for negation checking - all vars must be grounded.
@@ -676,7 +676,7 @@ instance (LogicType t, Redex rel, UnifyTArgs rel ts) => UnifyTArgs rel (t ': ts)
 type family ConclVars (steps :: [Step]) :: [Nat] where
   ConclVars ('ConcStep _ vs ': _) = vs
   ConclVars (_ ': rest) = ConclVars rest
-  ConclVars '[] = TypeError ('Text "No conclusion in rule")
+  ConclVars '[] = TypeError ('Text "Rule is missing a conclusion (concl)")
 
 type family PremGoals (steps :: [Step]) :: [Goal] where
   PremGoals '[] = '[]
@@ -732,10 +732,16 @@ type family CheckSchedule (name :: Symbol) (steps :: [Step]) :: Constraint where
 type family CheckPremises (name :: Symbol) (steps :: [Step]) (r :: SolveResult) :: Constraint where
   CheckPremises _ _ 'Solved = ()
   CheckPremises name steps ('Stuck avail gs) = TypeError
-    ( 'Text "Mode error in \"" ':<>: 'Text name ':<>: 'Text "\":"
-        ':$$: 'Text "  grounded: " ':<>: 'ShowType avail
-        ':$$: 'Text "  blocked premises:"
+    ( 'Text "In rule \"" ':<>: 'Text name ':<>: 'Text "\": cannot schedule premises"
+        ':$$: 'Text ""
+        ':$$: 'Text "  Grounded variables: " ':<>: 'ShowType avail
+        ':$$: 'Text "  Blocked premises:"
         ':$$: ShowBlocked avail gs
+        ':$$: 'Text ""
+        ':$$: 'Text "  (Variable indices are assigned by fresh in declaration order: 0, 1, 2, ...)"
+        ':$$: 'Text ""
+        ':$$: 'Text "  To fix: ensure each premise's input variables are grounded"
+        ':$$: 'Text "          by the conclusion or a prior premise's outputs."
     )
 
 -- | Check that all negations have their inputs grounded.
@@ -745,16 +751,22 @@ type family CheckNegations (name :: Symbol) (steps :: [Step]) (avail :: [Nat]) (
     If (Subset req avail)
        (CheckNegations name steps avail rest)
        (TypeError
-         ( 'Text "Negation error in \"" ':<>: 'Text name ':<>: 'Text "\":"
-             ':$$: 'Text "  grounded after premises: " ':<>: 'ShowType avail
-             ':$$: 'Text "  negation needs: " ':<>: 'ShowType req
-             ':$$: 'Text "  missing: " ':<>: 'ShowType (Diff req avail)
+         ( 'Text "In rule \"" ':<>: 'Text name ':<>: 'Text "\": negation uses ungrounded variables"
+             ':$$: 'Text ""
+             ':$$: 'Text "  Grounded (from conclusion + premises): " ':<>: 'ShowType avail
+             ':$$: 'Text "  Negation requires:                     " ':<>: 'ShowType req
+             ':$$: 'Text "  Ungrounded:                            " ':<>: 'ShowType (Diff req avail)
+             ':$$: 'Text ""
+             ':$$: 'Text "  (Variable indices are assigned by fresh in declaration order: 0, 1, 2, ...)"
+             ':$$: 'Text ""
+             ':$$: 'Text "  To fix: ensure ungrounded variables appear in conclusion inputs"
+             ':$$: 'Text "          or are produced by a premise before the negation."
          ))
 
 type family ShowBlocked (avail :: [Nat]) (gs :: [Goal]) :: ErrorMessage where
   ShowBlocked _ '[] = 'Text ""
   ShowBlocked avail ('Goal name req _ ': rest) =
-    ('Text "    " ':<>: 'Text name ':<>: 'Text " needs " ':<>: 'ShowType (Diff req avail))
+    ('Text "    - " ':<>: 'Text name ':<>: 'Text ": needs " ':<>: 'ShowType (Diff req avail) ':<>: 'Text " (inputs: " ':<>: 'ShowType req ':<>: 'Text ")")
       ':$$: ShowBlocked avail rest
 
 --------------------------------------------------------------------------------

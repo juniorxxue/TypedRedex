@@ -54,12 +54,6 @@ notInCtx2 = defJudge2 @"notInCtx2" $ \rule ->
 --------------------------------------------------------------------------------
 
 {-
--- Expected error:
---   Negation error in "badCheck":
---     grounded after premises: '[0, 1]
---     negation needs: [0, 1, 2]
---     missing: '[2]
-
 badCheck :: (RedexNeg rel, LogicType Ctx, LogicType Nat, LogicType Ty)
          => T vs1 Ctx rel -> T vs2 Nat rel
          -> AppliedM rel "badCheck" '[I, I] '[vs1, vs2] '[Ctx, Nat]
