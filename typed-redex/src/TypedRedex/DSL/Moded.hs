@@ -305,7 +305,9 @@ type family AllVars (modes :: [Mode]) (vss :: [[Nat]]) :: [Nat] where
 --------------------------------------------------------------------------------
 
 data Goal = Goal Symbol [Nat] [Nat]
-data Step = ConcStep Symbol [Nat] | PremStep Goal | NegStep [Nat]
+data Step = ConcStep Symbol [Nat] [Nat]  -- ^ name, input vars, output vars
+          | PremStep Goal
+          | NegStep [Nat]
 data St = St Nat [Step] Bool
 
 -- | Existentially-wrapped premise action for runtime scheduling.
@@ -842,7 +844,7 @@ concl :: forall name modes rel vss ts n steps.
          (Redex rel, UnifyLList rel ts)
       => AppliedM rel name modes vss ts
       -> RuleM rel ts ('St n steps 'False)
-                   ('St n (Snoc steps ('ConcStep name (ReqVars modes vss))) 'True) ()
+                   ('St n (Snoc steps ('ConcStep name (ReqVars modes vss) (ProdVars modes vss))) 'True) ()
 concl applied = RuleM $ \env -> do
   markConclusion
   unifyLList (amArgs applied) (reArgs env)
@@ -943,15 +945,22 @@ instance (LogicType t, Redex rel, UnifyTArgs rel ts) => UnifyTArgs rel (t ': ts)
 -- Schedule Checking
 --------------------------------------------------------------------------------
 
+-- | Extract input variables from the conclusion.
 type family ConclVars (steps :: [Step]) :: [Nat] where
-  ConclVars ('ConcStep _ vs ': _) = vs
+  ConclVars ('ConcStep _ ins _ ': _) = ins
   ConclVars (_ ': rest) = ConclVars rest
   ConclVars '[] = TypeError ('Text "Rule is missing a conclusion (concl)")
+
+-- | Extract output variables from the conclusion.
+type family ConclOutVars (steps :: [Step]) :: [Nat] where
+  ConclOutVars ('ConcStep _ _ outs ': _) = outs
+  ConclOutVars (_ ': rest) = ConclOutVars rest
+  ConclOutVars '[] = TypeError ('Text "Rule is missing a conclusion (concl)")
 
 type family PremGoals (steps :: [Step]) :: [Goal] where
   PremGoals '[] = '[]
   PremGoals ('PremStep g ': rest) = g ': PremGoals rest
-  PremGoals ('ConcStep _ _ ': rest) = PremGoals rest
+  PremGoals ('ConcStep _ _ _ ': rest) = PremGoals rest
   PremGoals ('NegStep _ ': rest) = PremGoals rest
 
 -- | Extract negation requirements from steps.
@@ -959,7 +968,7 @@ type family NegReqs (steps :: [Step]) :: [[Nat]] where
   NegReqs '[] = '[]
   NegReqs ('NegStep req ': rest) = req ': NegReqs rest
   NegReqs ('PremStep _ ': rest) = NegReqs rest
-  NegReqs ('ConcStep _ _ ': rest) = NegReqs rest
+  NegReqs ('ConcStep _ _ _ ': rest) = NegReqs rest
 
 -- | Compute all variables produced by premises.
 type family AllPremProds (gs :: [Goal]) :: [Nat] where
@@ -996,6 +1005,7 @@ type family CheckSchedule (name :: Symbol) (steps :: [Step]) :: Constraint where
   CheckSchedule name steps =
     ( CheckPremises name steps (Solve (ConclVars steps) (PremGoals steps))
     , CheckNegations name steps (FinalAvail steps) (NegReqs steps)
+    , CheckOutputsCovered name (ConclOutVars steps) (FinalAvail steps)
     )
 
 -- | Check that all premises can be scheduled.
@@ -1013,6 +1023,25 @@ type family CheckPremises (name :: Symbol) (steps :: [Step]) (r :: SolveResult) 
         ':$$: 'Text "  To fix: ensure each premise's input variables are grounded"
         ':$$: 'Text "          by the conclusion or a prior premise's outputs."
     )
+
+-- | Check that all conclusion output variables are grounded.
+-- This catches "ghost variables" that appear in output positions but are never constrained.
+type family CheckOutputsCovered (name :: Symbol) (outs :: [Nat]) (avail :: [Nat]) :: Constraint where
+  CheckOutputsCovered name outs avail =
+    If (Subset outs avail)
+       (() :: Constraint)
+       (TypeError
+         ( 'Text "In rule \"" ':<>: 'Text name ':<>: 'Text "\": conclusion outputs not grounded"
+             ':$$: 'Text ""
+             ':$$: 'Text "  Conclusion output variables: " ':<>: 'ShowType outs
+             ':$$: 'Text "  Grounded after premises:     " ':<>: 'ShowType avail
+             ':$$: 'Text "  Ungrounded (ghost vars):     " ':<>: 'ShowType (Diff outs avail)
+             ':$$: 'Text ""
+             ':$$: 'Text "  (Variable indices are assigned by fresh in declaration order: 0, 1, 2, ...)"
+             ':$$: 'Text ""
+             ':$$: 'Text "  To fix: ensure output variables appear in a premise's output position,"
+             ':$$: 'Text "          or reuse a variable from the conclusion's input positions."
+         ))
 
 -- | Check that all negations have their inputs grounded.
 type family CheckNegations (name :: Symbol) (steps :: [Step]) (avail :: [Nat]) (negs :: [[Nat]]) :: Constraint where
