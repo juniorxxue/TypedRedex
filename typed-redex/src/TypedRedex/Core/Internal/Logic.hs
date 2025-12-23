@@ -27,9 +27,8 @@ module TypedRedex.Core.Internal.Logic
     -- * Unification/evaluation helpers (higher-rank)
   , Unifier
   , Evaluator
-    -- * Generic representation of constructors
+    -- * Generic field wrapper (for pretty-printing)
   , Field(..)
-  , Constructor(..)
     -- * Logic types
   , LogicType(..)
   ) where
@@ -67,22 +66,15 @@ type Evaluator rel var =
   forall t. LogicType t => Logic t var -> rel t
 
 --------------------------------------------------------------------------------
--- Generic constructor view (for unification and pretty-printing)
+-- Generic constructor view (for pretty-printing)
 --------------------------------------------------------------------------------
 
 -- | A field inside a reified value.
 --
 -- This existential wrapper allows us to treat different field types uniformly
--- when traversing a value's structure (for default unification and
--- pretty-printing).
+-- when traversing a value's structure for pretty-printing.
 data Field parent var where
   Field :: LogicType t => Proxy t -> Logic t var -> Field parent var
-
--- | A first-order view of a constructor for a reified value.
-data Constructor a = Constructor
-  { constructorName  :: String
-  , constructorBuild :: forall var. [Field a var] -> Reified a var
-  }
 
 --------------------------------------------------------------------------------
 -- LogicType
@@ -111,8 +103,8 @@ class LogicVarNaming a => LogicType a where
   -- | Unify two reified values, given a unifier for child 'Logic' terms.
   unifyVal :: Alternative rel => Unifier rel var -> Reified a var -> Reified a var -> rel ()
 
-  -- | View a reified value as a constructor name + list of fields.
-  quote :: Reified a var -> (Constructor a, [Field a var])
+  -- | View a reified value as a constructor name + list of fields (for pretty-printing).
+  quote :: Reified a var -> (String, [Field a var])
 
   -- | Fully dereference a reified value, given an evaluator for child terms.
   derefVal :: Alternative rel => Evaluator rel var -> Reified a var -> rel a

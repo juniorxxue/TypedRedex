@@ -43,7 +43,6 @@ import Control.Applicative (empty)
 import TypedRedex.Core.Internal.Redex (Redex, RedexEval(..))
 import TypedRedex.Core.Internal.Logic
 import TypedRedex.DSL.Fresh (LTerm, Freshable(..))
-import TypedRedex.DSL.Type (con0)
 import TypedRedex.Interp.Run (eval)
 import TypedRedex.Interp.Subst (RedexFresh(..))
 import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), VarNaming(..))
@@ -93,7 +92,7 @@ instance LogicType Nom where
   reify (NomR n) = Just (Nom n)
 
   -- NomR doesn't depend on var, so we can use a simple implementation
-  quote (NomR n) = (con0 ("x" ++ show n) (NomR n), [])
+  quote (NomR n) = ("x" ++ show n, [])
 
   unifyVal _ (NomR a) (NomR b)
     | a == b    = pure ()
@@ -112,7 +111,7 @@ instance LogicType TyNom where
 
   reify (TyNomR n) = Just (TyNom n)
 
-  quote (TyNomR n) = (con0 ("α" ++ show n) (TyNomR n), [])
+  quote (TyNomR n) = ("α" ++ show n, [])
 
   unifyVal _ (TyNomR a) (TyNomR b)
     | a == b    = pure ()

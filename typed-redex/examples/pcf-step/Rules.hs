@@ -50,8 +50,8 @@ instance LogicType Nat where
   reify (SR (Ground n)) = S <$> reify n
   reify _ = Nothing
 
-  quote ZR = quote0 "Z" ZR
-  quote (SR n) = quote1 "S" SR n
+  quote ZR = quote0 "Z"
+  quote (SR n) = quote1 "S" n
 
   unifyVal _ ZR ZR = pure ()
   unifyVal unif (SR x) (SR y) = unif x y
@@ -122,14 +122,14 @@ instance LogicType Tm where
   reify (FixR (Ground e)) = Fix <$> reify e
   reify _ = Nothing
 
-  quote (VarR n) = quote1 "Var" VarR n
-  quote (LamR b) = quote1 "Lam" LamR b
-  quote (AppR f a) = quote2 "App" AppR f a
-  quote ZeroR = quote0 "Zero" ZeroR
-  quote (SuccR e) = quote1 "Succ" SuccR e
-  quote (PredR e) = quote1 "Pred" PredR e
-  quote (IfzR e e1 e2) = quote3 "Ifz" IfzR e e1 e2
-  quote (FixR e) = quote1 "Fix" FixR e
+  quote (VarR n) = quote1 "Var" n
+  quote (LamR b) = quote1 "Lam" b
+  quote (AppR f a) = quote2 "App" f a
+  quote ZeroR = quote0 "Zero"
+  quote (SuccR e) = quote1 "Succ" e
+  quote (PredR e) = quote1 "Pred" e
+  quote (IfzR e e1 e2) = quote3 "Ifz" e e1 e2
+  quote (FixR e) = quote1 "Fix" e
 
   unifyVal unif (VarR n) (VarR n') = unif n n'
   unifyVal unif (LamR b) (LamR b') = unif b b'

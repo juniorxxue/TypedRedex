@@ -146,8 +146,8 @@ prettyLogicWith fmt (Ground r) = prettyReified fmt r
   where
     prettyReified :: (Redex rel, LogicType a, TermFormatter f) => f -> Reified a (RVar rel) -> String
     prettyReified f r' =
-      let (con, fields) = quote r'
-      in formatConWith f (constructorName con) (map (prettyField f) fields)
+      let (name, fields) = quote r'
+      in formatConWith f name (map (prettyField f) fields)
 
     prettyField :: (Redex rel, TermFormatter f) => f -> Field a (RVar rel) -> String
     prettyField f (Field _ logic) = prettyLogicAny f logic

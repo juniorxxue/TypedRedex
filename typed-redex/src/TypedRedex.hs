@@ -123,7 +123,7 @@ module TypedRedex
 
 -- Core types
 import TypedRedex.Core.Internal.Redex (Redex(..), RedexEval(..), RedexNeg(..), RedexStructure(..), Relation(..), CapturedTerm(..), Goal, EqVar(..))
-import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Var, Reified, Constructor(..), Field(..))
+import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Var, Reified, Field(..))
 
 -- DSL: Fresh variables and type aliases
 import TypedRedex.DSL.Fresh (LTerm, LVar, Freshable(..), fresh, fresh2, fresh3, fresh4, fresh5, fresh6, fresh7, argument, argument2, argument3, argument4, argument5)

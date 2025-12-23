@@ -290,8 +290,9 @@ genQuoteClause specMap con = case con of
           2 -> mkName "quote2"
           3 -> mkName "quote3"
           _ -> error $ "deriveLogicType: constructor " ++ nameBase name ++ " has too many fields (max 3)"
+    -- quote0 "Name" or quote1 "Name" x1 or quote2 "Name" x1 x2 etc.
     let body = foldl AppE (VarE quoteFn)
-                 ([LitE (StringL qName), ConE rName] ++ map VarE varNames)
+                 (LitE (StringL qName) : map VarE varNames)
     return $ Clause [pat] (NormalB body) []
   RecC name fields -> genQuoteClause specMap (NormalC name [(b, t) | (_, b, t) <- fields])
   _ -> fail "deriveLogicType: unsupported constructor form"

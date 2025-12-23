@@ -212,8 +212,8 @@ prettyLFmt fmt (Ground r) = prettyReifiedFmt fmt r
 
 prettyReifiedFmt :: LogicType a => (String -> [String] -> String) -> Reified a (RVar TypesettingRedex) -> String
 prettyReifiedFmt fmt r =
-  let (con, fields) = quote r
-  in fmt (constructorName con) (map (prettyFieldFmt fmt) fields)
+  let (name, fields) = quote r
+  in fmt name (map (prettyFieldFmt fmt) fields)
 
 prettyFieldFmt :: (String -> [String] -> String) -> Field a (RVar TypesettingRedex) -> String
 prettyFieldFmt fmt (Field _ logic) = prettyLogicAnyFmt fmt logic

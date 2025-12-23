@@ -80,15 +80,7 @@ instance (NominalAtom name, LogicType body, Permute name body) => LogicType (Bin
   reify (BindR (Ground nr) (Ground br)) = Bind <$> reify nr <*> reify br
   reify _ = Nothing
 
-  quote (BindR n b) =
-    ( Constructor "Bind" $ \[Field _ n', Field _ b'] ->
-        BindR (unsafeCoerceLogic n') (unsafeCoerceLogic b')
-    , [Field (Proxy :: Proxy name) n, Field (Proxy :: Proxy body) b]
-    )
-    where
-      unsafeCoerceLogic :: Logic a var -> Logic b var
-      unsafeCoerceLogic (Free v) = error "unsafeCoerceLogic: Free"
-      unsafeCoerceLogic (Ground _) = error "unsafeCoerceLogic: use pattern match"
+  quote (BindR n b) = ("Bind", [Field (Proxy :: Proxy name) n, Field (Proxy :: Proxy body) b])
 
   -- Alpha-equivalence unification!
   unifyVal unif (BindR a1 b1) (BindR a2 b2) =

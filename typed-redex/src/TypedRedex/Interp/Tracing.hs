@@ -334,9 +334,9 @@ prettyResolved (Free v) = do
     Just x  -> prettyResolved x     -- Bound, resolve and recurse
 prettyResolved (Ground r) = do
   fmt <- gets tsFormatter
-  let (con, fields) = quote r
+  let (name, fields) = quote r
   fieldStrs <- mapM prettyField fields
-  pure $ fmt (constructorName con) fieldStrs
+  pure $ fmt name fieldStrs
   where
     prettyField :: Field a (RVar (TracingRedex s)) -> TracingRedex s String
     prettyField (Field _ logic) = prettyResolvedAny logic
@@ -349,9 +349,9 @@ prettyResolved (Ground r) = do
         Just x  -> prettyResolvedAny x
     prettyResolvedAny (Ground r') = do
       fmt <- gets tsFormatter
-      let (con', fields') = quote r'
+      let (name', fields') = quote r'
       fieldStrs' <- mapM prettyField fields'
-      pure $ fmt (constructorName con') fieldStrs'
+      pure $ fmt name' fieldStrs'
 
 --------------------------------------------------------------------------------
 -- RedexStructure Instance (Derivation Tracking)

@@ -54,8 +54,8 @@ instance LogicType Nat where
   reify (SR (Ground n)) = S <$> reify n
   reify _ = Nothing
 
-  quote ZR = quote0 "Z" ZR
-  quote (SR n) = quote1 "S" SR n
+  quote ZR = quote0 "Z"
+  quote (SR n) = quote1 "S" n
 
   unifyVal _ ZR ZR = pure ()
   unifyVal unif (SR x) (SR y) = unif x y
@@ -99,8 +99,8 @@ instance LogicType Ty where
   reify (TArrR (Ground a) (Ground b)) = TArr <$> reify a <*> reify b
   reify _ = Nothing
 
-  quote TUnitR = quote0 "Unit" TUnitR
-  quote (TArrR a b) = quote2 "→" TArrR a b
+  quote TUnitR = quote0 "Unit"
+  quote (TArrR a b) = quote2 "→" a b
 
   unifyVal _ TUnitR TUnitR = pure ()
   unifyVal unif (TArrR a b) (TArrR a' b') = unif a a' *> unif b b'
@@ -162,12 +162,12 @@ instance LogicType Tm where
   reify (AnnR (Ground e) (Ground ty)) = Ann <$> reify e <*> reify ty
   reify _ = Nothing
 
-  quote (VarR n) = quote1 "Var" VarR n
-  quote UnitR = quote0 "()" UnitR
-  quote (LamR b) = quote1 "λ" LamR b
-  quote (LamAnnR ty b) = quote2 "λ:" LamAnnR ty b
-  quote (AppR f a) = quote2 "App" AppR f a
-  quote (AnnR e ty) = quote2 ":" AnnR e ty
+  quote (VarR n) = quote1 "Var" n
+  quote UnitR = quote0 "()"
+  quote (LamR b) = quote1 "λ" b
+  quote (LamAnnR ty b) = quote2 "λ:" ty b
+  quote (AppR f a) = quote2 "App" f a
+  quote (AnnR e ty) = quote2 ":" e ty
 
   unifyVal unif (VarR n) (VarR n') = unif n n'
   unifyVal _ UnitR UnitR = pure ()
@@ -242,8 +242,8 @@ instance LogicType Ctx where
   reify (ConsR (Ground ty) (Ground ctx)) = Cons <$> reify ty <*> reify ctx
   reify _ = Nothing
 
-  quote NilR = quote0 "·" NilR
-  quote (ConsR ty ctx) = quote2 "," ConsR ty ctx
+  quote NilR = quote0 "·"
+  quote (ConsR ty ctx) = quote2 "," ty ctx
 
   unifyVal _ NilR NilR = pure ()
   unifyVal unif (ConsR ty ctx) (ConsR ty' ctx') = unif ty ty' *> unif ctx ctx'
