@@ -12,9 +12,10 @@ import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Nominal
 import TypedRedex.Nominal.Bind (mkBindL)
 import TypedRedex.Nominal.Prelude
+import TypedRedex.Nominal.Hash (Hash(..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.PrettyPrint (VarNaming(..), LogicVarNaming(..), ctxNaming, subscriptNum)
-import TypedRedex.DSL.TH (deriveLogicTypeNoNaming, derivePermute, deriveHash, deriveSubst, (~>))
+import TypedRedex.DSL.TH (deriveLogicTypeNoNaming, derivePermute, deriveHash, deriveSubsto, (~>))
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.DSL.Moded (T(..), ground, lift1, lift2, lift3, Union)
 import qualified Data.Set as S
@@ -79,10 +80,13 @@ deriveHash ''Ty [''TyNom]
 instance Hash Nom Ty where
   occursIn _ _ = False
 
--- Generates: instance Subst TyNom Ty (with substBind for TAll)
-deriveSubst ''Ty ''TyNom
-  [ ('TAll, [| \n r bnd -> TAll (substBind n r bnd) |])
-  ]
+--------------------------------------------------------------------------------
+-- Capture-avoiding substitution for types: Substo TyNom Ty
+--------------------------------------------------------------------------------
+
+-- Generates: instance Substo TyNom Ty
+-- User specifies: TVar is the variable constructor for TyNom
+deriveSubsto ''Ty [(''TyNom, 'TVar)]
 
 --------------------------------------------------------------------------------
 -- Terms
@@ -122,6 +126,13 @@ deriveLogicTypeNoNaming ''Tm
   , 'TLam ~> ("TLam", "tlam")
   , 'TApp ~> ("TApp", "tapp")
   ]
+
+-- Raw logic constructors (for tests with logic variable bodies)
+lamL :: Logic Ty var -> Logic (Bind Nom Tm) var -> Logic Tm var
+lamL tyL bndL = Ground (LamR tyL bndL)
+
+varL :: Logic Nom var -> Logic Tm var
+varL nL = Ground (VarR nL)
 
 -- Hash instances for Tm - manual because of cross-binder complexity
 -- (Lam binds Nom but doesn't shadow TyNom, TLam binds TyNom but doesn't shadow Nom)

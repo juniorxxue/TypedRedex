@@ -36,20 +36,15 @@
 module TypedRedex.Nominal.Subst
   ( -- * Relational Substitution
     Substo(..)
-    -- * Legacy Pure Substitution (use with caution)
-  , Subst(..)
-  , substBind
   ) where
 
-import Control.Applicative (empty)
-import TypedRedex.Core.Internal.Redex (Redex(..))
+import TypedRedex.Core.Internal.Redex (Redex(..), RedexEval)
 import TypedRedex.Core.Internal.Relation (conde, (<=>))
 import TypedRedex.Core.Internal.Logic (LogicType(..))
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Interp.Subst (RedexFresh(..))
 import TypedRedex.Nominal.Nom (NominalAtom(..))
-import TypedRedex.Nominal.Bind (Bind(..), Permute(..))
-import TypedRedex.Nominal.Hash (Hash(..), RedexHash(..))
+import TypedRedex.Nominal.Hash (RedexHash(..))
 
 --------------------------------------------------------------------------------
 -- Relational Substitution (Capture-Avoiding)
@@ -58,8 +53,6 @@ import TypedRedex.Nominal.Hash (Hash(..), RedexHash(..))
 -- | Typeclass for capture-avoiding relational substitution.
 --
 -- @substo name body replacement result@ means @[replacement/name]body = result@
---
--- Unlike pure 'Subst', this uses hash constraints to prevent capture.
 --
 -- Users implement this for their syntax types. For binder cases:
 --
@@ -85,7 +78,7 @@ import TypedRedex.Nominal.Hash (Hash(..), RedexHash(..))
 -- @
 class Substo name body where
   -- | Relational substitution: @[replacement/name]body = result@
-  substo :: (RedexFresh rel, RedexHash rel, Redex rel)
+  substo :: (RedexFresh rel, RedexHash rel, RedexEval rel, Redex rel)
          => LTerm name rel    -- ^ Name to substitute for
          -> LTerm body rel    -- ^ Body to substitute in
          -> LTerm body rel    -- ^ Replacement term
@@ -100,7 +93,7 @@ class Substo name body where
 --
 -- @[replacement/a]b = replacement@ if @a == b@
 -- @[replacement/a]b = b@ if @a ≠ b@ (i.e., @a # b@)
-instance (NominalAtom name, LogicType name, Hash name name) => Substo name name where
+instance (NominalAtom name, LogicType name) => Substo name name where
   substo aL bL replL resultL = conde
     [ do -- a == b: result is replacement
         aL <=> bL
@@ -109,36 +102,3 @@ instance (NominalAtom name, LogicType name, Hash name name) => Substo name name 
         hash aL bL  -- a # b (they're different)
         resultL <=> bL
     ]
-
---------------------------------------------------------------------------------
--- Legacy Pure Substitution (No Capture Avoidance)
---------------------------------------------------------------------------------
-
--- | DEPRECATED: Pure substitution WITHOUT capture avoidance.
---
--- WARNING: This does NOT handle capture correctly!
--- Use 'Substo' for correct capture-avoiding substitution.
---
--- Kept for backward compatibility and simple cases where capture can't occur.
-class Subst name term where
-  -- | Substitute: @[arg/x]term@
-  --
-  -- Replace all free occurrences of @x@ in @term@ with @arg@.
-  subst :: name -> term -> term -> term
-
--- | DEPRECATED: Pure substitution under a binder.
---
--- WARNING: This does NOT handle capture correctly!
---
--- If the binder binds the same name we're substituting, do nothing (shadowing).
--- Otherwise, substitute in the body (potentially causing capture!).
-substBind :: (NominalAtom name, Subst name body) => name -> body -> Bind name body -> Bind name body
-substBind x arg (Bind y body)
-  | x == y    = Bind y body       -- x is shadowed by y
-  | otherwise = Bind y (subst x arg body)  -- WARNING: May capture!
-
--- | Pure substitution for names.
-instance NominalAtom name => Subst name name where
-  subst x arg y
-    | x == y    = arg
-    | otherwise = y

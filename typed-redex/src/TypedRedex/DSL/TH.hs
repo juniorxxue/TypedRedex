@@ -59,24 +59,27 @@ module TypedRedex.DSL.TH
     -- * Nominal Derivations
   , derivePermute
   , deriveHash
-  , deriveSubst
-  , SubstHook
+  , deriveSubsto
   ) where
 
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (Name, mkName, nameBase)
 import Control.Monad (when, forM)
-import Data.Map (Map)
-import qualified Data.Map as Map
 
 -- These need to be imported by the TH module to use '' syntax
 -- We import them here just so the '' names resolve
 import TypedRedex.Interp.PrettyPrint (LogicVarNaming)
-import TypedRedex.Core.Internal.Logic (Logic(..), LogicType, Reified)
+import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(project, Reified), Reified)
 import TypedRedex.DSL.Moded (T(..), ground, lift1, lift2, lift3, Union)
 import TypedRedex.Nominal.Bind (Bind(..), Permute(..))
-import TypedRedex.Nominal.Hash (Hash(..))
-import TypedRedex.Nominal.Subst (Subst(..), substBind)
+import TypedRedex.Nominal.Hash (Hash(..), RedexHash(..), hash)
+import TypedRedex.Nominal (bind)
+import TypedRedex.Nominal.Subst (Substo(..))
+import TypedRedex.Interp.Subst (RedexFresh(..))
+import TypedRedex.Core.Internal.Redex (Redex(..), RedexEval(..))
+import TypedRedex.Core.Internal.Relation (conde, (<=>))
+import TypedRedex.DSL.Fresh (LTerm, freshLogic, Freshable(..))
+import TypedRedex.Interp.Run (eval)
 import Control.Applicative (empty, pure, (<$>), (<*>), (*>))
 import Data.Maybe (Maybe(..))
 
@@ -637,113 +640,314 @@ genFieldOccursIn nameType aName (varName, (_, fieldTy)) = do
       return $ foldl AppE (VarE 'occursIn) [VarE aName, VarE varName]
 
 --------------------------------------------------------------------------------
--- Derive Subst
+-- Derive Substo (Capture-Avoiding Substitution)
 --------------------------------------------------------------------------------
 
--- | Hook for custom substitution handling of specific constructors.
-type SubstHook = (Name, Q Exp)
-
--- | Derive Subst instance for a type with optional custom handlers.
+-- | Derive Substo instance for a type.
 --
--- Takes:
--- - The data type name
--- - The name type to substitute for
--- - A list of constructor hooks (constructor name, handler expression)
+-- Takes the data type name and a list of (NameType, VarConstructor) pairs.
+-- Each pair specifies which constructor holds a variable of that name type.
 --
--- For constructors without hooks, generates recursive substitution.
--- For variable constructors (field type matches name type), generates equality check.
+-- This is analogous to unbound-generics' @isvar@ escape hatch - you tell the
+-- derivation which constructor represents a variable, and everything else
+-- (recursion, binding, capture-avoidance) is handled automatically.
 --
 -- Usage:
 --
 -- @
--- deriveSubst ''Ty ''TyNom
---   [ 'TAll ~> [| \\name repl bnd -> TAll (substBind name repl bnd) |]
---   ]
+-- -- For types: tau ::= Unit | alpha | tau1 -> tau2 | forall alpha. tau
+-- data Ty = TUnit | TVar TyNom | TArr Ty Ty | TAll (Bind TyNom Ty)
+--
+-- deriveSubsto ''Ty [(''TyNom, 'TVar)]
 -- -- Generates:
--- --   instance Subst TyNom Ty where
--- --     subst name replacement TUnit = TUnit
--- --     subst name replacement (TVar v)
--- --       | v == name = replacement
--- --       | otherwise = TVar v
--- --     subst name replacement (TArr t1 t2) = TArr (subst name replacement t1) (subst name replacement t2)
--- --     subst name replacement (TAll bnd) = TAll (substBind name replacement bnd)  -- custom hook
+-- -- instance Substo TyNom Ty where
+-- --   substo nameL bodyL replL resultL = do
+-- --     body <- eval bodyL
+-- --     case body of
+-- --       TUnit -> resultL <=> Ground (project TUnit)
+-- --       TVar v -> conde [nameL <=> ... >> resultL <=> replL, ...]
+-- --       TArr t1 t2 -> freshLogic $ \\r1 -> freshLogic $ \\r2 -> ...
+-- --       TAll (Bind alpha tyBody) -> conde [shadow, fresh+swap+recurse]
 -- @
-deriveSubst :: Name -> Name -> [SubstHook] -> Q [Dec]
-deriveSubst typeName nameType hooks = do
+--
+-- For each constructor, the derivation handles:
+--
+-- * Nullary: returns unchanged
+-- * Variable constructor (user specified): conde [match/substitute, hash/keep]
+-- * Bind of same name type: conde [shadow, fresh+swap+recurse]
+-- * Recursive fields: freshLogic + substo recursion
+deriveSubsto :: Name -> [(Name, Name)] -> Q [Dec]
+deriveSubsto typeName varSpecs = do
   info <- reify typeName
   case info of
     TyConI (DataD _ _ tvs _ cons _) -> do
       when (not (null tvs)) $
-        fail "deriveSubst: type must not have type variables"
-      genSubstInstance typeName nameType cons hooks
+        fail "deriveSubsto: type must not have type variables"
+      concat <$> mapM (genSubstoInstance typeName cons varSpecs) (map fst varSpecs)
     TyConI (NewtypeD _ _ tvs _ con _) -> do
       when (not (null tvs)) $
-        fail "deriveSubst: type must not have type variables"
-      genSubstInstance typeName nameType [con] hooks
-    _ -> fail "deriveSubst: expected a data or newtype declaration"
+        fail "deriveSubsto: type must not have type variables"
+      concat <$> mapM (genSubstoInstance typeName [con] varSpecs) (map fst varSpecs)
+    _ -> fail "deriveSubsto: expected a data or newtype declaration"
 
--- | Generate the Subst instance
-genSubstInstance :: Name -> Name -> [Con] -> [SubstHook] -> Q [Dec]
-genSubstInstance typeName nameType cons hooks = do
-  let hookMap = Map.fromList hooks
-  nameName <- newName "name"
-  replName <- newName "replacement"
-  tyName <- newName "ty"
+-- | Generate a single Substo instance for a specific name type
+genSubstoInstance :: Name -> [Con] -> [(Name, Name)] -> Name -> Q [Dec]
+genSubstoInstance typeName cons varSpecs nameType = do
+  -- Find the variable constructor for this name type
+  let varCon = lookup nameType varSpecs
 
-  clauses <- mapM (genSubstClause typeName nameType hookMap nameName replName) cons
-  let instType = AppT (AppT (ConT ''Subst) (ConT nameType)) (ConT typeName)
-  let substDec = FunD (mkName "subst") clauses
-  return [InstanceD Nothing [] instType [substDec]]
+  -- Generate the substo function body
+  nameL <- newName "nameL"
+  bodyL <- newName "bodyL"
+  replL <- newName "replL"
+  resultL <- newName "resultL"
+  bodyVar <- newName "body"
 
--- | Generate a clause for the subst function
-genSubstClause :: Name -> Name -> Map Name (Q Exp) -> Name -> Name -> Con -> Q Clause
-genSubstClause typeName nameType hookMap nameName replName con = case con of
+  -- Generate case alternatives for each constructor
+  matches <- mapM (genSubstoMatch nameType varCon typeName nameL replL resultL) cons
+
+  -- Build: do { body <- eval bodyL; case body of { ... } }
+  let evalStmt = BindS (VarP bodyVar) (AppE (VarE 'eval) (VarE bodyL))
+  let caseExpr = CaseE (VarE bodyVar) matches
+  let doBody = DoE Nothing [evalStmt, NoBindS caseExpr]
+
+  let clause = Clause [VarP nameL, VarP bodyL, VarP replL, VarP resultL] (NormalB doBody) []
+  let substoDec = FunD (mkName "substo") [clause]
+
+  let instType = AppT (AppT (ConT ''Substo) (ConT nameType)) (ConT typeName)
+  return [InstanceD Nothing [] instType [substoDec]]
+
+-- | Generate a match clause for a single constructor
+genSubstoMatch :: Name -> Maybe Name -> Name -> Name -> Name -> Name -> Con -> Q Match
+genSubstoMatch nameType mVarCon typeName nameL replL resultL con = case con of
   NormalC conName fields -> do
-    -- Check if there's a hook for this constructor
-    case Map.lookup conName hookMap of
-      Just hookQ -> do
-        -- Use the hook expression
-        hook <- hookQ
-        let arity = length fields
+    let arity = length fields
+        rName = mkName (nameBase conName ++ "R")
+
+    if arity == 0
+      then do
+        -- Nullary: resultL <=> Ground (project Con)
+        let body = InfixE (Just (VarE resultL)) (VarE '(<=>))
+                     (Just (AppE (ConE 'Ground) (AppE (VarE 'project) (ConE conName))))
+        return $ Match (ConP conName [] []) (NormalB body) []
+      else do
         varNames <- mapM (\i -> newName ("x" ++ show i)) [1..arity]
         let pat = ConP conName [] (map VarP varNames)
-        -- Apply hook: hook name replacement x1 x2 ... (depending on arity)
-        let body = foldl AppE hook ([VarE nameName, VarE replName] ++ map VarE varNames)
-        return $ Clause [VarP nameName, VarP replName, pat] (NormalB body) []
 
-      Nothing -> do
-        -- Generate default substitution
-        let arity = length fields
-        if arity == 0
-          then do
-            let pat = ConP conName [] []
-            let body = ConE conName
-            return $ Clause [VarP nameName, VarP replName, pat] (NormalB body) []
-          else do
-            varNames <- mapM (\i -> newName ("x" ++ show i)) [1..arity]
-            let pat = ConP conName [] (map VarP varNames)
-            -- Check if this is a variable constructor (single field matching name type)
-            if arity == 1 && isVarCon nameType (head fields)
-              then do
-                -- Generate: if v == name then replacement else ConName v
-                let vn = head varNames
-                let eq = InfixE (Just (VarE vn)) (VarE '(==)) (Just (VarE nameName))
-                let thenE = VarE replName
-                let elseE = AppE (ConE conName) (VarE vn)
-                let guard1 = (NormalG eq, thenE)
-                let guard2 = (NormalG (ConE 'True), elseE)
-                return $ Clause [VarP nameName, VarP replName, pat] (GuardedB [guard1, guard2]) []
-              else do
-                -- Generate recursive substitution for each field
-                substFields <- forM varNames $ \vn ->
-                  return $ foldl AppE (VarE 'subst) [VarE nameName, VarE replName, VarE vn]
-                let body = foldl AppE (ConE conName) substFields
-                return $ Clause [VarP nameName, VarP replName, pat] (NormalB body) []
+        -- Check if this is the variable constructor
+        case mVarCon of
+          Just varConName | varConName == conName && arity == 1 -> do
+            -- Variable case: conde [match/replace, hash/keep]
+            let v = head varNames
+            genVarCaseBody nameType nameL replL resultL conName rName v
+          _ -> do
+            -- Check for Bind fields and recursive fields
+            genRecursiveCaseBody nameType typeName nameL replL resultL conName rName varNames fields
 
-  RecC name fields -> genSubstClause typeName nameType hookMap nameName replName (NormalC name [(b, t) | (_, b, t) <- fields])
-  _ -> fail "deriveSubst: unsupported constructor form"
+  RecC name fields -> genSubstoMatch nameType mVarCon typeName nameL replL resultL
+                        (NormalC name [(b, t) | (_, b, t) <- fields])
+  _ -> fail "deriveSubsto: unsupported constructor form"
 
--- | Check if a field type matches the name type (for variable constructors)
-isVarCon :: Name -> BangType -> Bool
-isVarCon nameType (_, ConT fieldTy) = fieldTy == nameType
-isVarCon _ _ = False
+-- | Generate the variable case: conde [match/replace, hash/keep]
+genVarCaseBody :: Name -> Name -> Name -> Name -> Name -> Name -> Name -> Q Match
+genVarCaseBody nameType nameL replL resultL conName rName v = do
+  -- conde [ do { nameL <=> inject v; resultL <=> replL }
+  --       , do { hash nameL (inject v); resultL <=> Ground (project (Con v)) } ]
+
+  -- Build: Ground (project v)
+  let injectV = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE v))
+
+  -- Branch 1: nameL <=> inject v >> resultL <=> replL
+  let unifyName = InfixE (Just (VarE nameL)) (VarE '(<=>)) (Just injectV)
+  let unifyResult1 = InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just (VarE replL))
+  let branch1 = DoE Nothing [NoBindS unifyName, NoBindS unifyResult1]
+
+  -- Branch 2: hash nameL (inject v) >> resultL <=> Ground (project (Con v))
+  let hashCall = foldl AppE (VarE 'hash) [VarE nameL, injectV]
+  let keepResult = AppE (ConE 'Ground) (AppE (VarE 'project) (AppE (ConE conName) (VarE v)))
+  let unifyResult2 = InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just keepResult)
+  let branch2 = DoE Nothing [NoBindS hashCall, NoBindS unifyResult2]
+
+  let condeExpr = AppE (VarE 'conde) (ListE [branch1, branch2])
+
+  return $ Match (ConP conName [] [VarP v]) (NormalB condeExpr) []
+
+-- | Generate recursive case with freshLogic for each field
+genRecursiveCaseBody :: Name -> Name -> Name -> Name -> Name -> Name -> Name -> [Name] -> [BangType] -> Q Match
+genRecursiveCaseBody nameType typeName nameL replL resultL conName rName varNames fields = do
+  -- Analyze each field
+  fieldInfos <- forM (zip varNames fields) $ \(vn, (_, fieldTy)) ->
+    analyzeFieldType nameType typeName fieldTy vn
+
+  -- Check if any field is a Bind of the same name type
+  let hasBindField = any (\case { BindField _ _ _ -> True; _ -> False }) fieldInfos
+
+  if hasBindField
+    then genBindCaseBody nameType nameL replL resultL conName rName varNames fields fieldInfos
+    else genSimpleRecursiveBody nameType nameL replL resultL conName rName varNames fieldInfos
+
+-- | Field classification for substitution
+data FieldInfo
+  = RecursiveField Name Name  -- field var, result var (needs substo)
+  | BindField Name Name Name  -- field var, bound var name, body var name
+  | NonRecursiveField Name    -- field var (no substo needed, different type)
+  deriving Show
+
+-- | Analyze a field type to determine how to handle it
+analyzeFieldType :: Name -> Name -> Type -> Name -> Q FieldInfo
+analyzeFieldType nameType typeName fieldTy varName = do
+  case fieldTy of
+    -- Bind nameType body - needs special handling
+    AppT (AppT (ConT bindName) boundNameTy) bodyTy
+      | bindName == ''Bind -> do
+          case boundNameTy of
+            ConT boundNameType | boundNameType == nameType -> do
+              -- Same name type - needs shadow/fresh+swap
+              bndVar <- newName "bnd"
+              bodyVar <- newName "bdy"
+              return $ BindField varName bndVar bodyVar
+            _ -> do
+              -- Different name type - just recurse on body if it's the target type
+              if isTargetType typeName bodyTy
+                then do
+                  resVar <- newName "r"
+                  return $ RecursiveField varName resVar
+                else return $ NonRecursiveField varName
+
+    -- Direct recursion on the same type
+    ConT tyName | tyName == typeName -> do
+      resVar <- newName "r"
+      return $ RecursiveField varName resVar
+
+    -- Other types - no substitution needed
+    _ -> return $ NonRecursiveField varName
+
+-- | Check if a type is the target type for substitution
+isTargetType :: Name -> Type -> Bool
+isTargetType typeName (ConT n) = n == typeName
+isTargetType typeName (AppT t _) = isTargetType typeName t
+isTargetType _ _ = False
+
+-- | Generate simple recursive case (no Bind of same name type)
+genSimpleRecursiveBody :: Name -> Name -> Name -> Name -> Name -> Name -> [Name] -> [FieldInfo] -> Q Match
+genSimpleRecursiveBody nameType nameL replL resultL conName rName varNames fieldInfos = do
+  -- Build nested freshLogic for recursive fields
+  let recursiveFields = [(v, r) | RecursiveField v r <- fieldInfos]
+
+  if null recursiveFields
+    then do
+      -- No recursive fields - just return unchanged
+      let args = [VarE v | v <- varNames]
+      let result = AppE (ConE 'Ground) (AppE (VarE 'project) (foldl AppE (ConE conName) args))
+      let body = InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just result)
+      return $ Match (ConP conName [] (map VarP varNames)) (NormalB body) []
+    else do
+      -- Has recursive fields - generate freshLogic + substo calls
+      let resultVars = [r | (_, r) <- recursiveFields]
+
+      -- Build the innermost body: substo calls + result unification
+      substoStmts <- forM recursiveFields $ \(v, r) -> do
+        let grounded = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE v))
+        let call = foldl AppE (VarE 'substo) [VarE nameL, grounded, VarE replL, VarE r]
+        return $ NoBindS call
+
+      -- Build result: ConR with logic vars for recursive fields, Ground project for others
+      let buildArg fi = case fi of
+            RecursiveField _ r -> VarE r
+            NonRecursiveField v -> AppE (ConE 'Ground) (AppE (VarE 'project) (VarE v))
+            BindField v _ _ -> AppE (ConE 'Ground) (AppE (VarE 'project) (VarE v))
+      let resultArgs = map buildArg fieldInfos
+      let resultExpr = AppE (ConE 'Ground) (foldl AppE (ConE rName) resultArgs)
+      let resultStmt = NoBindS $ InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just resultExpr)
+
+      let innerBody = DoE Nothing (substoStmts ++ [resultStmt])
+
+      -- Wrap in freshLogic calls
+      let wrapFreshLogic expr [] = expr
+          wrapFreshLogic expr (r:rs) =
+            AppE (VarE 'freshLogic) (LamE [VarP r] (wrapFreshLogic expr rs))
+
+      let fullBody = wrapFreshLogic innerBody resultVars
+
+      return $ Match (ConP conName [] (map VarP varNames)) (NormalB fullBody) []
+
+-- | Generate Bind case with shadow/fresh+swap branches
+genBindCaseBody :: Name -> Name -> Name -> Name -> Name -> Name -> [Name] -> [BangType] -> [FieldInfo] -> Q Match
+genBindCaseBody nameType nameL replL resultL conName rName varNames fields fieldInfos = do
+  -- Find the Bind field
+  let bindInfo = head [(v, bnd, bdy) | BindField v bnd bdy <- fieldInfos]
+  let (bindVar, _, _) = bindInfo
+
+  -- Find the index of the bind field to extract bound name and body
+  let bindIdx = head [i | (i, BindField _ _ _) <- zip [0..] fieldInfos]
+  let (_, bindFieldTy) = fields !! bindIdx
+
+  -- Extract body type from Bind nameType bodyTy
+  let bodyTy = case bindFieldTy of
+        AppT (AppT (ConT _) _) bt -> bt
+        _ -> error "Expected Bind type"
+
+  -- Generate pattern: Con x1 x2 ... (Bind alpha body) ...
+  -- We need to match the Bind and extract alpha and body
+  alphaName <- newName "alpha"
+  bodyName <- newName "body"
+
+  let patterns = [if i == bindIdx
+                  then ConP 'Bind [] [VarP alphaName, VarP bodyName]
+                  else VarP (varNames !! i)
+                 | i <- [0..length varNames - 1]]
+
+  -- Branch 1: Shadowed case - nameL <=> inject alpha, resultL <=> original
+  let injectAlpha = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE alphaName))
+  let unifyName = InfixE (Just (VarE nameL)) (VarE '(<=>)) (Just injectAlpha)
+
+  -- Reconstruct original: Con x1 (Bind alpha body) x2 ...
+  let origArgs = [if i == bindIdx
+                  then AppE (AppE (ConE 'Bind) (VarE alphaName)) (VarE bodyName)
+                  else VarE (varNames !! i)
+                 | i <- [0..length varNames - 1]]
+  let origResult = AppE (ConE 'Ground) (AppE (VarE 'project) (foldl AppE (ConE conName) origArgs))
+  let unifyOrig = InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just origResult)
+  let shadowBranch = DoE Nothing [NoBindS unifyName, NoBindS unifyOrig]
+
+  -- Branch 2: Substitute case with fresh+swap
+  freshName <- newName "fresh"
+  rBodyName <- newName "rBody"
+
+  -- hash nameL (inject alpha)
+  let hashAlpha = foldl AppE (VarE 'hash) [VarE nameL, injectAlpha]
+
+  -- hash (inject fresh) replL
+  let injectFresh = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE freshName))
+  let hashFresh = foldl AppE (VarE 'hash) [injectFresh, VarE replL]
+
+  -- let swappedBody = swap alpha fresh body
+  let swapExpr = foldl AppE (VarE 'swap) [VarE alphaName, VarE freshName, VarE bodyName]
+  swappedName <- newName "swappedBody"
+  let swapLet = LetS [ValD (VarP swappedName) (NormalB swapExpr) []]
+
+  -- substo nameL (Ground (project swappedBody)) replL rBody
+  let grounded = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE swappedName))
+  let substoCall = foldl AppE (VarE 'substo) [VarE nameL, grounded, VarE replL, VarE rBodyName]
+
+  -- resultL <=> Ground (ConR ... (bind fresh rBody) ...)
+  -- Build the result with bind fresh rBody in the bind position
+  let bindExpr = foldl AppE (VarE 'bind) [VarE freshName, VarE rBodyName]
+  let resultArgs = [if i == bindIdx
+                    then bindExpr
+                    else AppE (ConE 'Ground) (AppE (VarE 'project) (VarE (varNames !! i)))
+                   | i <- [0..length varNames - 1]]
+  let resultExpr = AppE (ConE 'Ground) (foldl AppE (ConE rName) resultArgs)
+  let unifyResult = InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just resultExpr)
+
+  let innerStmts = [NoBindS hashAlpha, NoBindS hashFresh, swapLet, NoBindS substoCall, NoBindS unifyResult]
+  let innerBody = DoE Nothing innerStmts
+
+  -- Wrap in freshLogic for rBody, then freshOne for fresh name
+  let withRBody = AppE (VarE 'freshLogic) (LamE [VarP rBodyName] innerBody)
+  let withFresh = AppE (VarE 'freshOne) (LamE [VarP freshName] withRBody)
+  let substBranch = withFresh
+
+  let condeExpr = AppE (VarE 'conde) (ListE [shadowBranch, substBranch])
+
+  return $ Match (ConP conName [] patterns) (NormalB condeExpr) []

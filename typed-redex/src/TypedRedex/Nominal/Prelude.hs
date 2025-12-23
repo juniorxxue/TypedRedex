@@ -49,7 +49,6 @@ import TypedRedex.Interp.Subst (RedexFresh(..))
 import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), VarNaming(..))
 import TypedRedex.Nominal.Nom (NominalAtom(..))
 import TypedRedex.Nominal.Bind (Bind(..), Permute(..), mkBind)
-import TypedRedex.Nominal.Subst (Subst(..))
 import TypedRedex.Nominal.Hash (Hash(..))
 
 --------------------------------------------------------------------------------
@@ -132,18 +131,6 @@ instance Permute Nom TyNom where
 -- Swapping TyNom doesn't affect Nom
 instance Permute TyNom Nom where
   swap _ _ x = x
-
---------------------------------------------------------------------------------
--- Cross-namespace Subst instances
---------------------------------------------------------------------------------
-
--- Substituting Nom doesn't affect TyNom
-instance Subst Nom TyNom where
-  subst _ _ y = y
-
--- Substituting TyNom doesn't affect Nom
-instance Subst TyNom Nom where
-  subst _ _ y = y
 
 --------------------------------------------------------------------------------
 -- Cross-namespace Hash instances

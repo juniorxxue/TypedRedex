@@ -20,6 +20,7 @@ import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
 import TypedRedex.Interp.Tracing (runWithDerivationWith, prettyDerivationWith, Derivation(..), JudgmentFormatter(..), defaultFormatConclusion)
 import TypedRedex.Interp.Typesetting (runTypesettingWith, formatRule, typesettingVar)
 import TypedRedex.Interp.Format (TermFormatter(..))
+import TypedRedex.Nominal.Bind (mkBind)
 import TypedRedex.DSL.Fresh (LTerm)
 import qualified TypedRedex.DSL.Fresh as F
 import TypedRedex.DSL.Moded (AppliedM(..), toApplied, ground)
@@ -263,6 +264,26 @@ main = do
   putStrLn "  - fresh: creates tracked logic variables (for pattern matching)"
   putStrLn "  - bindNomPatM/bindTyPatM: binder patterns with logic variable names"
   putStrLn "  - liftRel: lifts rel actions like instantiateTo into RuleM"
+  putStrLn ""
+
+  putStrLn "==============================================================================="
+  putStrLn "=== ALPHA-EQUIVALENCE TEST ==="
+  putStrLn "==============================================================================="
+  putStrLn ""
+
+  -- Test: fresh a b c x y; a = \x.x; c = \y.b; a == c; b == Var y
+  let xN = Nom 1
+      yN = Nom 2
+
+  putStrLn "Test: fresh a b c; a = \\x.x; c = \\y.b; a == c; b == Var y"
+  let test :: Stream Tm
+      test = runSubstRedex $ F.fresh3 $ \a c b -> do
+        a <=> Ground (project (Lam TUnit (Bind xN (Var xN))))  -- a = \x. x
+        c <=> lamL (Ground (project TUnit)) (mkBind yN b)      -- c = \y. b  (b is logic var)
+        a <=> c                                                 -- a == c
+        b <=> Ground (project (Var yN))                         -- b == Var y
+        eval b
+  putStrLn $ "Result: " ++ show (takeS 1 test)
   putStrLn ""
 
   putStrLn "==============================================================================="

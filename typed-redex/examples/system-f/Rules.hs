@@ -16,8 +16,9 @@ module Rules
 
 import Prelude hiding ((>>=), (>>), return)
 import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, fresh6, ground, lift1, lift2, lift3, neg)
-import TypedRedex.Nominal (instantiateTo)
+import TypedRedex.Nominal (Substo(..))
 import TypedRedex.Nominal.Prelude
+import TypedRedex.Nominal.Hash (RedexHash)
 import TypedRedex.Interp.Subst (RedexFresh(..))
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Moded
@@ -35,7 +36,7 @@ import Syntax
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
-type SystemFRel rel = (RedexFresh rel, RedexEval rel, RedexNeg rel)
+type SystemFRel rel = (RedexFresh rel, RedexEval rel, RedexNeg rel, RedexHash rel)
 
 lookupTm :: SystemFRel rel => Judgment3 rel "lookupTm" '[I, I, O] Ctx Nom Ty
 lookupTm = defJudge3 @"lookupTm" $ \rule ->
@@ -68,7 +69,7 @@ substTy = defJudge4 @"substTy" $ \rule ->
   [ rule "subst" $ do
       (alpha, tyArg, tyBody, result) <- fresh4
       concl $ substTy alpha tyArg tyBody result
-      liftRelDeferred $ instantiateTo (tTerm (bindTyPat alpha tyBody)) (tTerm tyArg) (tTerm result)
+      liftRelDeferred $ substo (tTerm alpha) (tTerm tyBody) (tTerm tyArg) (tTerm result)
   ]
 
 --------------------------------------------------------------------------------

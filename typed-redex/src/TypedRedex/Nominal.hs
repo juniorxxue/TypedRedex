@@ -69,22 +69,16 @@ module TypedRedex.Nominal
   , RedexHash(..)
     -- * Relational Substitution (Capture-Avoiding)
   , Substo(..)
-    -- * Legacy Pure Substitution (use with caution)
-  , Subst(..)
-  , substBind
     -- * Fresh Name Generation
   , RedexFresh(..)
     -- * High-Level API (Generic)
   , unbindWith
-  , instantiate
-  , instantiateTo
     -- * Smart Constructor
   , bind
   ) where
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Core.Internal.Relation ((<=>))
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Interp.Run (eval)
 import TypedRedex.Interp.Subst (RedexFresh(..))
@@ -120,35 +114,6 @@ unbindWith freshGen bndL = do
   freshGen $ \fresh -> do
     let swappedBody = swap oldName fresh body
     pure (Ground (project fresh), Ground (project swappedBody))
-
--- | Instantiate a binder with an argument (capture-avoiding substitution).
---
--- @
--- result <- instantiate bnd arg  -- [arg/x]body where bnd = Bind x body
--- @
-instantiate :: (RedexEval rel, NominalAtom name, LogicType body, Permute name body, Subst name body)
-            => LTerm (Bind name body) rel
-            -> LTerm body rel
-            -> rel (LTerm body rel)
-instantiate bndL argL = do
-  bnd <- eval bndL
-  arg <- eval argL
-  let Bind x body = bnd
-  pure (Ground (project (subst x arg body)))
-
--- | Instantiate a binder and unify result with a logic variable.
---
--- @
--- instantiateTo bnd arg result  -- result = [arg/x]body
--- @
-instantiateTo :: (Redex rel, RedexEval rel, NominalAtom name, LogicType body, Permute name body, Subst name body)
-              => LTerm (Bind name body) rel
-              -> LTerm body rel
-              -> LTerm body rel
-              -> rel ()
-instantiateTo bnd arg result = do
-  resultVal <- instantiate bnd arg
-  result <=> resultVal
 
 --------------------------------------------------------------------------------
 -- Smart Constructor

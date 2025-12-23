@@ -30,6 +30,7 @@ import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Interp.Format (formatCon, formatConWith, intercalate, TermFormatter(..), DefaultTermFormatter(..), JudgmentFormatter(..))
 import TypedRedex.Interp.PrettyPrint (VarNaming(..), LogicVarNaming(..), namingByTag, subscriptNum)
 import TypedRedex.Interp.Subst (RedexFresh(..))
+import TypedRedex.Nominal.Hash (RedexHash(..))
 import TypedRedex.DSL.Define (Applied(..), CurriedR)
 import Control.Applicative
 import Control.Monad (when)
@@ -180,6 +181,11 @@ instance EqVar TypesettingRedex where
 -- We're just extracting rule structure, not executing.
 instance RedexNeg TypesettingRedex where
   neg _ = pure ()
+
+-- | Hash (freshness constraint) is a no-op for rule extraction.
+-- We're just extracting rule structure, not executing.
+instance RedexHash TypesettingRedex where
+  hash _ _ = pure ()
 
 -- | Fresh integer generation for nominal atoms.
 -- TypesettingRedex reuses the variable counter for fresh integers.
