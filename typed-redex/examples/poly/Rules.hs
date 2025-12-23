@@ -166,15 +166,18 @@ ssub = defJudge6 @"ssub" $ \rule ->
       prem $ isSvar senv a ty
       concl $ ssub env senv (tvar a) pos ty senv
 
-  , -- [S-MVar-R]: (env, senv) |- ty ≤- a -| senv' when ^a ∈ senv
-    rule "mvar-r" $ do
+  , rule "mvar-r" $ do
       (env, senv, a, ty, senv') <- fresh5
       prem $ isEvar senv a
       prem $ inst senv a ty senv'
       concl $ ssub env senv ty neg (tvar a) senv'
 
-  , -- [S-Arr]: (env, senv) |- (ty1 -> ty2) ≤ (ty3 -> ty4) -| senv''
-    rule "arr" $ do
+  , rule "svar-r" $ do
+      (env, senv, a, ty) <- fresh4
+      prem $ isSvar senv a ty
+      concl $ ssub env senv ty neg (tvar a) senv
+
+  , rule "arr" $ do
       (env, senv, ty1, ty2, ty3) <- fresh5
       (p, p') <- fresh2
       (ty4, senv1, senv2) <- fresh3
