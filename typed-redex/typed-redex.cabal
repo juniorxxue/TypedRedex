@@ -77,3 +77,14 @@ executable example-system-f
     typed-redex,
     mtl  >=2.2  && <3
   default-language: Haskell2010
+
+executable example-poly
+  hs-source-dirs:   examples/poly
+  main-is:          Main.hs
+  other-modules:    Syntax, Rules
+  build-depends:
+    base >=4.12 && <5,
+    containers >=0.6 && <1,
+    typed-redex,
+    mtl  >=2.2  && <3
+  default-language: Haskell2010

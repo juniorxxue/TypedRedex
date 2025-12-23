@@ -69,8 +69,13 @@ module TypedRedex.DSL.Moded
   , Judgment2
   , Judgment3
   , Judgment4
-  , mjudge, mjudge1, mjudge2, mjudge3, mjudge4
-  , defJudge1, defJudge2, defJudge3, defJudge4
+  , Judgment5
+  , Judgment6
+    -- ** Moded judgment aliases (In/Out syntax)
+  , In, Out, GetMode, GetType
+  , MJudgment1, MJudgment2, MJudgment3, MJudgment4, MJudgment5, MJudgment6
+  , mjudge, mjudge1, mjudge2, mjudge3, mjudge4, mjudge5, mjudge6
+  , defJudge1, defJudge2, defJudge3, defJudge4, defJudge5, defJudge6
   , toApplied
   , ToLTermList(..)
     -- * Rule building
@@ -81,6 +86,7 @@ module TypedRedex.DSL.Moded
   , fresh, fresh2, fresh3, fresh4, fresh5, fresh6
   , prem
   , neg
+  , (===), (=/=)
   , concl
   , liftRel
   , liftRelDeferred
@@ -132,6 +138,27 @@ instance SingModeList ms => SingModeList ('I ': ms) where
 
 instance SingModeList ms => SingModeList ('O ': ms) where
   singModeList = O :* singModeList
+
+--------------------------------------------------------------------------------
+-- Moded Type Wrappers
+--------------------------------------------------------------------------------
+
+-- | Phantom type wrapper for input mode with associated type.
+-- Used for concise judgment signatures: @MJudgment2 rel "foo" (In Env) (Out Ty)@
+data In (a :: Type)
+
+-- | Phantom type wrapper for output mode with associated type.
+data Out (a :: Type)
+
+-- | Extract mode from a moded type wrapper.
+type family GetMode (x :: Type) :: Mode where
+  GetMode (In _)  = 'I
+  GetMode (Out _) = 'O
+
+-- | Extract the underlying type from a moded type wrapper.
+type family GetType (x :: Type) :: Type where
+  GetType (In a)  = a
+  GetType (Out a) = a
 
 --------------------------------------------------------------------------------
 -- Moded Terms
@@ -493,6 +520,72 @@ type Judgment4 rel (name :: Symbol) (modes :: [Mode]) (t1 :: Type) (t2 :: Type) 
     T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel ->
     AppliedM rel name modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4]
 
+-- | Type alias for a 5-ary moded judgment function.
+type Judgment5 rel (name :: Symbol) (modes :: [Mode]) (t1 :: Type) (t2 :: Type) (t3 :: Type) (t4 :: Type) (t5 :: Type) =
+  forall vs1 vs2 vs3 vs4 vs5.
+    ( InputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5]
+    , OutputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5]
+    ) =>
+    T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel ->
+    AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5]
+
+-- | Type alias for a 6-ary moded judgment function.
+type Judgment6 rel (name :: Symbol) (modes :: [Mode]) (t1 :: Type) (t2 :: Type) (t3 :: Type) (t4 :: Type) (t5 :: Type) (t6 :: Type) =
+  forall vs1 vs2 vs3 vs4 vs5 vs6.
+    ( InputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6]
+    , OutputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6]
+    ) =>
+    T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel -> T vs6 t6 rel ->
+    AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6]
+
+--------------------------------------------------------------------------------
+-- Moded Judgment Aliases (using In/Out wrappers)
+--------------------------------------------------------------------------------
+
+-- | Moded judgment with 1 argument using In/Out syntax.
+--
+-- @
+-- value :: PolyRel rel => MJudgment1 rel "value" (In Tm)
+-- @
+type MJudgment1 rel (name :: Symbol) m1 =
+  Judgment1 rel name '[GetMode m1] (GetType m1)
+
+-- | Moded judgment with 2 arguments using In/Out syntax.
+--
+-- @
+-- isEvar :: PolyRel rel => MJudgment2 rel "isEvar" (In Env) (In TyNom)
+-- @
+type MJudgment2 rel (name :: Symbol) m1 m2 =
+  Judgment2 rel name '[GetMode m1, GetMode m2] (GetType m1) (GetType m2)
+
+-- | Moded judgment with 3 arguments using In/Out syntax.
+type MJudgment3 rel (name :: Symbol) m1 m2 m3 =
+  Judgment3 rel name '[GetMode m1, GetMode m2, GetMode m3]
+                     (GetType m1) (GetType m2) (GetType m3)
+
+-- | Moded judgment with 4 arguments using In/Out syntax.
+--
+-- @
+-- inst :: PolyRel rel => MJudgment4 rel "inst" (In Env) (In TyNom) (In Ty) (Out Env)
+-- @
+type MJudgment4 rel (name :: Symbol) m1 m2 m3 m4 =
+  Judgment4 rel name '[GetMode m1, GetMode m2, GetMode m3, GetMode m4]
+                     (GetType m1) (GetType m2) (GetType m3) (GetType m4)
+
+-- | Moded judgment with 5 arguments using In/Out syntax.
+type MJudgment5 rel (name :: Symbol) m1 m2 m3 m4 m5 =
+  Judgment5 rel name '[GetMode m1, GetMode m2, GetMode m3, GetMode m4, GetMode m5]
+                     (GetType m1) (GetType m2) (GetType m3) (GetType m4) (GetType m5)
+
+-- | Moded judgment with 6 arguments using In/Out syntax.
+--
+-- @
+-- ssub :: PolyRel rel => MJudgment6 rel "ssub" (In Env) (In Env) (In Ty) (In Polar) (In Ty) (Out Env)
+-- @
+type MJudgment6 rel (name :: Symbol) m1 m2 m3 m4 m5 m6 =
+  Judgment6 rel name '[GetMode m1, GetMode m2, GetMode m3, GetMode m4, GetMode m5, GetMode m6]
+                     (GetType m1) (GetType m2) (GetType m3) (GetType m4) (GetType m5) (GetType m6)
+
 -- | Convert TArgs to LTermList (strip variable tracking).
 class ToLTermList (vss :: [[Nat]]) (ts :: [Type]) where
   toLTermList :: TArgs vss ts rel -> LTermList rel ts
@@ -571,6 +664,30 @@ mjudge4 :: forall name modes rel t1 t2 t3 t4.
             -> AppliedM rel name modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4])
 mjudge4 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) =
   let args = t1 :! t2 :! t3 :! t4 :! ANil
+  in mjudge modes rules args
+
+-- | Convenience for 5-argument judgments.
+mjudge5 :: forall name modes rel t1 t2 t3 t4 t5.
+           (Redex rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, LogicType t5)
+        => ModeList modes
+        -> [ModedRule rel '[t1, t2, t3, t4, t5]]
+        -> (forall vs1 vs2 vs3 vs4 vs5. (InputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5], OutputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5])
+            => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel
+            -> AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5])
+mjudge5 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) t5@(T _ _) =
+  let args = t1 :! t2 :! t3 :! t4 :! t5 :! ANil
+  in mjudge modes rules args
+
+-- | Convenience for 6-argument judgments.
+mjudge6 :: forall name modes rel t1 t2 t3 t4 t5 t6.
+           (Redex rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, LogicType t5, LogicType t6)
+        => ModeList modes
+        -> [ModedRule rel '[t1, t2, t3, t4, t5, t6]]
+        -> (forall vs1 vs2 vs3 vs4 vs5 vs6. (InputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6], OutputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6])
+            => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel -> T vs6 t6 rel
+            -> AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6])
+mjudge6 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) t5@(T _ _) t6@(T _ _) =
+  let args = t1 :! t2 :! t3 :! t4 :! t5 :! t6 :! ANil
   in mjudge modes rules args
 
 -- | Define a unary moded judgment with scoped rule builder.
@@ -663,6 +780,40 @@ defJudge4 mkRules = mjudge4 singModeList (mkRules rule)
          -> ModedRule rel '[t1, t2, t3, t4]
     rule = ruleM @name
 
+-- | Define a 5-ary moded judgment with scoped rule builder.
+defJudge5 :: forall name modes rel t1 t2 t3 t4 t5.
+             (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, LogicType t5, UnifyLList rel '[t1, t2, t3, t4, t5], SingModeList modes)
+          => ((forall n steps. CheckSchedule name steps
+               => String -> RuleM rel '[t1, t2, t3, t4, t5] ('St 0 '[] 'False) ('St n steps 'True) ()
+               -> ModedRule rel '[t1, t2, t3, t4, t5])
+              -> [ModedRule rel '[t1, t2, t3, t4, t5]])
+          -> (forall vs1 vs2 vs3 vs4 vs5. (InputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5], OutputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5])
+              => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel
+              -> AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5])
+defJudge5 mkRules = mjudge5 singModeList (mkRules rule)
+  where
+    rule :: forall n steps. CheckSchedule name steps
+         => String -> RuleM rel '[t1, t2, t3, t4, t5] ('St 0 '[] 'False) ('St n steps 'True) ()
+         -> ModedRule rel '[t1, t2, t3, t4, t5]
+    rule = ruleM @name
+
+-- | Define a 6-ary moded judgment with scoped rule builder.
+defJudge6 :: forall name modes rel t1 t2 t3 t4 t5 t6.
+             (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, LogicType t5, LogicType t6, UnifyLList rel '[t1, t2, t3, t4, t5, t6], SingModeList modes)
+          => ((forall n steps. CheckSchedule name steps
+               => String -> RuleM rel '[t1, t2, t3, t4, t5, t6] ('St 0 '[] 'False) ('St n steps 'True) ()
+               -> ModedRule rel '[t1, t2, t3, t4, t5, t6])
+              -> [ModedRule rel '[t1, t2, t3, t4, t5, t6]])
+          -> (forall vs1 vs2 vs3 vs4 vs5 vs6. (InputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6], OutputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6])
+              => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel -> T vs6 t6 rel
+              -> AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6])
+defJudge6 mkRules = mjudge6 singModeList (mkRules rule)
+  where
+    rule :: forall n steps. CheckSchedule name steps
+         => String -> RuleM rel '[t1, t2, t3, t4, t5, t6] ('St 0 '[] 'False) ('St n steps 'True) ()
+         -> ModedRule rel '[t1, t2, t3, t4, t5, t6]
+    rule = ruleM @name
+
 -- | Convert AppliedM to Applied for running queries.
 toApplied :: AppliedM rel name modes vss ts -> Applied rel ts
 toApplied (AppliedM goal name args _ _) = Applied args goal name
@@ -735,6 +886,48 @@ neg applied = RuleM $ \env -> pure
   ( ()
   , env { reDeferred = NegA (NegAction (S.union (amReqVars applied) (amProdVars applied)) (amGoal applied)) : reDeferred env }
   )
+
+-- | Equality constraint: both arguments must be ground.
+--
+-- This is scheduled like a premise but produces no variables.
+-- Use when you need to check that two terms are equal.
+--
+-- @
+-- a === b   -- succeeds if a and b unify
+-- @
+infix 4 ===
+(===) :: forall a rel ts vs1 vs2 n steps c.
+         (Redex rel, LogicType a)
+      => T vs1 a rel -> T vs2 a rel
+      -> RuleM rel ts ('St n steps c)
+                   ('St n (Snoc steps ('PremStep ('Goal "==" (Union vs1 vs2) '[]))) c) ()
+(===) (T vars1 t1) (T vars2 t2) = RuleM $ \env -> do
+  markPremise "==" [CapturedTerm t1, CapturedTerm t2]
+  pure ( ()
+       , env { reDeferred = PremA (PremAction (S.union vars1 vars2) S.empty (t1 <=> t2))
+             : reDeferred env }
+       )
+
+-- | Inequality constraint: both arguments must be ground.
+--
+-- This is scheduled like a premise but produces no variables.
+-- Succeeds if the two terms are NOT equal (cannot unify).
+--
+-- @
+-- a =/= b   -- succeeds if a and b do not unify
+-- @
+infix 4 =/=
+(=/=) :: forall a rel ts vs1 vs2 n steps c.
+         (RedexNeg rel, LogicType a)
+      => T vs1 a rel -> T vs2 a rel
+      -> RuleM rel ts ('St n steps c)
+                   ('St n (Snoc steps ('PremStep ('Goal "=/=" (Union vs1 vs2) '[]))) c) ()
+(=/=) (T vars1 t1) (T vars2 t2) = RuleM $ \env -> do
+  markPremise "=/=" [CapturedTerm t1, CapturedTerm t2]
+  pure ( ()
+       , env { reDeferred = PremA (PremAction (S.union vars1 vars2) S.empty (R.neg (t1 <=> t2)))
+             : reDeferred env }
+       )
 
 -- | Unify two argument lists.
 class UnifyTArgs rel ts where
