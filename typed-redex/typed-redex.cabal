@@ -38,11 +38,14 @@ library
     TypedRedex.Interp.Run
     TypedRedex.Interp.Format
     TypedRedex.Interp.PrettyPrint
+    -- Testing support
+    TypedRedex.Test.Property
   build-depends:
     base >=4.12 && <5,
     containers >=0.6 && <1,
     mtl  >=2.2  && <3,
-    template-haskell >=2.14
+    template-haskell >=2.14,
+    QuickCheck >=2.14 && <3
   default-language: Haskell2010
 
 executable example-stlc-bidir
@@ -87,4 +90,17 @@ executable example-poly
     containers >=0.6 && <1,
     typed-redex,
     mtl  >=2.2  && <3
+  default-language: Haskell2010
+
+test-suite test-poly-properties
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   examples/poly
+  main-is:          Properties.hs
+  other-modules:    Syntax, Rules
+  build-depends:
+    base >=4.12 && <5,
+    containers >=0.6 && <1,
+    typed-redex,
+    mtl  >=2.2  && <3,
+    QuickCheck >=2.14 && <3
   default-language: Haskell2010
