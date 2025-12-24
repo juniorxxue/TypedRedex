@@ -22,20 +22,26 @@ module TypedRedex.Interp.Typesetting
   , printRules
   , printRulesWith
   , ApplyTypesettingVars(..)
+    -- * Support for moded judgments
+  , modedToApplied
+  , modedVar
   ) where
 
 import TypedRedex.Core.Internal.Redex
 import TypedRedex.Core.Internal.Logic
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.Interp.Format (formatCon, formatConWith, intercalate, TermFormatter(..), DefaultTermFormatter(..), JudgmentFormatter(..))
-import TypedRedex.Interp.PrettyPrint (VarNaming(..), LogicVarNaming(..), namingByTag, subscriptNum)
+import TypedRedex.Interp.PrettyPrint (TypesetNaming(..), subscriptNum)
 import TypedRedex.Interp.Subst (RedexFresh(..))
 import TypedRedex.Nominal.Hash (RedexHash(..))
 import TypedRedex.DSL.Define (Applied(..), CurriedR)
+import TypedRedex.DSL.Moded (T(..), AppliedM(..), toApplied, ground)
 import Control.Applicative
 import Control.Monad (when)
 import Control.Monad.State
 import Data.Proxy (Proxy(..))
+import Data.Typeable (TypeRep, Typeable, typeRep)
+import qualified Data.Map.Strict as M
 
 --------------------------------------------------------------------------------
 -- Extracted Rule (the only data structure we need)
@@ -80,13 +86,20 @@ data TypesettingState = TypesettingState
   , tsRules      :: [ExtractedRule]       -- ^ Completed rules
   , tsDepth      :: Int                   -- ^ Expansion depth
   , tsFormatter  :: String -> [String] -> String
+  -- Eager renumbering state (per-rule, reset on each rule)
+  , tsVarMap     :: M.Map (TypeRep, Int) Int  -- ^ (type, internalId) -> displayNum
+  , tsVarCounts  :: M.Map TypeRep Int         -- ^ Next display number per type
   }
 
 initState :: TypesettingState
 initState = initStateWith formatCon
 
 initStateWith :: (String -> [String] -> String) -> TypesettingState
-initStateWith fmt = TypesettingState 0 emptyBuilder [] 0 fmt
+initStateWith fmt = TypesettingState 0 emptyBuilder [] 0 fmt M.empty M.empty
+
+-- | Reset renumbering state (called at start of each rule)
+resetRenumbering :: TypesettingState -> TypesettingState
+resetRenumbering s = s { tsVarMap = M.empty, tsVarCounts = M.empty }
 
 --------------------------------------------------------------------------------
 -- Typesetting Redex Interpreter
@@ -99,14 +112,14 @@ instance Alternative TypesettingRedex where
   empty = TypesettingRedex $ pure (error "TypesettingRedex: empty")
   a <|> b = do
     s0 <- get
-    -- Run branch a
-    put $ s0 { tsBuilder = emptyBuilder, tsRules = [] }
+    -- Run branch a (reset renumbering for fresh variable names)
+    put $ resetRenumbering $ s0 { tsBuilder = emptyBuilder, tsRules = [] }
     _ <- a
     rulesA <- gets tsRules
     builderA <- gets tsBuilder
     let rulesA' = if null (rbName builderA) then rulesA else finishRule builderA : rulesA
-    -- Run branch b
-    put $ s0 { tsBuilder = emptyBuilder, tsRules = [] }
+    -- Run branch b (reset renumbering for fresh variable names)
+    put $ resetRenumbering $ s0 { tsBuilder = emptyBuilder, tsRules = [] }
     _ <- b
     rulesB <- gets tsRules
     builderB <- gets tsBuilder
@@ -138,7 +151,7 @@ instance Redex TypesettingRedex where
     when inConcl $ do
       fmt <- gets tsFormatter
       -- Capture x (the pattern/term), not y (the fresh variable)
-      let pattern = prettyLFmt fmt x
+      pattern <- prettyLFmt fmt x
       modify $ \s -> s { tsBuilder = (tsBuilder s) { rbPatterns = pattern : rbPatterns (tsBuilder s) } }
 
   suspend = id
@@ -172,7 +185,7 @@ instance Redex TypesettingRedex where
 prettyCaptured :: CapturedTerm TypesettingRedex -> TypesettingRedex String
 prettyCaptured (CapturedTerm term) = do
   fmt <- gets tsFormatter
-  pure $ prettyLFmt fmt term
+  prettyLFmt fmt term
 
 instance EqVar TypesettingRedex where
   varEq (TVar a) (TVar b) = a == b
@@ -201,27 +214,65 @@ instance RedexEval TypesettingRedex where
   derefVar _ = error "TypesettingRedex: derefVar should not be called during rule extraction"
 
 --------------------------------------------------------------------------------
--- Pretty-printing Logic terms
+-- Eager variable renumbering
 --------------------------------------------------------------------------------
 
-prettyLFmt :: forall a. LogicType a => (String -> [String] -> String) -> Logic a (RVar TypesettingRedex) -> String
-prettyLFmt _ (Free v) =
+-- | Get or assign a display number for a variable.
+-- Uses TypeRep as the type identifier for the renumbering map.
+getDisplayNum :: forall a. Typeable a => Int -> TypesettingRedex Int
+getDisplayNum internalId = do
+  let tyRep = typeRep (Proxy @a)
+  varMap <- gets tsVarMap
+  case M.lookup (tyRep, internalId) varMap of
+    Just displayNum -> pure displayNum
+    Nothing -> do
+      -- First occurrence: assign next display number for this type
+      counts <- gets tsVarCounts
+      let displayNum = M.findWithDefault 0 tyRep counts
+      modify $ \s -> s
+        { tsVarMap = M.insert (tyRep, internalId) displayNum (tsVarMap s)
+        , tsVarCounts = M.insert tyRep (displayNum + 1) (tsVarCounts s)
+        }
+      pure displayNum
+
+--------------------------------------------------------------------------------
+-- Pretty-printing Logic terms (monadic, with eager renumbering)
+--------------------------------------------------------------------------------
+
+prettyLFmt :: forall a. (LogicType a, TypesetNaming a, Typeable a)
+           => (String -> [String] -> String)
+           -> Logic a (RVar TypesettingRedex)
+           -> TypesettingRedex String
+prettyLFmt _ (Free v) = do
   case unVar v of
-    TVar n -> "«" ++ vnTag (varNaming @a) ++ ":" ++ show n ++ "»"
+    TVar n -> do
+      displayNum <- getDisplayNum @a n
+      pure $ typesetName @a displayNum
 prettyLFmt fmt (Ground r) = prettyReifiedFmt fmt r
 
-prettyReifiedFmt :: LogicType a => (String -> [String] -> String) -> Reified a (RVar TypesettingRedex) -> String
-prettyReifiedFmt fmt r =
+prettyReifiedFmt :: (LogicType a, Typeable a)
+                 => (String -> [String] -> String)
+                 -> Reified a (RVar TypesettingRedex)
+                 -> TypesettingRedex String
+prettyReifiedFmt fmt r = do
   let (name, fields) = quote r
-  in fmt name (map (prettyFieldFmt fmt) fields)
+  fieldStrs <- mapM (prettyFieldFmt fmt) fields
+  pure $ fmt name fieldStrs
 
-prettyFieldFmt :: (String -> [String] -> String) -> Field a (RVar TypesettingRedex) -> String
+prettyFieldFmt :: (String -> [String] -> String)
+               -> Field a (RVar TypesettingRedex)
+               -> TypesettingRedex String
 prettyFieldFmt fmt (Field _ logic) = prettyLogicAnyFmt fmt logic
 
-prettyLogicAnyFmt :: forall t. LogicType t => (String -> [String] -> String) -> Logic t (RVar TypesettingRedex) -> String
-prettyLogicAnyFmt _ (Free v) =
+prettyLogicAnyFmt :: forall t. (LogicType t, TypesetNaming t, Typeable t)
+                  => (String -> [String] -> String)
+                  -> Logic t (RVar TypesettingRedex)
+                  -> TypesettingRedex String
+prettyLogicAnyFmt _ (Free v) = do
   case unVar v of
-    TVar n -> "«" ++ vnTag (varNaming @t) ++ ":" ++ show n ++ "»"
+    TVar n -> do
+      displayNum <- getDisplayNum @t n
+      pure $ typesetName @t displayNum
 prettyLogicAnyFmt fmt (Ground r) = prettyReifiedFmt fmt r
 
 --------------------------------------------------------------------------------
@@ -243,75 +294,20 @@ runTypesettingWith fmt (TypesettingRedex m) =
      else reverse (finishRule builder : rules)
 
 --------------------------------------------------------------------------------
--- Variable renumbering
---------------------------------------------------------------------------------
-
--- | Remove duplicates preserving first-occurrence order
-nub :: Eq a => [a] -> [a]
-nub [] = []
-nub (x:xs) = x : nub (filter (/= x) xs)
-
-parseVarMarkers :: String -> [(String, Int)]
-parseVarMarkers [] = []
-parseVarMarkers ('«':rest) =
-  case break (== ':') rest of
-    (tag, ':':rest2) ->
-      case break (== '»') rest2 of
-        (idStr, '»':rest3) ->
-          case reads idStr of
-            [(n, "")] -> (tag, n) : parseVarMarkers rest3
-            _ -> parseVarMarkers rest3
-        _ -> parseVarMarkers rest2
-    _ -> parseVarMarkers rest
-parseVarMarkers (_:rest) = parseVarMarkers rest
-
-buildRenumberMap :: [(String, Int)] -> [((String, Int), Int)]
-buildRenumberMap markers =
-  let tags = nub [t | (t, _) <- markers]
-      grouped = [(t, nub [i | (t', i) <- markers, t == t']) | t <- tags]
-  in concatMap (\(tag, ids) -> [((tag, oldId), newId) | (oldId, newId) <- zip ids [0..]]) grouped
-
-varNameByTag :: String -> Int -> String
-varNameByTag tag = vnName (namingByTag tag)
-
-renumberVars :: String -> String
-renumberVars s =
-  let markers = parseVarMarkers s
-      renumberMap = buildRenumberMap markers
-      lookupNew tag oldId = case lookup (tag, oldId) renumberMap of
-        Just newId -> varNameByTag tag newId
-        Nothing -> "?" ++ tag ++ show oldId
-  in substituteMarkers lookupNew s
-
-substituteMarkers :: (String -> Int -> String) -> String -> String
-substituteMarkers _ [] = []
-substituteMarkers lookupNew ('«':rest) =
-  case break (== ':') rest of
-    (tag, ':':rest2) ->
-      case break (== '»') rest2 of
-        (idStr, '»':rest3) ->
-          case reads idStr of
-            [(n, "")] -> lookupNew tag n ++ substituteMarkers lookupNew rest3
-            _ -> '«' : substituteMarkers lookupNew rest
-        _ -> '«' : substituteMarkers lookupNew rest
-    _ -> '«' : substituteMarkers lookupNew rest
-substituteMarkers lookupNew (c:rest) = c : substituteMarkers lookupNew rest
-
---------------------------------------------------------------------------------
 -- Formatting rules
 --------------------------------------------------------------------------------
 
--- | Format an extracted rule as ASCII inference rule
+-- | Format an extracted rule as ASCII inference rule.
+-- No post-processing needed - variable names are already resolved.
 formatRule :: JudgmentFormatter fmt => fmt -> String -> ExtractedRule -> String
 formatRule fmt judgmentName rule =
   let conclusion = formatJudgment fmt judgmentName (erPatterns rule)
       prems = map (\(pname, pargs) -> formatJudgment fmt pname pargs) (erPremises rule)
       maxLen = maximum $ length conclusion : map length prems
       line = replicate (maxLen + 4) '─'
-      raw = (if null prems then "" else unlines (map ("  " ++) prems)) ++
-            "  " ++ line ++ " [" ++ erName rule ++ "]\n" ++
-            "  " ++ conclusion
-  in renumberVars raw
+  in (if null prems then "" else unlines (map ("  " ++) prems)) ++
+     "  " ++ line ++ " [" ++ erName rule ++ "]\n" ++
+     "  " ++ conclusion
 
 -- | Format with default formatter
 formatRuleWith :: String -> ExtractedRule -> String
@@ -372,3 +368,23 @@ printRulesWith fmt judgmentName rel = do
       applied = applyTypesettingVarsTo (Proxy @ts) 0 rel
   let rules = runTypesettingWith fmt $ appGoal applied
   mapM_ (\r -> putStrLn (formatRule fmt judgmentName r) >> putStrLn "") rules
+
+--------------------------------------------------------------------------------
+-- Support for moded judgments
+--------------------------------------------------------------------------------
+
+-- | Convert an AppliedM (from moded judgment) to Applied (for typesetting).
+--
+-- Re-export of 'toApplied' for convenience.
+modedToApplied :: AppliedM TypesettingRedex name modes vss ts -> Applied TypesettingRedex ts
+modedToApplied = toApplied
+
+-- | Create a ground moded term for typesetting.
+--
+-- Use this to create arguments for moded judgments when typesetting:
+--
+-- @
+-- let applied = modedToApplied $ ssub (modedVar 0) (modedVar 1) (modedVar 2) ...
+-- @
+modedVar :: LogicType a => Int -> T '[] a TypesettingRedex
+modedVar n = ground (typesettingVar n)

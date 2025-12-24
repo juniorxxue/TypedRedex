@@ -1,4 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 -- | Pretty-printing utilities for variable naming and subscript conversion.
 --
@@ -8,30 +11,11 @@ module TypedRedex.Interp.PrettyPrint
   ( -- * Subscript conversion
     subscriptNum
   , subscriptStr
-    -- * Variable naming bundles
-  , VarNaming(..)
-  , ctxNaming
-  , tyNaming
-  , tmNaming
-  , natNaming
-  , nomNaming
-  , tyNomNaming
-  , defaultNaming
-  , namingByTag
-    -- * Variable naming functions (for direct use)
-  , ctxVarName
-  , tyVarName
-  , tmVarName
-  , natVarName
-  , nomVarName
-  , tyNomVarName
-  , defaultVarName
-    -- * Type class for variable naming
-  , LogicVarNaming(..)
+    -- * Type class for typesetting variable naming
+  , TypesetNaming(..)
+    -- * Helpers for defining naming schemes
+  , cycleNames
   ) where
-
-import Data.Maybe (fromMaybe)
-import Data.List (find)
 
 -- | Convert an Int to subscript digits.
 -- @subscriptNum 42 = "₄₂"@
@@ -48,104 +32,44 @@ subscriptStr = concatMap toSub
     toSub '8' = "₈"; toSub '9' = "₉"; toSub c = [c]
 
 --------------------------------------------------------------------------------
--- Variable naming bundles
+-- Typesetting variable naming
 --------------------------------------------------------------------------------
 
--- | A bundle of variable naming info: a tag for identification and a naming function.
--- Use pre-defined bundles (ctxNaming, tyNaming, etc.) to ensure consistency.
-data VarNaming = VarNaming
-  { vnTag  :: String          -- ^ Tag for variable categorization (e.g., "C", "T", "E")
-  , vnName :: Int -> String   -- ^ Naming function: index -> display name
-  }
-
--- | Context naming: tag "C", names Γ, Γ₁, Γ₂, ...
-ctxNaming :: VarNaming
-ctxNaming = VarNaming "C" ctxVarName
-
--- | Type naming: tag "T", names A, B, C, D, E, F, A₁, ...
-tyNaming :: VarNaming
-tyNaming = VarNaming "T" tyVarName
-
--- | Term/expression naming: tag "E", names e, e₁, e₂, ...
-tmNaming :: VarNaming
-tmNaming = VarNaming "E" tmVarName
-
--- | Natural number naming: tag "N", names n, m, k, n₁, ...
-natNaming :: VarNaming
-natNaming = VarNaming "N" natVarName
-
--- | Nom (term variable name) naming: tag "X", names x, y, z, x₁, y₁, z₁, ...
-nomNaming :: VarNaming
-nomNaming = VarNaming "X" nomVarName
-
--- | TyNom (type variable name) naming: tag "A", names α, β, σ, α₁, β₁, σ₁, ...
-tyNomNaming :: VarNaming
-tyNomNaming = VarNaming "A" tyNomVarName
-
--- | Default naming: tag "V", names v₀, v₁, v₂, ...
-defaultNaming :: VarNaming
-defaultNaming = VarNaming "V" defaultVarName
-
--- | All known naming schemes (for tag lookup)
-allNamings :: [VarNaming]
-allNamings = [ctxNaming, tyNaming, tmNaming, natNaming, nomNaming, tyNomNaming, defaultNaming]
-
--- | Look up a naming scheme by its tag. Returns defaultNaming if not found.
-namingByTag :: String -> VarNaming
-namingByTag tag = fromMaybe defaultNaming $ find (\n -> vnTag n == tag) allNamings
-
---------------------------------------------------------------------------------
--- Variable naming functions
---------------------------------------------------------------------------------
-
--- | Context variables: Γ, Γ₁, Γ₂, ...
-ctxVarName :: Int -> String
-ctxVarName 0 = "Γ"
-ctxVarName i = "Γ" ++ subscriptNum i
-
--- | Type variables: A, B, C, D, E, F, A₁, B₁, ...
-tyVarName :: Int -> String
-tyVarName i = let (q, r) = i `divMod` 6
-                  base = ["A", "B", "C", "D", "E", "F"] !! r
-              in if q == 0 then base else base ++ subscriptNum q
-
--- | Term/expression variables: e, e₁, e₂, ...
-tmVarName :: Int -> String
-tmVarName 0 = "e"
-tmVarName i = "e" ++ subscriptNum i
-
--- | Natural number variables: n, m, k, n₁, m₁, k₁, ...
-natVarName :: Int -> String
-natVarName i = let (q, r) = i `divMod` 3
-                   base = ["n", "m", "k"] !! r
-               in if q == 0 then base else base ++ subscriptNum q
-
--- | Nom (term variable name) variables: x, y, z, x₁, y₁, z₁, ...
-nomVarName :: Int -> String
-nomVarName i = let (q, r) = i `divMod` 3
-                   base = ["x", "y", "z"] !! r
-               in if q == 0 then base else base ++ subscriptNum q
-
--- | TyNom (type variable name) variables: α, β, σ, α₁, β₁, σ₁, ...
-tyNomVarName :: Int -> String
-tyNomVarName i = let (q, r) = i `divMod` 3
-                     base = ["α", "β", "σ"] !! r
-                 in if q == 0 then base else base ++ subscriptNum q
-
--- | Default variable naming: v₀, v₁, v₂, ...
-defaultVarName :: Int -> String
-defaultVarName n = "v" ++ subscriptNum n
-
---------------------------------------------------------------------------------
--- Type class for variable naming
---------------------------------------------------------------------------------
-
--- | Type class for specifying how logic variables of a type should be named.
+-- | Type class for customizing how logic variables appear in typeset rules.
 --
--- Separate from LogicType to allow user customization without affecting
--- the core logic type machinery.
+-- Example:
 --
--- Default instance uses tmNaming (e, e₁, e₂, ...).
-class LogicVarNaming a where
-  varNaming :: VarNaming
-  varNaming = tmNaming
+-- @
+-- instance TypesetNaming Env where
+--   typesetName = cycleNames [\"Γ\", \"Δ\", \"Θ\"]
+--
+-- instance TypesetNaming Ty where
+--   typesetName = cycleNames [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]
+-- @
+--
+-- Default uses e, e₁, e₂, ...
+class TypesetNaming a where
+  typesetName :: Int -> String
+  typesetName 0 = "e"
+  typesetName i = "e" ++ subscriptNum i
+
+--------------------------------------------------------------------------------
+-- Helpers for defining naming schemes
+--------------------------------------------------------------------------------
+
+-- | Create a naming function that cycles through a list of base names,
+-- adding subscripts when the list is exhausted.
+--
+-- @
+-- cycleNames [\"Γ\", \"Δ\", \"Θ\"] 0 = \"Γ\"
+-- cycleNames [\"Γ\", \"Δ\", \"Θ\"] 1 = \"Δ\"
+-- cycleNames [\"Γ\", \"Δ\", \"Θ\"] 2 = \"Θ\"
+-- cycleNames [\"Γ\", \"Δ\", \"Θ\"] 3 = \"Γ₁\"
+-- cycleNames [\"Γ\", \"Δ\", \"Θ\"] 4 = \"Δ₁\"
+-- @
+cycleNames :: [String] -> Int -> String
+cycleNames bases i =
+  let n = length bases
+      (q, r) = i `divMod` n
+      base = bases !! r
+  in if q == 0 then base else base ++ subscriptNum q

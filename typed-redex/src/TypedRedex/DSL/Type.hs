@@ -8,13 +8,11 @@ module TypedRedex.DSL.Type
 ( field
 , quote0, quote1, quote2, quote3
 , LogicType(quote, unifyVal, derefVal)
-, LogicVarNaming
 , empty
 ) where
 
 import Data.Proxy (Proxy(Proxy))
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming)
 import Control.Applicative (Alternative (empty))
 
 -- | Wrap a logic term as a field for quote.

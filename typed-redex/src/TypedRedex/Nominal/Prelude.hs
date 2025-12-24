@@ -45,7 +45,7 @@ import TypedRedex.Core.Internal.Logic
 import TypedRedex.DSL.Fresh (LTerm, Freshable(..))
 import TypedRedex.Interp.Run (eval)
 import TypedRedex.Interp.Subst (RedexFresh(..))
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), VarNaming(..))
+import TypedRedex.Interp.PrettyPrint (TypesetNaming(..), cycleNames)
 import TypedRedex.Nominal.Nom (NominalAtom(..))
 import TypedRedex.Nominal.Bind (Bind(..), Permute(..), mkBind)
 import TypedRedex.Nominal.Hash (Hash(..))
@@ -81,8 +81,8 @@ instance NominalAtom TyNom
 -- LogicType Instances
 --------------------------------------------------------------------------------
 
-instance LogicVarNaming Nom where
-  varNaming = VarNaming "X" (\i -> "x?" ++ show i)
+instance TypesetNaming Nom where
+  typesetName = cycleNames ["x", "y", "z"]
 
 instance LogicType Nom where
   data Reified Nom var = NomR Int
@@ -101,8 +101,8 @@ instance LogicType Nom where
   derefVal _ (NomR n) = pure (Nom n)
 
 
-instance LogicVarNaming TyNom where
-  varNaming = VarNaming "A" (\i -> "α?" ++ show i)
+instance TypesetNaming TyNom where
+  typesetName = cycleNames ["α", "β", "γ"]
 
 instance LogicType TyNom where
   data Reified TyNom var = TyNomR Int

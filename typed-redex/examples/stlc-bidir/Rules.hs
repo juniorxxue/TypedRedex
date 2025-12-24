@@ -24,7 +24,7 @@ module Rules
 import Prelude hiding ((>>=), (>>), return)
 import Control.Applicative (empty)
 import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, ground, lift1, lift2, lift3, neg)
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), ctxNaming, natNaming, tmNaming, tyNaming)
+import TypedRedex.Interp.PrettyPrint (TypesetNaming(..), cycleNames)
 import TypedRedex.DSL.Type (quote0, quote1, quote2)
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Moded
@@ -41,8 +41,7 @@ import TypedRedex.DSL.Moded
 
 data Nat = Z | S Nat deriving (Eq, Show)
 
-instance LogicVarNaming Nat where
-  varNaming = natNaming
+instance TypesetNaming Nat  -- uses default
 
 instance LogicType Nat where
   data Reified Nat var = ZR | SR (Logic Nat var)
@@ -84,8 +83,8 @@ suc = lift1 suc_
 
 data Ty = TUnit | TArr Ty Ty deriving (Eq, Show)
 
-instance LogicVarNaming Ty where
-  varNaming = tyNaming
+instance TypesetNaming Ty where
+  typesetName = cycleNames ["A", "B", "C", "D", "E", "F"]
 
 instance LogicType Ty where
   data Reified Ty var
@@ -135,8 +134,7 @@ data Tm
   | Ann Tm Ty         -- (e : A)
   deriving (Eq, Show)
 
-instance LogicVarNaming Tm where
-  varNaming = tmNaming
+instance TypesetNaming Tm  -- uses default
 
 instance LogicType Tm where
   data Reified Tm var
@@ -227,8 +225,8 @@ ann = lift2 ann_
 
 data Ctx = Nil | Cons Ty Ctx deriving (Eq, Show)
 
-instance LogicVarNaming Ctx where
-  varNaming = ctxNaming
+instance TypesetNaming Ctx where
+  typesetName = cycleNames ["Γ", "Δ", "Θ"]
 
 instance LogicType Ctx where
   data Reified Ctx var

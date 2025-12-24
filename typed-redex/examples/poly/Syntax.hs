@@ -12,7 +12,7 @@ import TypedRedex.Nominal
 import TypedRedex.Nominal.Bind (Bind(..))
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Nominal.Hash (Hash(..))
-import TypedRedex.Interp.PrettyPrint (VarNaming(..), LogicVarNaming(..), subscriptNum)
+import TypedRedex.Interp.PrettyPrint (TypesetNaming(..), cycleNames)
 import TypedRedex.DSL.TH (deriveLogicTypeNoNaming, derivePermute, deriveHash, (~>))
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.DSL.Moded (T(..), ground, Union)
@@ -37,8 +37,8 @@ data Ty
   | TProd Ty Ty                -- ty1 * ty2
   deriving (Eq, Show)
 
-instance LogicVarNaming Ty where
-  varNaming = VarNaming "T" (\i -> "ty" ++ show i)
+instance TypesetNaming Ty where
+  typesetName = cycleNames ["A", "B", "C", "D", "E", "F"]
 
 derivePermute ''Ty [''TyNom]
 
@@ -84,8 +84,7 @@ data Tm
   | Snd Tm                         -- snd e
   deriving (Eq, Show)
 
-instance LogicVarNaming Tm where
-  varNaming = VarNaming "E" (\i -> "e" ++ show i)
+instance TypesetNaming Tm  -- uses default (e, e₁, e₂, ...)
 
 derivePermute ''Tm [''TyNom, ''Nom]
 
@@ -130,8 +129,9 @@ data Polar
   | Neg
   deriving (Eq, Show)
 
-instance LogicVarNaming Polar where
-  varNaming = VarNaming "P" (\i -> "p" ++ show i)
+-- Custom typesetting: cycle through p, q
+instance TypesetNaming Polar where
+  typesetName = cycleNames ["p", "q"]
 
 deriveLogicTypeNoNaming ''Polar
   [ 'Pos ~> ("Pos", "pos")
@@ -152,8 +152,9 @@ data Env
   | ESvar TyNom Ty Env        -- Γ, α = τ
   deriving (Eq, Show)
 
-instance LogicVarNaming Env where
-  varNaming = VarNaming "Γ" (\i -> "Γ" ++ subscriptNum i)
+-- Custom typesetting: cycle through Γ, Δ, Θ
+instance TypesetNaming Env where
+  typesetName = cycleNames ["Γ", "Δ", "Θ"]
 
 derivePermute ''Env [''TyNom, ''Nom]
 

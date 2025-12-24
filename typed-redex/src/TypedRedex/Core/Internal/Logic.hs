@@ -19,7 +19,7 @@
 -- for writing relations is "TypedRedex". However, when defining custom syntax
 -- types (or deriving instances), these types show up in error messages and
 -- editor hover info — so we keep the signatures and names intentionally
--- “print-friendly”.
+-- "print-friendly".
 module TypedRedex.Core.Internal.Logic
   ( -- * Logic terms
     Logic(..)
@@ -36,7 +36,8 @@ module TypedRedex.Core.Internal.Logic
 import Control.Applicative (Alternative)
 import Data.Kind (Type)
 import Data.Proxy (Proxy)
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming)
+import Data.Typeable (Typeable)
+import TypedRedex.Interp.PrettyPrint (TypesetNaming)
 
 --------------------------------------------------------------------------------
 -- Logic terms and variables
@@ -88,7 +89,11 @@ data Field parent var where
 -- * Structural unification ('unifyVal')
 -- * Quoting for pretty-printing ('quote')
 -- * Evaluation/dereferencing ('derefVal')
-class LogicVarNaming a => LogicType a where
+--
+-- The superclass constraints ensure:
+-- * 'TypesetNaming' - how variables are named in typeset rules
+-- * 'Typeable' - runtime type representation for eager renumbering
+class (TypesetNaming a, Typeable a) => LogicType a where
   -- | Reified representation of @a@ that stores children as 'Logic' terms.
   data Reified a (var :: Type -> Type) :: Type
 

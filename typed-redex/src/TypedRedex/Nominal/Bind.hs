@@ -31,7 +31,7 @@ module TypedRedex.Nominal.Bind
 import Control.Applicative (empty)
 import Data.Proxy (Proxy(..))
 import TypedRedex.Core.Internal.Logic
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), VarNaming(..))
+import TypedRedex.Interp.PrettyPrint (TypesetNaming(..))
 import TypedRedex.Nominal.Nom (NominalAtom(..))
 
 --------------------------------------------------------------------------------
@@ -69,8 +69,7 @@ instance (NominalAtom name, Permute name body) => Permute name (Bind name body) 
 data Bind name body = Bind !name body
   deriving (Eq, Show)
 
-instance LogicVarNaming (Bind name body) where
-  varNaming = VarNaming "B" (\i -> "bnd" ++ show i)
+instance TypesetNaming (Bind name body)  -- uses default
 
 instance (NominalAtom name, LogicType body, Permute name body) => LogicType (Bind name body) where
   data Reified (Bind name body) var = BindR (Logic name var) (Logic body var)

@@ -20,7 +20,7 @@ module Rules
 import Prelude hiding ((>>=), (>>), return)
 import Control.Applicative (empty)
 import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, ground, lift1, lift2, lift3, neg)
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..), natNaming, tmNaming)
+import TypedRedex.Interp.PrettyPrint (TypesetNaming(..))
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Moded
@@ -37,8 +37,7 @@ import TypedRedex.DSL.Moded
 
 data Nat = Z | S Nat deriving (Eq, Show)
 
-instance LogicVarNaming Nat where
-  varNaming = natNaming
+instance TypesetNaming Nat  -- uses default
 
 instance LogicType Nat where
   data Reified Nat var = ZR | SR (Logic Nat var)
@@ -89,8 +88,7 @@ data Tm
   | Fix Tm             -- fix e (fixpoint combinator)
   deriving (Eq, Show)
 
-instance LogicVarNaming Tm where
-  varNaming = tmNaming
+instance TypesetNaming Tm  -- uses default
 
 instance LogicType Tm where
   data Reified Tm var

@@ -14,7 +14,7 @@ import TypedRedex.Nominal.Bind (mkBindL)
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Nominal.Hash (Hash(..))
 import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
-import TypedRedex.Interp.PrettyPrint (VarNaming(..), LogicVarNaming(..), ctxNaming, subscriptNum)
+import TypedRedex.Interp.PrettyPrint (TypesetNaming(..), cycleNames)
 import TypedRedex.DSL.TH (deriveLogicTypeNoNaming, derivePermute, deriveHash, deriveSubsto, (~>))
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.DSL.Moded (T(..), ground, lift1, lift2, lift3, Union)
@@ -53,9 +53,9 @@ data Ty
   | TAll (Bind TyNom Ty)    -- Universal type: forall alpha. A
   deriving (Eq, Show)
 
--- Custom naming: A, B, C, D, E, F, A1, ...
-instance LogicVarNaming Ty where
-  varNaming = VarNaming "T" (\i -> "ty" ++ show i)
+-- Custom naming: A, B, C, D, E, F, A₁, ...
+instance TypesetNaming Ty where
+  typesetName = cycleNames ["A", "B", "C", "D", "E", "F"]
 
 -- NOTE: Permute must be derived BEFORE LogicType because Bind needs it
 -- Generates: instance Permute TyNom Ty (structural swap)
@@ -101,9 +101,7 @@ data Tm
   | TApp Tm Ty                  -- Type application: e [A]
   deriving (Eq, Show)
 
--- Custom naming: e1, e2, e3, ... (starting from 1, not 0)
-instance LogicVarNaming Tm where
-  varNaming = VarNaming "E" (\i -> "e" ++ subscriptNum (i + 1))
+instance TypesetNaming Tm  -- uses default (e, e₁, e₂, ...)
 
 -- NOTE: Permute must be derived BEFORE LogicType because Bind needs it
 -- Generates: instance Permute Nom Tm, instance Permute TyNom Tm
@@ -167,9 +165,9 @@ data Ctx
   | TyBind' TyNom Ctx      -- Type variable binding: alpha
   deriving (Eq, Show)
 
--- Custom naming: Gamma, Gamma1, Gamma2, ...
-instance LogicVarNaming Ctx where
-  varNaming = ctxNaming
+-- Custom typesetting: Γ, Δ, Θ, Γ₁, ...
+instance TypesetNaming Ctx where
+  typesetName = cycleNames ["Γ", "Δ", "Θ"]
 
 -- Generates: LogicType instance and moded constructors
 deriveLogicTypeNoNaming ''Ctx

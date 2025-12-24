@@ -13,11 +13,7 @@
 -- {-# LANGUAGE TypeFamilies #-}
 -- {-# LANGUAGE TemplateHaskell #-}
 --
--- import Control.Applicative (empty, pure, (\<$\>), (\<*\>), (*\>))
 -- import TypedRedex
--- import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(..), Reified)
--- import TypedRedex.Interp.PrettyPrint (LogicVarNaming(..))
--- import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 -- import TypedRedex.DSL.TH (deriveLogicType, (~>))
 --
 -- data Tm = Unit | Var Nat | Lam Ty Tm | App Tm Tm
@@ -33,7 +29,7 @@
 --
 -- This generates:
 --
--- 1. @instance LogicVarNaming Tm@ (using default naming)
+-- 1. @instance TypesetNaming Tm@ (using default naming: e, e₁, e₂, ...)
 -- 2. @instance LogicType Tm@ with:
 --    - @data Reified Tm var = UnitR | VarR (Logic Nat var) | ...@
 --    - All required methods (@project@, @reify@, @quote@, @unifyVal@, @derefVal@)
@@ -41,14 +37,14 @@
 --
 -- = Custom Variable Naming
 --
--- To use custom variable naming, define the 'LogicVarNaming' instance
--- /before/ the 'deriveLogicType' splice, which will skip generating it:
+-- To use custom typeset naming, define the 'TypesetNaming' instance
+-- /before/ the 'deriveLogicTypeNoNaming' splice:
 --
 -- @
--- instance LogicVarNaming Tm where
---   varNaming = VarNaming "E" (\\i -> "e" ++ show i)
+-- instance TypesetNaming Tm where
+--   typesetName = cycleNames [\"e\", \"f\", \"g\"]
 --
--- deriveLogicType ''Tm [...]
+-- deriveLogicTypeNoNaming ''Tm [...]
 -- @
 --
 module TypedRedex.DSL.TH
@@ -68,7 +64,7 @@ import Control.Monad (when, forM)
 
 -- These need to be imported by the TH module to use '' syntax
 -- We import them here just so the '' names resolve
-import TypedRedex.Interp.PrettyPrint (LogicVarNaming)
+import TypedRedex.Interp.PrettyPrint (TypesetNaming)
 import TypedRedex.Core.Internal.Logic (Logic(..), LogicType(project, Reified), Reified)
 import TypedRedex.DSL.Moded (T(..), ground, lift1, lift2, lift3, Union)
 import TypedRedex.Nominal.Bind (Bind(..), Permute(..))
@@ -94,8 +90,7 @@ type ConSpec = (Name, (String, String))
 
 infixr 0 ~>
 
--- | Derive LogicType instance with custom naming.
--- Also generates a default LogicVarNaming instance.
+-- | Derive LogicType instance with default TypesetNaming.
 --
 -- Takes a type name and a list of constructor specifications.
 -- Each specification maps a constructor to its (quote string, builder name).
@@ -115,8 +110,8 @@ deriveLogicType typeName specs = do
       deriveAll True typeName [con] specs
     _ -> fail "deriveLogicType: expected a data or newtype declaration"
 
--- | Derive LogicType instance without generating LogicVarNaming.
--- Use this when you want to provide a custom LogicVarNaming instance.
+-- | Derive LogicType instance without generating TypesetNaming.
+-- Use this when you want to provide a custom TypesetNaming instance.
 deriveLogicTypeNoNaming :: Name -> [ConSpec] -> Q [Dec]
 deriveLogicTypeNoNaming typeName specs = do
   info <- reify typeName
@@ -135,10 +130,11 @@ deriveAll :: Bool -> Name -> [Con] -> [ConSpec] -> Q [Dec]
 deriveAll genNaming typeName cons specs = do
   let specMap = specs
 
-  -- 1. Generate LogicVarNaming instance (empty, uses default) if requested
-  varNamingInst <- if genNaming
-                   then deriveVarNaming typeName
-                   else return []
+  -- 1. Generate TypesetNaming instance (empty, uses default) if genNaming
+  -- (Users who use NoNaming variant will provide their own TypesetNaming)
+  typesetNamingInst <- if genNaming
+                       then deriveTypesetNaming typeName
+                       else return []
 
   -- 2. Generate LogicType instance
   logicTypeInst <- deriveLogicTypeInst typeName cons specMap
@@ -146,12 +142,12 @@ deriveAll genNaming typeName cons specs = do
   -- 3. Generate smart constructors
   builders <- deriveBuilders typeName cons specMap
 
-  return $ varNamingInst ++ logicTypeInst ++ builders
+  return $ typesetNamingInst ++ logicTypeInst ++ builders
 
--- | Generate empty LogicVarNaming instance (uses default)
-deriveVarNaming :: Name -> Q [Dec]
-deriveVarNaming typeName = do
-  let instType = AppT (ConT ''LogicVarNaming) (ConT typeName)
+-- | Generate empty TypesetNaming instance (uses default)
+deriveTypesetNaming :: Name -> Q [Dec]
+deriveTypesetNaming typeName = do
+  let instType = AppT (ConT ''TypesetNaming) (ConT typeName)
   return [InstanceD Nothing [] instType []]
 
 -- We need these names - using '' syntax to get the actual names
