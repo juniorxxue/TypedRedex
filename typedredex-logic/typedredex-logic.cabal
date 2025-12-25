@@ -1,0 +1,26 @@
+cabal-version:      2.4
+name:               typedredex-logic
+version:            0.1.0.0
+synopsis:           Core logic programming primitives for TypedRedex
+description:
+  Pure core layer for TypedRedex with no presentation concerns.
+  Provides Logic terms, LogicType class, and Redex interpreter classes.
+
+license:            MIT
+author:             TypedRedex Authors
+maintainer:         you@example.com
+build-type:         Simple
+
+library
+  hs-source-dirs:   src
+  exposed-modules:
+    TypedRedex.Logic
+    TypedRedex.Logic.Term
+    TypedRedex.Logic.Redex
+    TypedRedex.Logic.Unify
+    TypedRedex.Logic.SubstCore
+    TypedRedex.Logic.Nominal
+  build-depends:
+    base >=4.12 && <5
+  default-language: Haskell2010
+  ghc-options:      -Wall

@@ -1,0 +1,8 @@
+packages:
+  typedredex-logic
+  typedredex-dsl
+  typedredex-interp
+  examples/poly
+  examples/stlc-bidir
+  examples/pcf-step
+  examples/system-f

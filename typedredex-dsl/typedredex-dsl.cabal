@@ -1,0 +1,36 @@
+cabal-version:      2.4
+name:               typedredex-dsl
+version:            0.1.0.0
+synopsis:           DSL layer for TypedRedex
+description:
+  DSL layer providing smart constructors, TH derivation, moded types,
+  and nominal binding support for TypedRedex.
+
+license:            MIT
+author:             TypedRedex Authors
+maintainer:         you@example.com
+build-type:         Simple
+
+library
+  hs-source-dirs:   src
+  exposed-modules:
+    TypedRedex.DSL.Fresh
+    TypedRedex.DSL.Relation
+    TypedRedex.DSL.Define
+    TypedRedex.DSL.Eval
+    TypedRedex.DSL.Moded
+    TypedRedex.DSL.TH
+    TypedRedex.DSL.Type
+    TypedRedex.Nominal
+    TypedRedex.Nominal.Nom
+    TypedRedex.Nominal.Bind
+    TypedRedex.Nominal.Hash
+    TypedRedex.Nominal.Subst
+    TypedRedex.Nominal.Prelude
+  build-depends:
+    base >=4.12 && <5,
+    typedredex-logic,
+    containers,
+    template-haskell >=2.14
+  default-language: Haskell2010
+  ghc-options:      -Wall
