@@ -2,6 +2,7 @@ packages:
   typedredex-logic
   typedredex-dsl
   typedredex-interp
+  typedredex-hkt
   examples/poly
   examples/stlc-bidir
   examples/pcf-step
