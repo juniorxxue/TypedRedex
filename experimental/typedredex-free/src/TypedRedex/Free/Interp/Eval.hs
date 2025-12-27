@@ -49,9 +49,9 @@ import Prelude hiding ((>>=), (>>), return)
 import Data.Set (Set)
 import qualified Data.Set as S
 
-import TypedRedex.Logic
+import TypedRedex.Free.Logic
   ( LogicType, Logic(..), Redex(..), RedexNeg(..)
-  , RVar, FreshType(..), Var(..), CapturedTerm(..)
+  , RVar, FreshType(..), Var(..)
   )
 import TypedRedex.Free.IxFree (IxFree(..))
 import TypedRedex.Free.RuleF
@@ -163,8 +163,6 @@ runInterp callerArgs (Bind op k) st = case op of
 
   -- ConclF: unify with caller's arguments, mark inputs as available
   ConclF applied -> do
-    -- Mark conclusion for tracing
-    markConclusion
     -- Unify the applied pattern with caller's arguments
     unifyLList (amArgs applied) callerArgs
     -- Update available vars with conclusion's inputs
@@ -173,7 +171,6 @@ runInterp callerArgs (Bind op k) st = case op of
 
   -- PremF: collect for later scheduling
   PremF applied -> do
-    markPremise (amName applied) (captureArgs (amArgs applied))
     let action = PremA $ PremAction (amReqVars applied) (amProdVars applied) (amGoal applied)
         st' = st { isDeferred = action : isDeferred st }
     runInterp callerArgs (k ()) st'
@@ -186,14 +183,12 @@ runInterp callerArgs (Bind op k) st = case op of
 
   -- UnifyF: collect unification as a premise
   UnifyF t1 t2 -> do
-    markPremise "==" [CapturedTerm (tTerm t1), CapturedTerm (tTerm t2)]
     let action = PremA $ PremAction (S.union (tVars t1) (tVars t2)) S.empty (unify (tTerm t1) (tTerm t2))
         st' = st { isDeferred = action : isDeferred st }
     runInterp callerArgs (k ()) st'
 
   -- NeqF: collect disequality as a premise (using negation)
   NeqF t1 t2 -> do
-    markPremise "=/=" [CapturedTerm (tTerm t1), CapturedTerm (tTerm t2)]
     let action = PremA $ PremAction (S.union (tVars t1) (tVars t2)) S.empty (neg (unify (tTerm t1) (tTerm t2)))
         st' = st { isDeferred = action : isDeferred st }
     runInterp callerArgs (k ()) st'

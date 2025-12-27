@@ -47,9 +47,9 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Proxy (Proxy(..))
 
-import TypedRedex.Logic
+import TypedRedex.Free.Logic
   ( LogicType(..), Logic(..), Redex(..), RedexNeg(..)
-  , RVar, FreshType(..), Var(..), Field(..), CapturedTerm(..)
+  , RVar, FreshType(..), Var(..), Field(..)
   )
 import TypedRedex.Free.IxFree (IxFree(..))
 import TypedRedex.Free.RuleF
@@ -210,7 +210,6 @@ runTrace callerArgs (Bind op k) st = case op of
       runTrace callerArgs (k term) st'
 
   ConclF applied -> do
-    markConclusion
     unifyLList (amArgs applied) callerArgs
     let st' = st { tsAvailVars = amReqVars applied }
     -- Capture terms for later resolution
@@ -219,7 +218,6 @@ runTrace callerArgs (Bind op k) st = case op of
     runTrace callerArgs (k ()) st''
 
   PremF applied -> do
-    markPremise (amName applied) (captureArgs (amArgs applied))
     let action = PremA $ PremAction (amReqVars applied) (amProdVars applied) (amGoal applied)
         st' = st { tsDeferred = action : tsDeferred st }
     runTrace callerArgs (k ()) st'
@@ -230,13 +228,11 @@ runTrace callerArgs (Bind op k) st = case op of
     runTrace callerArgs (k ()) st'
 
   UnifyF t1 t2 -> do
-    markPremise "==" [CapturedTerm (tTerm t1), CapturedTerm (tTerm t2)]
     let action = PremA $ PremAction (S.union (tVars t1) (tVars t2)) S.empty (unify (tTerm t1) (tTerm t2))
         st' = st { tsDeferred = action : tsDeferred st }
     runTrace callerArgs (k ()) st'
 
   NeqF t1 t2 -> do
-    markPremise "=/=" [CapturedTerm (tTerm t1), CapturedTerm (tTerm t2)]
     let action = PremA $ PremAction (S.union (tVars t1) (tVars t2)) S.empty (neg (unify (tTerm t1) (tTerm t2)))
         st' = st { tsDeferred = action : tsDeferred st }
     runTrace callerArgs (k ()) st'

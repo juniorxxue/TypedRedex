@@ -2,15 +2,8 @@ cabal-version:      2.4
 name:               typedredex-free
 version:            0.1.0.0
 synopsis:           Indexed Free Monad DSL for TypedRedex
-description:
-  An alternative DSL layer for TypedRedex using indexed free monads.
-  This approach provides:
-
-  * Complete separation of syntax and semantics
-  * Pure AST construction via do-notation
-  * Multiple interpreters: eval, typeset, trace
-  * Compile-time mode checking via type-level state
-  * Same user-facing API as typedredex-dsl
+description:        An implementation of an indexed free monad DSL for TypedRedex, a
+                    framework for defining and working with typed term rewriting systems.
 
 license:            MIT
 author:             TypedRedex Authors
@@ -21,6 +14,7 @@ library
   hs-source-dirs:   src
   exposed-modules:
     TypedRedex.Free
+    TypedRedex.Free.Logic
     TypedRedex.Free.IxFree
     TypedRedex.Free.RuleF
     TypedRedex.Free.Moded
@@ -30,7 +24,7 @@ library
     TypedRedex.Free.Interp.Typeset
   build-depends:
     base >=4.12 && <5,
-    typedredex-logic,
+    ghc-typelits-natnormalise >= 0.7,
     containers,
     mtl >=2.2
   default-language: Haskell2010
@@ -51,3 +45,25 @@ library
     ConstraintKinds
     AllowAmbiguousTypes
     StandaloneKindSignatures
+
+executable stlc-bidir-demo
+  hs-source-dirs:   examples/stlc-bidir
+  main-is:          Main.hs
+  other-modules:    Rules, Rel
+  build-depends:
+    base >=4.12 && <5,
+    typedredex-free,
+    containers
+  default-language: Haskell2010
+  ghc-options:      -Wall
+  default-extensions:
+    GADTs
+    DataKinds
+    TypeFamilies
+    TypeOperators
+    RankNTypes
+    ScopedTypeVariables
+    TypeApplications
+    FlexibleContexts
+    FlexibleInstances
+    MultiParamTypeClasses

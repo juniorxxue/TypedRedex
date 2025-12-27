@@ -62,6 +62,7 @@ module TypedRedex.Free
   , LTermList(..)
     -- * Applied Judgments
   , AppliedM(..)
+  , Applied(..)
   , toApplied
     -- * Judgment Types
   , Judgment1, Judgment2, Judgment3, Judgment4, Judgment5, Judgment6
@@ -78,7 +79,7 @@ module TypedRedex.Free
     -- * QualifiedDo Support
   , return, (>>=), (>>)
     -- * Re-exports from Logic
-  , LogicType(..), Logic(..), Field(..)
+  , LogicRepr(..), LogicType(..), Logic(..), Field(..)
   , Redex(..), RedexNeg
   ) where
 
@@ -86,4 +87,4 @@ import Prelude hiding (return, (>>=), (>>))
 
 import TypedRedex.Free.Moded
 import TypedRedex.Free.Schedule (Mode(..), ModeList(..), SingModeList(..), CheckSchedule, Union)
-import TypedRedex.Logic (LogicType(..), Logic(..), Field(..), Redex(..), RedexNeg)
+import TypedRedex.Free.Logic (LogicRepr(..), LogicType(..), Logic(..), Field(..), Redex(..), RedexNeg)

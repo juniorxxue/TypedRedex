@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -60,6 +61,7 @@ module TypedRedex.Free.Moded
   , LTermList(..)
     -- * Applied Judgments
   , AppliedM(..)
+  , Applied(..)
   , toApplied
     -- * Judgment Types
   , Judgment1, Judgment2, Judgment3, Judgment4, Judgment5, Judgment6
@@ -80,23 +82,19 @@ module TypedRedex.Free.Moded
 
 import Prelude hiding (return, (>>=), (>>))
 import qualified Prelude
-import Data.Kind (Type, Constraint)
+import Data.Kind (Type)
 import Data.Proxy (Proxy(..))
-import Data.Set (Set)
-import qualified Data.Set as S
 import Data.Typeable (Typeable)
-import GHC.TypeLits (Symbol, KnownSymbol, symbolVal, Nat, type (+))
+import GHC.TypeLits (Symbol, KnownSymbol, symbolVal, type (+))
 import Control.Applicative (asum)
 
-import TypedRedex.Logic
-  ( LogicType, Logic(..), Redex(..), RedexNeg, RVar
-  , FreshType(..), Relation(..), CapturedTerm(..), CallType(..)
+import TypedRedex.Free.Logic
+  ( LogicType, Redex(..)
   )
-import qualified TypedRedex.Logic as R (neg)
 import TypedRedex.Free.IxFree (IxFree(..), liftF)
 import qualified TypedRedex.Free.IxFree as Ix
 import TypedRedex.Free.RuleF
-import TypedRedex.Free.Schedule
+import TypedRedex.Free.Interp.Eval (interpretRule)
 
 --------------------------------------------------------------------------------
 -- Rule Monad Type
@@ -150,8 +148,8 @@ fresh2 = Ix.do
 -- | Allocate 3 fresh logic variables
 fresh3 :: forall a b c rel ts n steps cc.
           (LogicType a, Typeable a, LogicType b, Typeable b, LogicType c, Typeable c)
-       => RuleM rel ts ('St n steps cc) ('St (((n + 1) + 1) + 1) steps cc)
-            (T '[n] a rel, T '[n + 1] b rel, T '[(n + 1) + 1] c rel)
+       => RuleM rel ts ('St n steps cc) ('St (n + 3) steps cc)
+            (T '[n] a rel, T '[n + 1] b rel, T '[n + 2] c rel)
 fresh3 = Ix.do
   a <- fresh @a
   b <- fresh @b
@@ -162,8 +160,8 @@ fresh3 = Ix.do
 fresh4 :: forall a b c d rel ts n steps cc.
           (LogicType a, Typeable a, LogicType b, Typeable b,
            LogicType c, Typeable c, LogicType d, Typeable d)
-       => RuleM rel ts ('St n steps cc) ('St ((((n + 1) + 1) + 1) + 1) steps cc)
-            (T '[n] a rel, T '[n + 1] b rel, T '[(n + 1) + 1] c rel, T '[((n + 1) + 1) + 1] d rel)
+       => RuleM rel ts ('St n steps cc) ('St (n + 4) steps cc)
+            (T '[n] a rel, T '[n + 1] b rel, T '[n + 2] c rel, T '[n + 3] d rel)
 fresh4 = Ix.do
   a <- fresh @a
   b <- fresh @b
@@ -176,9 +174,9 @@ fresh5 :: forall a b c d e rel ts n steps cc.
           (LogicType a, Typeable a, LogicType b, Typeable b,
            LogicType c, Typeable c, LogicType d, Typeable d,
            LogicType e, Typeable e)
-       => RuleM rel ts ('St n steps cc) ('St (((((n + 1) + 1) + 1) + 1) + 1) steps cc)
-            (T '[n] a rel, T '[n + 1] b rel, T '[(n + 1) + 1] c rel,
-             T '[((n + 1) + 1) + 1] d rel, T '[(((n + 1) + 1) + 1) + 1] e rel)
+       => RuleM rel ts ('St n steps cc) ('St (n + 5) steps cc)
+            (T '[n] a rel, T '[n + 1] b rel, T '[n + 2] c rel,
+             T '[n + 3] d rel, T '[n + 4] e rel)
 fresh5 = Ix.do
   a <- fresh @a
   b <- fresh @b
@@ -192,10 +190,10 @@ fresh6 :: forall a b c d e f rel ts n steps cc.
           (LogicType a, Typeable a, LogicType b, Typeable b,
            LogicType c, Typeable c, LogicType d, Typeable d,
            LogicType e, Typeable e, LogicType f, Typeable f)
-       => RuleM rel ts ('St n steps cc) ('St ((((((n + 1) + 1) + 1) + 1) + 1) + 1) steps cc)
-            (T '[n] a rel, T '[n + 1] b rel, T '[(n + 1) + 1] c rel,
-             T '[((n + 1) + 1) + 1] d rel, T '[(((n + 1) + 1) + 1) + 1] e rel,
-             T '[((((n + 1) + 1) + 1) + 1) + 1] f rel)
+       => RuleM rel ts ('St n steps cc) ('St (n + 6) steps cc)
+            (T '[n] a rel, T '[n + 1] b rel, T '[n + 2] c rel,
+             T '[n + 3] d rel, T '[n + 4] e rel,
+             T '[n + 5] f rel)
 fresh6 = Ix.do
   a <- fresh @a
   b <- fresh @b
@@ -280,7 +278,7 @@ data ModedRule rel (ts :: [Type]) = forall n steps.
 -- The CheckSchedule constraint fires at compile time, ensuring
 -- a valid execution order exists.
 ruleM :: forall name rel n steps ts.
-         ( RedexNeg rel
+         ( Redex rel
          , CheckSchedule name steps
          )
       => String
@@ -473,16 +471,8 @@ runModedRule :: (Redex rel, ToLTermList vss ts)
              => TArgs vss ts rel
              -> ModedRule rel ts
              -> rel ()
-runModedRule args (ModedRule name body) =
-  call_ Opaque $ Relation name (captureArgs (toLTermList args)) Prelude.$
-    interpretRule args body
-
--- | Placeholder for interpretation (will be implemented in Interp modules)
-interpretRule :: (Redex rel, ToLTermList vss ts)
-              => TArgs vss ts rel
-              -> IxFree (RuleF rel ts) ('St 0 '[] 'False) ('St n steps 'True) ()
-              -> rel ()
-interpretRule = error "interpretRule: use specific interpreter module"
+runModedRule args (ModedRule _name body) =
+  suspend $ interpretRule args body
 
 --------------------------------------------------------------------------------
 -- defJudge helpers (with scoped rule builder)
@@ -499,7 +489,7 @@ instance (LogicType t, Redex rel, UnifyLList rel ts) => UnifyLList rel (t ': ts)
   unifyLList (x :> xs) (y :> ys) = unify x y Prelude.>> unifyLList xs ys
 
 defJudge1 :: forall name modes rel t1.
-             (RedexNeg rel, KnownSymbol name, LogicType t1, Typeable t1, UnifyLList rel '[t1], SingModeList modes)
+             (Redex rel, KnownSymbol name, LogicType t1, Typeable t1, UnifyLList rel '[t1], SingModeList modes)
           => ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1])
@@ -513,7 +503,7 @@ defJudge1 mkRules = mjudge1 singModeList (mkRules rule)
     rule = ruleM @name
 
 defJudge2 :: forall name modes rel t1 t2.
-             (RedexNeg rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, UnifyLList rel '[t1, t2], SingModeList modes)
+             (Redex rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, UnifyLList rel '[t1, t2], SingModeList modes)
           => ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2])
@@ -527,7 +517,7 @@ defJudge2 mkRules = mjudge2 singModeList (mkRules rule)
     rule = ruleM @name
 
 defJudge3 :: forall name modes rel t1 t2 t3.
-             (RedexNeg rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, LogicType t3, Typeable t3, UnifyLList rel '[t1, t2, t3], SingModeList modes)
+             (Redex rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, LogicType t3, Typeable t3, UnifyLList rel '[t1, t2, t3], SingModeList modes)
           => ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2, t3] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2, t3])
@@ -541,7 +531,7 @@ defJudge3 mkRules = mjudge3 singModeList (mkRules rule)
     rule = ruleM @name
 
 defJudge4 :: forall name modes rel t1 t2 t3 t4.
-             (RedexNeg rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, LogicType t3, Typeable t3, LogicType t4, Typeable t4, UnifyLList rel '[t1, t2, t3, t4], SingModeList modes)
+             (Redex rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, LogicType t3, Typeable t3, LogicType t4, Typeable t4, UnifyLList rel '[t1, t2, t3, t4], SingModeList modes)
           => ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2, t3, t4] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2, t3, t4])
@@ -555,7 +545,7 @@ defJudge4 mkRules = mjudge4 singModeList (mkRules rule)
     rule = ruleM @name
 
 defJudge5 :: forall name modes rel t1 t2 t3 t4 t5.
-             (RedexNeg rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, LogicType t3, Typeable t3, LogicType t4, Typeable t4, LogicType t5, Typeable t5, UnifyLList rel '[t1, t2, t3, t4, t5], SingModeList modes)
+             (Redex rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, LogicType t3, Typeable t3, LogicType t4, Typeable t4, LogicType t5, Typeable t5, UnifyLList rel '[t1, t2, t3, t4, t5], SingModeList modes)
           => ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2, t3, t4, t5] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2, t3, t4, t5])
@@ -569,7 +559,7 @@ defJudge5 mkRules = mjudge5 singModeList (mkRules rule)
     rule = ruleM @name
 
 defJudge6 :: forall name modes rel t1 t2 t3 t4 t5 t6.
-             (RedexNeg rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, LogicType t3, Typeable t3, LogicType t4, Typeable t4, LogicType t5, Typeable t5, LogicType t6, Typeable t6, UnifyLList rel '[t1, t2, t3, t4, t5, t6], SingModeList modes)
+             (Redex rel, KnownSymbol name, LogicType t1, Typeable t1, LogicType t2, Typeable t2, LogicType t3, Typeable t3, LogicType t4, Typeable t4, LogicType t5, Typeable t5, LogicType t6, Typeable t6, UnifyLList rel '[t1, t2, t3, t4, t5, t6], SingModeList modes)
           => ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2, t3, t4, t5, t6] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2, t3, t4, t5, t6])

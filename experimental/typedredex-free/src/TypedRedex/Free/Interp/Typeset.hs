@@ -34,6 +34,7 @@ module TypedRedex.Free.Interp.Typeset
     -- * Extraction
   , extractRule
   , extractRules
+  , DummyRel
     -- * Renumbering
   , renumber
     -- * Formatting
@@ -43,11 +44,13 @@ module TypedRedex.Free.Interp.Typeset
 
 import qualified Prelude
 import Prelude hiding ((>>=), (>>), return)
+import Control.Applicative (Alternative(..))
 import Data.Proxy (Proxy(..))
 import Data.Typeable (TypeRep, Typeable, typeRep)
+import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 
-import TypedRedex.Logic (LogicType(..), Logic(..), RVar, Field(..))
+import TypedRedex.Free.Logic (LogicRepr(..), Logic(..), Var(..), RVar, Field(..), Redex(..), RedexNeg(..))
 import TypedRedex.Free.IxFree (IxFree(..))
 import TypedRedex.Free.RuleF
 import TypedRedex.Free.Schedule (St(..))
@@ -113,7 +116,7 @@ emptyExtract = ExtractState 0 [] []
 --------------------------------------------------------------------------------
 
 -- | Capture a logic term as RawTerm
-capturePattern :: forall a var. (LogicType a, Typeable a)
+capturePattern :: forall a var. (LogicRepr a, Typeable a)
                => Int -> Logic a var -> (RawTerm, Int)
 capturePattern nextVar (Free _) =
   (RVar (VarRef nextVar (typeRep (Proxy @a))), nextVar + 1)
@@ -123,7 +126,7 @@ capturePattern nextVar (Ground r) =
   in (RCon name children, nextVar')
 
 -- | Quote without the RVar type - for typesetting purposes
-quoteTypeset :: LogicType a => Reified a var -> (String, [Field a var])
+quoteTypeset :: LogicRepr a => Reified a var -> (String, [Field a var])
 quoteTypeset = quote
 
 -- | Capture multiple fields
@@ -135,7 +138,7 @@ captureFields nextVar (Field (_ :: Proxy t) logic : rest) =
   in (term : terms, nextVar'')
 
 -- | Capture any typed logic term
-capturePatternAny :: forall t var. (LogicType t, Typeable t)
+capturePatternAny :: forall t var. (LogicRepr t, Typeable t)
                   => Int -> Logic t var -> (RawTerm, Int)
 capturePatternAny = capturePattern @t
 
@@ -157,6 +160,34 @@ extractRule name ast =
 -- | Dummy rel type for extraction (never executed)
 data DummyRel a
 
+-- | Dummy instances - these are never actually used during typesetting
+instance Functor DummyRel where
+  fmap _ _ = error "DummyRel: not executable"
+
+instance Applicative DummyRel where
+  pure _ = error "DummyRel: not executable"
+  _ <*> _ = error "DummyRel: not executable"
+
+instance Monad DummyRel where
+  _ >>= _ = error "DummyRel: not executable"
+
+instance Alternative DummyRel where
+  empty = error "DummyRel: not executable"
+  _ <|> _ = error "DummyRel: not executable"
+
+instance Redex DummyRel where
+  data RVar DummyRel a = DummyVar Int
+  fresh_ _ _ = error "DummyRel: not executable"
+  unify _ _ = error "DummyRel: not executable"
+  displayVar (DummyVar n) = "d" ++ show n
+  suspend _ = error "DummyRel: not executable"
+
+instance Functor (RVar DummyRel) where
+  fmap _ (DummyVar n) = DummyVar n
+
+instance RedexNeg DummyRel where
+  neg _ = error "DummyRel: not executable"
+
 -- | Run extraction, purely traversing the AST
 runExtract :: IxFree (RuleF DummyRel ts) s t a -> ExtractState -> ExtractState
 runExtract (Pure _) st = st
@@ -164,8 +195,8 @@ runExtract (Bind op k) st = case op of
 
   FreshF ->
     let varId = esNextVar st
-        -- Create a placeholder term with the right variable ID
-        term = T (error "typeset") (error "typeset")
+        -- Create a proper placeholder term with a DummyVar
+        term = T (S.singleton varId) (Free (Var (DummyVar varId)))
         st' = st { esNextVar = varId + 1 }
     in runExtract (k term) st'
 
@@ -206,7 +237,7 @@ captureArgsTypeset (x :> xs) n =
     (term, n') -> term : captureArgsTypeset xs n'
 
 -- | Simple pattern capture for LTerms
-capturePatternSimple :: forall a rel. (LogicType a, Typeable a)
+capturePatternSimple :: forall a rel. (LogicRepr a, Typeable a)
                      => Int -> Logic a (RVar rel) -> (RawTerm, Int)
 capturePatternSimple n (Free _) = (RVar (VarRef n (typeRep (Proxy @a))), n + 1)
 capturePatternSimple n (Ground r) =

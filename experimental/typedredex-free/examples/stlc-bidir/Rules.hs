@@ -27,6 +27,8 @@ module Rules
   , lookupCtx, synth, check
     -- * Negation example
   , notInCtx
+    -- * Rule lists (for typesetting)
+  , lookupCtxRules, synthRules, checkRules, notInCtxRules
   ) where
 
 import Prelude hiding ((>>=), (>>), return)
@@ -35,9 +37,9 @@ import Data.Proxy (Proxy(..))
 
 -- Import from typedredex-free instead of typedredex-dsl
 import TypedRedex.Free
-  ( LogicType(..), Logic(..), Field(..), RedexNeg
-  , Mode(..), T(..)
-  , Judgment2, Judgment3, defJudge2, defJudge3
+  ( LogicRepr(..), LogicType(..), Logic(..), Field(..), RedexNeg
+  , Mode(..), T(..), ModedRule, ruleM, CheckSchedule
+  , Judgment2, Judgment3, mjudge2, mjudge3, SingModeList(..)
   , fresh, fresh2, fresh3, fresh4, fresh5, prem, concl, neg
   , ground, lift1, lift2, Union
   , return, (>>=), (>>)
@@ -49,7 +51,7 @@ import TypedRedex.Free
 
 data Nat = Z | S Nat deriving (Eq, Show)
 
-instance LogicType Nat where
+instance LogicRepr Nat where
   data Reified Nat var = ZR | SR (Logic Nat var)
 
   project Z = ZR
@@ -62,9 +64,7 @@ instance LogicType Nat where
   quote ZR = ("Z", [])
   quote (SR n) = ("S", [Field (Proxy :: Proxy Nat) n])
 
-  children ZR = []
-  children (SR n) = [Field (Proxy :: Proxy Nat) n]
-
+instance LogicType Nat where
   unifyVal _ ZR ZR = pure ()
   unifyVal unif (SR x) (SR y) = unif x y
   unifyVal _ _ _ = empty
@@ -92,7 +92,7 @@ suc = lift1 suc_
 
 data Ty = TUnit | TArr Ty Ty deriving (Eq, Show)
 
-instance LogicType Ty where
+instance LogicRepr Ty where
   data Reified Ty var
     = TUnitR
     | TArrR (Logic Ty var) (Logic Ty var)
@@ -107,9 +107,7 @@ instance LogicType Ty where
   quote TUnitR = ("Unit", [])
   quote (TArrR a b) = ("→", [Field (Proxy :: Proxy Ty) a, Field (Proxy :: Proxy Ty) b])
 
-  children TUnitR = []
-  children (TArrR a b) = [Field (Proxy :: Proxy Ty) a, Field (Proxy :: Proxy Ty) b]
-
+instance LogicType Ty where
   unifyVal _ TUnitR TUnitR = pure ()
   unifyVal unif (TArrR a b) (TArrR a' b') = unif a a' *> unif b b'
   unifyVal _ _ _ = empty
@@ -143,7 +141,7 @@ data Tm
   | Ann Tm Ty
   deriving (Eq, Show)
 
-instance LogicType Tm where
+instance LogicRepr Tm where
   data Reified Tm var
     = VarR (Logic Nat var)
     | UnitR
@@ -174,13 +172,7 @@ instance LogicType Tm where
   quote (AppR f a) = ("App", [Field (Proxy :: Proxy Tm) f, Field (Proxy :: Proxy Tm) a])
   quote (AnnR e ty) = (":", [Field (Proxy :: Proxy Tm) e, Field (Proxy :: Proxy Ty) ty])
 
-  children (VarR n) = [Field (Proxy :: Proxy Nat) n]
-  children UnitR = []
-  children (LamR b) = [Field (Proxy :: Proxy Tm) b]
-  children (LamAnnR ty b) = [Field (Proxy :: Proxy Ty) ty, Field (Proxy :: Proxy Tm) b]
-  children (AppR f a) = [Field (Proxy :: Proxy Tm) f, Field (Proxy :: Proxy Tm) a]
-  children (AnnR e ty) = [Field (Proxy :: Proxy Tm) e, Field (Proxy :: Proxy Ty) ty]
-
+instance LogicType Tm where
   unifyVal unif (VarR n) (VarR n') = unif n n'
   unifyVal _ UnitR UnitR = pure ()
   unifyVal unif (LamR b) (LamR b') = unif b b'
@@ -239,7 +231,7 @@ ann = lift2 ann_
 
 data Ctx = Nil | Cons Ty Ctx deriving (Eq, Show)
 
-instance LogicType Ctx where
+instance LogicRepr Ctx where
   data Reified Ctx var
     = NilR
     | ConsR (Logic Ty var) (Logic Ctx var)
@@ -254,9 +246,7 @@ instance LogicType Ctx where
   quote NilR = ("·", [])
   quote (ConsR ty ctx) = (",", [Field (Proxy :: Proxy Ty) ty, Field (Proxy :: Proxy Ctx) ctx])
 
-  children NilR = []
-  children (ConsR ty ctx) = [Field (Proxy :: Proxy Ty) ty, Field (Proxy :: Proxy Ctx) ctx]
-
+instance LogicType Ctx where
   unifyVal _ NilR NilR = pure ()
   unifyVal unif (ConsR ty ctx) (ConsR ty' ctx') = unif ty ty' *> unif ctx ctx'
   unifyVal _ _ _ = empty
@@ -278,21 +268,95 @@ cons :: T vs1 Ty rel -> T vs2 Ctx rel -> T (Union vs1 vs2) Ctx rel
 cons = lift2 cons_
 
 --------------------------------------------------------------------------------
+-- Rule lists (exposed for typesetting)
+--------------------------------------------------------------------------------
+
+-- | Rules for context lookup
+lookupCtxRules :: RedexNeg rel => [ModedRule rel '[Ctx, Nat, Ty]]
+lookupCtxRules =
+  [ ruleM @"lookup" "lookup-here" $ do
+      (ty, rest) <- fresh2
+      concl $ lookupCtx (cons ty rest) zro ty
+
+  , ruleM @"lookup" "lookup-there" $ do
+      (ty', rest, n', ty) <- fresh4
+      concl $ lookupCtx (cons ty' rest) (suc n') ty
+      prem $ lookupCtx rest n' ty
+  ]
+
+-- | Rules for type synthesis
+synthRules :: RedexNeg rel => [ModedRule rel '[Ctx, Tm, Ty]]
+synthRules =
+  [ -- ⇒Var
+    ruleM @"synth" "⇒Var" $ do
+      (ctx, n, ty) <- fresh3
+      concl $ synth ctx (var n) ty
+      prem $ lookupCtx ctx n ty
+
+  , -- ⇒Unit
+    ruleM @"synth" "⇒Unit" $ do
+      ctx <- fresh
+      concl $ synth ctx unit tunit
+
+  , -- ⇒λ:
+    ruleM @"synth" "⇒λ:" $ do
+      (ctx, a, b, body) <- fresh4
+      concl $ synth ctx (lamAnn a body) (tarr a b)
+      prem $ synth (cons a ctx) body b
+
+  , -- ⇒App
+    ruleM @"synth" "⇒App" $ do
+      (ctx, e1, e2, a, b) <- fresh5
+      concl $ synth ctx (app e1 e2) b
+      prem $ synth ctx e1 (tarr a b)
+      prem $ check ctx e2 a
+
+  , -- ⇒Ann
+    ruleM @"synth" "⇒Ann" $ do
+      (ctx, e, ty) <- fresh3
+      concl $ synth ctx (ann e ty) ty
+      prem $ check ctx e ty
+  ]
+
+-- | Rules for type checking
+checkRules :: RedexNeg rel => [ModedRule rel '[Ctx, Tm, Ty]]
+checkRules =
+  [ -- ⇐λ
+    ruleM @"check" "⇐λ" $ do
+      (ctx, a, b, body) <- fresh4
+      concl $ check ctx (lam body) (tarr a b)
+      prem $ check (cons a ctx) body b
+
+  , -- ⇐Sub
+    ruleM @"check" "⇐Sub" $ do
+      (ctx, e, ty) <- fresh3
+      concl $ check ctx e ty
+      prem $ synth ctx e ty
+  ]
+
+-- | Rules for not-in-context check
+notInCtxRules :: RedexNeg rel => [ModedRule rel '[Ctx, Nat]]
+notInCtxRules =
+  [ -- notInCtx-empty
+    ruleM @"notInCtx" "notInCtx-empty" $ do
+      n <- fresh
+      concl $ notInCtx nil n
+
+  , -- notInCtx-cons
+    ruleM @"notInCtx" "notInCtx-cons" $ do
+      (ty, ctx, n) <- fresh3
+      concl $ notInCtx (cons ty ctx) (suc n)
+      neg $ lookupCtx (cons ty ctx) (suc n) ty
+      prem $ notInCtx ctx n
+  ]
+
+--------------------------------------------------------------------------------
 -- Mode-checked lookup: Γ(n) = A
 -- Modes: I, I, O
 --------------------------------------------------------------------------------
 
 lookupCtx :: RedexNeg rel => Judgment3 rel "lookup" '[ 'I, 'I, 'O] Ctx Nat Ty
-lookupCtx = defJudge3 @"lookup" $ \rule ->
-  [ rule "lookup-here" $ do
-      (ty, rest) <- fresh2
-      concl $ lookupCtx (cons ty rest) zro ty
-
-  , rule "lookup-there" $ do
-      (ty', rest, n', ty) <- fresh4
-      concl $ lookupCtx (cons ty' rest) (suc n') ty
-      prem $ lookupCtx rest n' ty
-  ]
+lookupCtx = mjudge3 singModeList lookupCtxRules
 
 --------------------------------------------------------------------------------
 -- Mode-checked synthesis: Γ ⊢ e ⇒ A
@@ -300,37 +364,7 @@ lookupCtx = defJudge3 @"lookup" $ \rule ->
 --------------------------------------------------------------------------------
 
 synth :: RedexNeg rel => Judgment3 rel "synth" '[ 'I, 'I, 'O] Ctx Tm Ty
-synth = defJudge3 @"synth" $ \rule ->
-  [ -- ⇒Var
-    rule "⇒Var" $ do
-      (ctx, n, ty) <- fresh3
-      concl $ synth ctx (var n) ty
-      prem $ lookupCtx ctx n ty
-
-  , -- ⇒Unit
-    rule "⇒Unit" $ do
-      ctx <- fresh
-      concl $ synth ctx unit tunit
-
-  , -- ⇒λ:
-    rule "⇒λ:" $ do
-      (ctx, a, b, body) <- fresh4
-      concl $ synth ctx (lamAnn a body) (tarr a b)
-      prem $ synth (cons a ctx) body b
-
-  , -- ⇒App
-    rule "⇒App" $ do
-      (ctx, e1, e2, a, b) <- fresh5
-      concl $ synth ctx (app e1 e2) b
-      prem $ synth ctx e1 (tarr a b)
-      prem $ check ctx e2 a
-
-  , -- ⇒Ann
-    rule "⇒Ann" $ do
-      (ctx, e, ty) <- fresh3
-      concl $ synth ctx (ann e ty) ty
-      prem $ check ctx e ty
-  ]
+synth = mjudge3 singModeList synthRules
 
 --------------------------------------------------------------------------------
 -- Mode-checked checking: Γ ⊢ e ⇐ A
@@ -338,19 +372,7 @@ synth = defJudge3 @"synth" $ \rule ->
 --------------------------------------------------------------------------------
 
 check :: RedexNeg rel => Judgment3 rel "check" '[ 'I, 'I, 'I] Ctx Tm Ty
-check = defJudge3 @"check" $ \rule ->
-  [ -- ⇐λ
-    rule "⇐λ" $ do
-      (ctx, a, b, body) <- fresh4
-      concl $ check ctx (lam body) (tarr a b)
-      prem $ check (cons a ctx) body b
-
-  , -- ⇐Sub
-    rule "⇐Sub" $ do
-      (ctx, e, ty) <- fresh3
-      concl $ check ctx e ty
-      prem $ synth ctx e ty
-  ]
+check = mjudge3 singModeList checkRules
 
 --------------------------------------------------------------------------------
 -- Negation Example: notInCtx Γ n
@@ -358,16 +380,4 @@ check = defJudge3 @"check" $ \rule ->
 --------------------------------------------------------------------------------
 
 notInCtx :: RedexNeg rel => Judgment2 rel "notInCtx" '[ 'I, 'I] Ctx Nat
-notInCtx = defJudge2 @"notInCtx" $ \rule ->
-  [ -- notInCtx-empty
-    rule "notInCtx-empty" $ do
-      n <- fresh
-      concl $ notInCtx nil n
-
-  , -- notInCtx-cons
-    rule "notInCtx-cons" $ do
-      (ty, ctx, n) <- fresh3
-      concl $ notInCtx (cons ty ctx) (suc n)
-      neg $ lookupCtx (cons ty ctx) (suc n) ty
-      prem $ notInCtx ctx n
-  ]
+notInCtx = mjudge2 singModeList notInCtxRules

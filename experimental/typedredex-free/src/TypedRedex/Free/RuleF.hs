@@ -51,7 +51,6 @@ module TypedRedex.Free.RuleF
   , TArgs(..)
   , ToLTermList(..)
   , LTermList(..)
-  , captureArgs
     -- * Input/Output Variables
   , InputVars(..)
   , OutputVars(..)
@@ -67,7 +66,7 @@ import qualified Data.Set as S
 import GHC.TypeLits (Nat, Symbol, type (+))
 import Data.Typeable (Typeable)
 
-import TypedRedex.Logic (LogicType, Logic(..), Redex, RVar, CapturedTerm(..))
+import TypedRedex.Free.Logic (LogicRepr, LogicType, Logic(..), RVar)
 import TypedRedex.Free.Schedule
 
 --------------------------------------------------------------------------------
@@ -116,6 +115,9 @@ data TArgs (vss :: [[Nat]]) (ts :: [Type]) (rel :: Type -> Type) where
 infixr 5 :!
 
 -- | LTermList from typedredex-logic (simplified version here)
+--
+-- Note: Uses 'LogicType' (not just 'LogicRepr') because interpreters need
+-- to process terms (quote for typesetting, unify for eval, etc.)
 data LTermList (rel :: Type -> Type) (ts :: [Type]) where
   TNil :: LTermList rel '[]
   (:>) :: LogicType t => Logic t (RVar rel) -> LTermList rel ts -> LTermList rel (t ': ts)
@@ -177,11 +179,6 @@ data AppliedM (rel :: Type -> Type) (name :: Symbol) (modes :: [Mode]) (vss :: [
   , amProdVars :: Set Int         -- ^ Produced variables (outputs)
   }
 
--- | Capture arguments as CapturedTerms for tracing
-captureArgs :: LTermList rel ts -> [CapturedTerm rel]
-captureArgs TNil = []
-captureArgs (x :> xs) = CapturedTerm x : captureArgs xs
-
 --------------------------------------------------------------------------------
 -- The Indexed Functor
 --------------------------------------------------------------------------------
@@ -203,7 +200,7 @@ data RuleF (rel :: Type -> Type) (ts :: [Type]) (s :: St) (t :: St) (a :: Type) 
   -- @
   -- fresh :: RuleM ... ('St n steps c) ('St (n+1) steps c) (T '[n] a rel)
   -- @
-  FreshF :: (LogicType a, Typeable a)
+  FreshF :: (LogicRepr a, Typeable a)
          => RuleF rel ts ('St n steps c) ('St (n + 1) steps c) (T '[n] a rel)
 
   -- | Declare the conclusion pattern
@@ -245,6 +242,8 @@ data RuleF (rel :: Type -> Type) (ts :: [Type]) (s :: St) (t :: St) (a :: Type) 
             ()
 
   -- | Unification constraint (both must be ground)
+  --
+  -- Note: Uses 'LogicType' because it creates 'CapturedTerm' for tracing.
   UnifyF :: (LogicType a, Typeable a)
          => T vs1 a rel
          -> T vs2 a rel
@@ -254,6 +253,8 @@ data RuleF (rel :: Type -> Type) (ts :: [Type]) (s :: St) (t :: St) (a :: Type) 
               ()
 
   -- | Disequality constraint
+  --
+  -- Note: Uses 'LogicType' because it creates 'CapturedTerm' for tracing.
   NeqF :: (LogicType a, Typeable a)
        => T vs1 a rel
        -> T vs2 a rel
