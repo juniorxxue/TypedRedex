@@ -1,0 +1,62 @@
+cabal-version:      3.0
+name:               typedredex-freedeep
+version:            0.1.0.0
+synopsis:           Pure AST TypedRedex with multiple interpreters
+license:            MIT
+author:             Xu Xue
+build-type:         Simple
+
+common warnings
+    ghc-options: -Wall -Wno-unticked-promoted-constructors
+
+library
+    import:           warnings
+    exposed-modules:
+        TypedRedex.DSL
+        TypedRedex.Core.Term
+        TypedRedex.Core.IxFree
+        TypedRedex.Core.Schedule
+        TypedRedex.Core.RuleF
+        TypedRedex.Interp.Typeset
+        TypedRedex.Backend.Goal
+        TypedRedex.Backend.Eval
+    build-depends:
+        base >= 4.17 && < 5,
+        containers,
+        mtl,
+        ghc-typelits-natnormalise
+    hs-source-dirs:   src
+    default-language: GHC2021
+    ghc-options: -fplugin GHC.TypeLits.Normalise
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        LambdaCase
+        TypeOperators
+        RankNTypes
+        ScopedTypeVariables
+        FlexibleContexts
+        FlexibleInstances
+        MultiParamTypeClasses
+        UndecidableInstances
+        ConstraintKinds
+        PolyKinds
+        StandaloneKindSignatures
+        AllowAmbiguousTypes
+
+executable example-simple
+    import:           warnings
+    main-is:          Simple.hs
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex-freedeep
+    hs-source-dirs:   examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+        TypeApplications
+        QualifiedDo
