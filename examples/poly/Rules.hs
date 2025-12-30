@@ -119,17 +119,17 @@ infer = defJudge5 @"infer" format $ \rule ->
       (ty1, ty2) <- fresh2
       prem  $ infer env1 cempty tm2 ty1 env2
       prem  $ infer (etrm x ty1 env1) ctx tm1 ty2 (etrm x ty1 env2)
-      concl $ infer env1 (ctm tm2 ctx) (lam (bindT x tm1)) (tarr ty1 ty2) env2
+      concl $ infer env1 (ctm tm2 ctx) (lam (bindT x tm1)) (tarr ty1 ty2) env2,
 
-    -- rule "lam3" $ do
-    --   (x, tm, env1, env2, env3) <- fresh5
-    --   (ty1, ty2, ty3) <- fresh3
-    --   (a, b, c) <- fresh3      
-    --   prem  $ lookupBoundVar env1 a ty1 ty2
-    --   prem  $ splitEnv env1 a env2 b c
-    --   prem  $ infer (etrm x (tvar b) env2) (ctype (tvar c)) tm ty3 (etrm x (tvar b) env3)
-    --   prem  $ unsplitEnv env3 a b c env4
-    --   concl $ infer env1 (ctype (tvar a)) (lam (bindT x tm)) (tarr ty1 ty3) env4
+    rule "lam3" $ do
+      (x, tm, env1, env2, env3, env4) <- fresh6
+      (ty1, ty2, ty3) <- fresh3
+      (a, b, c) <- fresh3
+      prem  $ lookupBoundVar env1 a ty1 ty2
+      prem  $ splitEnv env1 a env2 b c
+      prem  $ infer (etrm x (tvar b) env2) (ctype (tvar c)) tm ty3 (etrm x (tvar b) env3)
+      prem  $ unsplitEnv env3 a b c env4
+      concl $ infer env1 (ctype (tvar a)) (lam (bindT x tm)) (tarr ty1 ty3) env4
   ]
   where
     format [env1, ctx, tm, ty, env2] = env1 ++ " |- " ++ ctx ++ " => " ++ tm ++ " => " ++ ty ++ " ⊣ " ++ env2

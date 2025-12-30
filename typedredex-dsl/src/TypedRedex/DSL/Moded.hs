@@ -101,7 +101,7 @@ import Prelude hiding ((>>=), (>>), return)
 import qualified Prelude
 import Data.Kind (Constraint, Type)
 import GHC.TypeLits (TypeError, ErrorMessage(..), Symbol, KnownSymbol, symbolVal)
-import GHC.TypeNats (Nat, type (+))
+import GHC.TypeNats (Nat, type (+), CmpNat)
 import Data.Proxy (Proxy(..))
 import Control.Applicative (asum)
 import qualified Data.Set as S
@@ -199,36 +199,55 @@ lift4 :: (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e re
 lift4 f (T vars1 x) (T vars2 y) (T vars3 z) (T vars4 w) = T (S.unions [vars1, vars2, vars3, vars4]) (f x y z w)
 
 --------------------------------------------------------------------------------
--- Type-level Sets
+-- Type-level Sorted Sets (O(n) operations using CmpNat)
 --------------------------------------------------------------------------------
 
 type family If (b :: Bool) (t :: k) (f :: k) :: k where
   If 'True  t _ = t
   If 'False _ f = f
 
-type family And (a :: Bool) (b :: Bool) :: Bool where
-  And 'True b = b
-  And 'False _ = 'False
-
-type family Elem (x :: Nat) (xs :: [Nat]) :: Bool where
-  Elem _ '[] = 'False
-  Elem x (x ': _) = 'True
-  Elem x (_ ': xs) = Elem x xs
-
+-- | Insert into sorted list, maintaining ascending order. O(n)
 type family Insert (x :: Nat) (xs :: [Nat]) :: [Nat] where
-  Insert x xs = If (Elem x xs) xs (x ': xs)
+  Insert x '[] = '[x]
+  Insert x (y ': ys) = InsertCmp (CmpNat x y) x y ys
 
+type family InsertCmp (o :: Ordering) (x :: Nat) (y :: Nat) (ys :: [Nat]) :: [Nat] where
+  InsertCmp 'LT x y ys = x ': y ': ys       -- x < y: insert here
+  InsertCmp 'EQ _ y ys = y ': ys            -- x == y: already present
+  InsertCmp 'GT x y ys = y ': Insert x ys   -- x > y: keep looking
+
+-- | Merge two sorted lists into sorted result. O(n + m)
 type family Union (xs :: [Nat]) (ys :: [Nat]) :: [Nat] where
   Union '[] ys = ys
-  Union (x ': xs) ys = Union xs (Insert x ys)
+  Union xs '[] = xs
+  Union (x ': xs) (y ': ys) = UnionCmp (CmpNat x y) x xs y ys
 
+type family UnionCmp (o :: Ordering) (x :: Nat) (xs :: [Nat]) (y :: Nat) (ys :: [Nat]) :: [Nat] where
+  UnionCmp 'LT x xs y ys = x ': Union xs (y ': ys)   -- x < y: take x
+  UnionCmp 'EQ x xs _ ys = x ': Union xs ys          -- x == y: take one, skip both
+  UnionCmp 'GT x xs y ys = y ': Union (x ': xs) ys   -- x > y: take y
+
+-- | Check if first sorted list is subset of second. O(n + m)
 type family Subset (xs :: [Nat]) (ys :: [Nat]) :: Bool where
   Subset '[] _ = 'True
-  Subset (x ': xs) ys = And (Elem x ys) (Subset xs ys)
+  Subset (_ ': _) '[] = 'False
+  Subset (x ': xs) (y ': ys) = SubsetCmp (CmpNat x y) x xs y ys
 
+type family SubsetCmp (o :: Ordering) (x :: Nat) (xs :: [Nat]) (y :: Nat) (ys :: [Nat]) :: Bool where
+  SubsetCmp 'LT _ _ _ _ = 'False                    -- x < y: x not in ys
+  SubsetCmp 'EQ _ xs _ ys = Subset xs ys            -- x == y: found, continue
+  SubsetCmp 'GT x xs _ ys = Subset (x ': xs) ys     -- x > y: skip y, keep looking
+
+-- | Compute set difference (xs - ys) for sorted lists. O(n + m)
 type family Diff (xs :: [Nat]) (ys :: [Nat]) :: [Nat] where
   Diff '[] _ = '[]
-  Diff (x ': xs) ys = If (Elem x ys) (Diff xs ys) (x ': Diff xs ys)
+  Diff xs '[] = xs
+  Diff (x ': xs) (y ': ys) = DiffCmp (CmpNat x y) x xs y ys
+
+type family DiffCmp (o :: Ordering) (x :: Nat) (xs :: [Nat]) (y :: Nat) (ys :: [Nat]) :: [Nat] where
+  DiffCmp 'LT x xs y ys = x ': Diff xs (y ': ys)   -- x < y: x not in ys, keep it
+  DiffCmp 'EQ _ xs _ ys = Diff xs ys               -- x == y: x in ys, remove it
+  DiffCmp 'GT x xs _ ys = Diff (x ': xs) ys        -- x > y: skip y
 
 type family Snoc (xs :: [k]) (x :: k) :: [k] where
   Snoc '[] x = '[x]
@@ -877,7 +896,11 @@ infix 4 =/=
         intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
 
 --------------------------------------------------------------------------------
--- Schedule Checking
+-- Schedule Checking (Batch Algorithm)
+--
+-- Uses O(k · p · n) algorithm where k = number of dependency stages
+-- Instead of selecting one goal at a time, partitions all goals into
+-- (ready, notReady) and processes all ready goals in a single step.
 --------------------------------------------------------------------------------
 
 type family ConclVars (steps :: [Step]) :: [Nat] where
@@ -902,35 +925,40 @@ type family NegReqs (steps :: [Step]) :: [[Nat]] where
   NegReqs ('PremStep _ ': rest) = NegReqs rest
   NegReqs ('ConcStep _ _ _ ': rest) = NegReqs rest
 
-type family AllPremProds (gs :: [Goal]) :: [Nat] where
-  AllPremProds '[] = '[]
-  AllPremProds ('Goal _ _ prod ': rest) = Union prod (AllPremProds rest)
+-- | Collect all output variables from a list of goals
+type family CollectOutputs (gs :: [Goal]) :: [Nat] where
+  CollectOutputs '[] = '[]
+  CollectOutputs ('Goal _ _ prod ': rest) = Union prod (CollectOutputs rest)
 
 type family FinalAvail (steps :: [Step]) :: [Nat] where
-  FinalAvail steps = Union (ConclVars steps) (AllPremProds (PremGoals steps))
+  FinalAvail steps = Union (ConclVars steps) (CollectOutputs (PremGoals steps))
 
-type family Ready (avail :: [Nat]) (g :: Goal) :: Bool where
-  Ready avail ('Goal _ req _) = Subset req avail
+-- | Check if a goal is ready (inputs ⊆ available)
+type family IsReady (avail :: [Nat]) (g :: Goal) :: Bool where
+  IsReady avail ('Goal _ req _) = Subset req avail
 
-type family SelectReady (avail :: [Nat]) (gs :: [Goal]) :: Maybe (Goal, [Goal]) where
-  SelectReady _ '[] = 'Nothing
-  SelectReady avail (g ': gs) =
-    If (Ready avail g) ('Just '(g, gs)) (PrependMaybe g (SelectReady avail gs))
+-- | Partition goals into (ready, notReady) in a single pass. O(p · n)
+type family Partition (avail :: [Nat]) (gs :: [Goal]) :: ([Goal], [Goal]) where
+  Partition _ '[] = '( '[], '[] )
+  Partition avail (g ': gs) = PartitionStep (IsReady avail g) g (Partition avail gs)
 
-type family PrependMaybe (g :: Goal) (m :: Maybe (Goal, [Goal])) :: Maybe (Goal, [Goal]) where
-  PrependMaybe _ 'Nothing = 'Nothing
-  PrependMaybe g ('Just '(g1, rest)) = 'Just '(g1, g ': rest)
+type family PartitionStep (ready :: Bool) (g :: Goal) (rest :: ([Goal], [Goal])) :: ([Goal], [Goal]) where
+  PartitionStep 'True  g '( ready, notReady ) = '( g ': ready, notReady )
+  PartitionStep 'False g '( ready, notReady ) = '( ready, g ': notReady )
 
+-- | Batch scheduling result
 data SolveResult = Solved | Stuck [Nat] [Goal]
 
-type family Solve (avail :: [Nat]) (gs :: [Goal]) :: SolveResult where
+-- | Batch solve: process all ready goals at once, then recurse
+type family Solve (avail :: [Nat]) (pending :: [Goal]) :: SolveResult where
   Solve _ '[] = 'Solved
-  Solve avail gs = SolveStep (SelectReady avail gs) avail gs
+  Solve avail pending = SolveStep (Partition avail pending) avail
 
-type family SolveStep (m :: Maybe (Goal, [Goal])) (avail :: [Nat]) (gs :: [Goal]) :: SolveResult where
-  SolveStep 'Nothing avail gs = 'Stuck avail gs
-  SolveStep ('Just '( 'Goal _ _ prod, rest)) avail _ = Solve (Union avail prod) rest
+type family SolveStep (partition :: ([Goal], [Goal])) (avail :: [Nat]) :: SolveResult where
+  SolveStep '( '[], notReady ) avail = 'Stuck avail notReady  -- No progress, stuck!
+  SolveStep '( ready, notReady ) avail = Solve (Union avail (CollectOutputs ready)) notReady
 
+-- | Main schedule checking constraint
 type family CheckSchedule (name :: Symbol) (steps :: [Step]) :: Constraint where
   CheckSchedule name steps =
     ( CheckPremises name steps (Solve (ConclVars steps) (PremGoals steps))
@@ -940,7 +968,7 @@ type family CheckSchedule (name :: Symbol) (steps :: [Step]) :: Constraint where
 
 type family CheckPremises (name :: Symbol) (steps :: [Step]) (r :: SolveResult) :: Constraint where
   CheckPremises _ _ 'Solved = ()
-  CheckPremises name steps ('Stuck avail gs) = TypeError
+  CheckPremises name _ ('Stuck avail gs) = TypeError
     ( 'Text "In rule \"" ':<>: 'Text name ':<>: 'Text "\": cannot schedule premises"
         ':$$: 'Text ""
         ':$$: 'Text "  Grounded variables: " ':<>: 'ShowType avail
