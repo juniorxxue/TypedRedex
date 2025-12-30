@@ -26,6 +26,7 @@ import TypedRedex.DSL.Moded
   )
 
 import Syntax
+import Data.Data (typeOf3)
 
 --------------------------------------------------------------------------------
 -- Type constraint
@@ -92,36 +93,51 @@ splitEnv = undefined
 unsplitEnv :: PolyRel rel => MJudgment5 rel "unsplitEnv" (In Env) (In TyNom) (In TyNom) (In TyNom) (Out Env)
 unsplitEnv = undefined
 
+
+substTy :: PolyRel rel => MJudgment4 rel "substTy" (In Ty) (In TyNom) (In Ty) (Out Ty)
+substTy = undefined
+
+sub :: PolyRel rel => MJudgment5 rel "sub" (In Env) (In Ty) (In Context) (Out Env) (Out Ty)
+sub = defJudge5 @"sub" format $ \rule ->
+  [ rule "empty" $ do
+      (env, ty) <- fresh2
+      concl $ sub env ty cempty env ty
+  ]
+  where format [env1, ty1, ctx, env2, ty2] = env1 ++ " |- " ++ ty1 ++ " <: " ++ ctx ++ " ⊣ " ++ env2 ++ " ~> " ++ ty2
+        format args = "sub(" ++ unwords args ++ ")"
+
+
+
 infer :: PolyRel rel => MJudgment5 rel "infer" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
 infer = defJudge5 @"infer" format $ \rule ->
   [ rule "lit" $ do
       (n, env) <- fresh2
-      concl $ infer env cempty (lit n) tint env,
+      concl $ infer env cempty (lit n) tint env
 
-    rule "var" $ do
+  , rule "var" $ do
       (x, ty, env) <- fresh3
       prem $ lookupTmVar env x ty
-      concl $ infer env cempty (var x) ty env,
+      concl $ infer env cempty (var x) ty env
 
-    rule "ann" $ do
+  , rule "ann" $ do
       (tm, ty, env1, env2) <- fresh4
       prem $ infer env1 (ctype ty) tm ty env2
-      concl $ infer env1 cempty (ann tm ty) ty env2,
+      concl $ infer env1 cempty (ann tm ty) ty env2
 
-    rule "lam1" $ do
+  , rule "lam1" $ do
       (x, tm, env1, env2) <- fresh4
       (ty1, ty2, ty3) <- fresh3
       prem  $ infer (etrm x ty1 env1) (ctype ty2) tm ty3 env2
-      concl $ infer env1 (ctype (tarr ty1 ty2)) (lam (bindT x tm)) (tarr ty1 ty3) env2,
+      concl $ infer env1 (ctype (tarr ty1 ty2)) (lam (bindT x tm)) (tarr ty1 ty3) env2
 
-    rule "lam2" $ do
+  , rule "lam2" $ do
       (x, tm1, tm2, env1, ctx, env2) <- fresh6
       (ty1, ty2) <- fresh2
       prem  $ infer env1 cempty tm2 ty1 env2
       prem  $ infer (etrm x ty1 env1) ctx tm1 ty2 (etrm x ty1 env2)
-      concl $ infer env1 (ctm tm2 ctx) (lam (bindT x tm1)) (tarr ty1 ty2) env2,
+      concl $ infer env1 (ctm tm2 ctx) (lam (bindT x tm1)) (tarr ty1 ty2) env2
 
-    rule "lam3" $ do
+  , rule "lam3" $ do
       (x, tm, env1, env2, env3, env4) <- fresh6
       (ty1, ty2, ty3) <- fresh3
       (a, b, c) <- fresh3
@@ -130,6 +146,31 @@ infer = defJudge5 @"infer" format $ \rule ->
       prem  $ infer (etrm x (tvar b) env2) (ctype (tvar c)) tm ty3 (etrm x (tvar b) env3)
       prem  $ unsplitEnv env3 a b c env4
       concl $ infer env1 (ctype (tvar a)) (lam (bindT x tm)) (tarr ty1 ty3) env4
+
+  , rule "tlam1" $ do
+      (a, tm, env1, env2, ty) <- fresh5
+      prem  $ infer (euvar a env1) cempty tm ty (euvar a env2)
+      concl $ infer env1 cempty (tlam (bindT a tm)) (tforall (bindT a ty)) env2
+  
+  , rule "tlam2" $ do
+      (a, tm, env1, ty1, ty2, env2) <- fresh6
+      prem  $ infer (euvar a env1) (ctype ty2) tm ty1 (euvar a env2)
+      concl $ infer env1 (ctype (tforall (bindT a ty2))) (tlam (bindT a tm)) (tforall (bindT a ty1)) env2
+
+  , rule "app" $ do
+      (tm1, tm2, env1, ctx, env2) <- fresh5
+      (ty1, ty2) <- fresh2
+      prem  $ infer env1 (ctm tm2 ctx) tm1 (tarr ty1 ty2) env2
+      concl $ infer env1 ctx (app tm1 tm2) ty2 env2
+  
+  , rule "tapp" $ do
+      (tm, ty2, env1, ctx, env2, _env) <- fresh6
+      (a, ty1, ty3, st_ty) <- fresh4
+      prem  $ infer env1 cempty tm (tforall (bindT a ty1)) _env
+      prem  $ substTy ty2 a ty1 st_ty
+      prem  $ sub env1 st_ty ctx env2 ty3
+      concl $ infer env1 ctx (tapp tm ty2) ty3 env2
+      
   ]
   where
     format [env1, ctx, tm, ty, env2] = env1 ++ " |- " ++ ctx ++ " => " ++ tm ++ " => " ++ ty ++ " ⊣ " ++ env2
