@@ -4,6 +4,9 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE GADTs #-}
 
 -- | Capture-avoiding substitution for nominal binders.
 --
@@ -36,11 +39,18 @@
 module TypedRedex.Nominal.Subst
   ( -- * Relational Substitution
     Substo(..)
+    -- * Moded Substitution Judgment
+  , substoM
   ) where
 
 import TypedRedex.Logic
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Relation (conde, (<=>))
+import TypedRedex.DSL.Moded
+  ( Mode(..), T(..), ModeList(..), TArgs(..)
+  , MJudgment4, In, Out
+  , mjudge4, ModedRule(..)
+  )
 import TypedRedex.Nominal.Nom (NominalAtom(..))
 
 --------------------------------------------------------------------------------
@@ -99,3 +109,31 @@ instance (NominalAtom name, LogicType name) => Substo name name where
         hash aL bL  -- a # b (they're different)
         resultL <=> bL
     ]
+
+--------------------------------------------------------------------------------
+-- Moded Substitution Judgment
+--------------------------------------------------------------------------------
+
+-- | Moded substitution judgment: @[replacement/name]body = result@
+--
+-- Use this as a premise in moded rules:
+--
+-- @
+-- rule "tapp" $ do
+--   (alpha, tyBody, tyArg, result) <- fresh4
+--   prem $ substoM alpha tyBody tyArg result
+--   concl $ ...
+-- @
+--
+-- Modes: (In name) (In body) (In body) (Out body)
+substoM :: forall name body rel.
+           (Substo name body, RedexFresh rel, RedexHash rel, RedexEval rel, RedexNeg rel, LogicType name, LogicType body)
+        => MJudgment4 rel "substo" (In name) (In body) (In body) (Out body)
+substoM = mjudge4 (I :* I :* I :* O :* MNil) format [rule]
+  where
+    format [a, body, repl, res] = "[" ++ repl ++ "/" ++ a ++ "]" ++ body ++ " = " ++ res
+    format args = "substo(" ++ unwords args ++ ")"
+    rule :: ModedRule rel '[name, body, body, body]
+    rule = ModedRule "substo" $ \args -> case args of
+      (alpha :! tyBody :! tyArg :! result :! ANil) ->
+        substo (tTerm alpha) (tTerm tyBody) (tTerm tyArg) (tTerm result)

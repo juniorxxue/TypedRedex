@@ -13,12 +13,12 @@ module Rules where
 import Prelude hiding ((>>=), (>>), return)
 import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, fresh6, ground, lift1, lift2, lift3, neg)
 import TypedRedex.Logic (RedexHash)
-import TypedRedex.Nominal.Prelude 
-import TypedRedex.Nominal (RedexFresh(..), bindT)
+import TypedRedex.Nominal.Prelude
+import TypedRedex.Nominal (RedexFresh(..), bindT, Substo(..), substoM)
 import TypedRedex.DSL.Moded
   ( Mode(..), T(..)
-  , AppliedM(..), MJudgment2, MJudgment3, MJudgment4, MJudgment5, MJudgment6, In, Out
-  , defJudge2, defJudge3, defJudge4, defJudge5, defJudge6, ModedRule(..)
+  , AppliedM(..), MJudgment3, MJudgment4, MJudgment5, In, Out
+  , defJudge3, defJudge4, defJudge5
   , fresh, fresh2, fresh3, fresh4, fresh5, fresh6, prem, concl
   , ground, Union
   , return, (>>=), (>>)
@@ -93,10 +93,6 @@ splitEnv = undefined
 unsplitEnv :: PolyRel rel => MJudgment5 rel "unsplitEnv" (In Env) (In TyNom) (In TyNom) (In TyNom) (Out Env)
 unsplitEnv = undefined
 
-
-substTy :: PolyRel rel => MJudgment4 rel "substTy" (In Ty) (In TyNom) (In Ty) (Out Ty)
-substTy = undefined
-
 sub :: PolyRel rel => MJudgment5 rel "sub" (In Env) (In Ty) (In Context) (Out Env) (Out Ty)
 sub = defJudge5 @"sub" format $ \rule ->
   [ rule "empty" $ do
@@ -105,7 +101,6 @@ sub = defJudge5 @"sub" format $ \rule ->
   ]
   where format [env1, ty1, ctx, env2, ty2] = env1 ++ " |- " ++ ty1 ++ " <: " ++ ctx ++ " ⊣ " ++ env2 ++ " ~> " ++ ty2
         format args = "sub(" ++ unwords args ++ ")"
-
 
 
 infer :: PolyRel rel => MJudgment5 rel "infer" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
@@ -167,7 +162,7 @@ infer = defJudge5 @"infer" format $ \rule ->
       (tm, ty2, env1, ctx, env2, _env) <- fresh6
       (a, ty1, ty3, st_ty) <- fresh4
       prem  $ infer env1 cempty tm (tforall (bindT a ty1)) _env
-      prem  $ substTy ty2 a ty1 st_ty
+      prem  $ substoM a ty1 ty2 st_ty
       prem  $ sub env1 st_ty ctx env2 ty3
       concl $ infer env1 ctx (tapp tm ty2) ty3 env2
       

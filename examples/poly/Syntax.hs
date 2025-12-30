@@ -15,7 +15,7 @@ import TypedRedex.Nominal
 import TypedRedex.Nominal.Bind (Bind(..))
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Nominal.Hash (Hash(..))
-import TypedRedex.DSL.TH (deriveLogicType, derivePermute, deriveHash)
+import TypedRedex.DSL.TH (deriveLogicType, derivePermute, deriveHash, deriveSubsto)
 import qualified TypedRedex.DSL.TH as TH
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.DSL.Moded (T(..), ground, Union)
@@ -186,3 +186,11 @@ instance Hash TyNom (Bind Nom Tm) where
   occursIn a (Bind _ body) = occursIn a body
 
 deriveHash ''Env [''TyNom, ''Nom]
+
+--------------------------------------------------------------------------------
+-- Substitution derivation (uses Substo from TypedRedex.Nominal)
+--------------------------------------------------------------------------------
+
+-- | Capture-avoiding substitution: [replacement/alpha]body = result
+-- TVar is the variable constructor for TyNom in Ty
+deriveSubsto ''Ty [(''TyNom, 'TVar)]

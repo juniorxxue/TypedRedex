@@ -69,6 +69,7 @@ module TypedRedex.Nominal
   , Hash(..)
     -- * Relational Substitution (Capture-Avoiding)
   , Substo(..)
+  , substoM
     -- * Fresh Name Generation
   , RedexFresh(..)
     -- * Hash Constraint Support
