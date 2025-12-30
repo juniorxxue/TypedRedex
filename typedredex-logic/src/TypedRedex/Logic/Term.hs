@@ -30,6 +30,7 @@ import Control.Applicative (Alternative)
 import Data.Kind (Type)
 import Data.Proxy (Proxy)
 import Data.Typeable (Typeable)
+import TypedRedex.Logic.Display (HasDisplay)
 
 --------------------------------------------------------------------------------
 -- Logic terms and variables
@@ -74,8 +75,9 @@ type Evaluator rel var =
 --
 -- This existential wrapper allows uniform traversal of heterogeneous children
 -- (e.g., for occurs check). The 'Proxy' carries the child's type.
+-- The 'HasDisplay' constraint enables recursive pretty-printing.
 data Field parent var where
-  Field :: (LogicType t, Typeable t) => Proxy t -> Logic t var -> Field parent var
+  Field :: (LogicType t, Typeable t, HasDisplay t) => Proxy t -> Logic t var -> Field parent var
 
 --------------------------------------------------------------------------------
 -- LogicType class

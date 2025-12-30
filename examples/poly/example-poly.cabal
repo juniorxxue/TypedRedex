@@ -11,7 +11,7 @@ executable example-poly
     Syntax
     Rules
     Typeset
-    Properties
+    -- TestTypeCheck
   hs-source-dirs:   .
   build-depends:
     base >=4.12 && <5,

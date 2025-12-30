@@ -45,8 +45,8 @@ module TypedRedex.Interp.Typesetting
   , modedVar
   ) where
 
-import TypedRedex.Logic
-import TypedRedex.Interp.Format (TermFormatter(..), JudgmentFormatter(..), DefaultTermFormatter(..))
+import TypedRedex.Logic hiding (defaultFormatCon)
+import TypedRedex.Interp.Format (TermFormatter(..), DefaultTermFormatter(..))
 import TypedRedex.Interp.PrettyPrint (NamingConfig, lookupNaming, subscriptNum, emptyNaming)
 import TypedRedex.DSL.Define (Applied(..), appGoal)
 import TypedRedex.DSL.Moded (T(..), AppliedM(..), toApplied, ground)
@@ -79,8 +79,9 @@ data RawTerm
 data RawRule = RawRule
   { rrName       :: String                    -- ^ Rule name
   , rrConclusion :: [RawTerm]                 -- ^ Conclusion pattern arguments
-  , rrPremises   :: [(String, [RawTerm])]     -- ^ (judgment name, arguments)
-  } deriving (Show)
+  , rrConclFmt   :: [String] -> String        -- ^ Conclusion format function
+  , rrPremises   :: [(String, [RawTerm], [String] -> String)]  -- ^ (judgment name, arguments, format)
+  }
 
 -- | Display variable: after renumbering, with display index.
 data DisplayVar = DisplayVar
@@ -98,8 +99,9 @@ data DisplayTerm
 data DisplayRule = DisplayRule
   { drName       :: String
   , drConclusion :: [DisplayTerm]
-  , drPremises   :: [(String, [DisplayTerm])]
-  } deriving (Show)
+  , drConclFmt   :: [String] -> String        -- ^ Conclusion format function
+  , drPremises   :: [(String, [DisplayTerm], [String] -> String)]  -- ^ (name, args, format)
+  }
 
 --------------------------------------------------------------------------------
 -- Rule Builder (state during extraction)
@@ -109,16 +111,22 @@ data RuleBuilder = RuleBuilder
   { rbName        :: String
   , rbInConclusion :: Bool
   , rbConclusion  :: [RawTerm]                 -- ^ Conclusion patterns (reverse order)
-  , rbPremises    :: [(String, [RawTerm])]     -- ^ Premises (reverse order)
-  } deriving (Show)
+  , rbConclFmt    :: [String] -> String        -- ^ Conclusion format function
+  , rbPremises    :: [(String, [RawTerm], [String] -> String)]  -- ^ Premises (reverse order)
+  }
 
 emptyBuilder :: RuleBuilder
-emptyBuilder = RuleBuilder "" False [] []
+emptyBuilder = RuleBuilder "" False [] defaultFmt []
+  where defaultFmt args = intercalate ", " args
+        intercalate _ [] = ""
+        intercalate _ [x] = x
+        intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
 
 finishRule :: RuleBuilder -> RawRule
 finishRule rb = RawRule
   { rrName = rbName rb
   , rrConclusion = reverse (rbConclusion rb)
+  , rrConclFmt = rbConclFmt rb
   , rrPremises = reverse (rbPremises rb)
   }
 
@@ -222,7 +230,7 @@ instance Redex TypesettingRedex where
     depth <- gets tsDepth
     if depth == 0
       then do
-        modify $ \s -> s { tsBuilder = (tsBuilder s) { rbName = relName rel }, tsDepth = 1 }
+        modify $ \s -> s { tsBuilder = (tsBuilder s) { rbName = relRule rel, rbConclFmt = relFormat rel }, tsDepth = 1 }
         relBody rel
         modify $ \s -> s { tsDepth = 0 }
       else
@@ -233,10 +241,10 @@ instance Redex TypesettingRedex where
   markConclusion = modify $ \s ->
     s { tsBuilder = (tsBuilder s) { rbInConclusion = True } }
 
-  markPremise name args = do
+  markPremise name args fmt = do
     argTerms <- pure $ map captureCaptured args
     modify $ \s -> s { tsBuilder = (tsBuilder s) {
-      rbPremises = (name, argTerms) : rbPremises (tsBuilder s)
+      rbPremises = (name, argTerms, fmt) : rbPremises (tsBuilder s)
     } }
 
   skipLiftedActions _ = True
@@ -289,7 +297,7 @@ renumber :: RawRule -> DisplayRule
 renumber raw =
   let -- Collect variables: conclusion first, then premises
       conclVars = concatMap collectVars (rrConclusion raw)
-      premVars = concatMap (concatMap collectVars . snd) (rrPremises raw)
+      premVars = concatMap (\(_, ts, _) -> concatMap collectVars ts) (rrPremises raw)
       allVars = conclVars ++ premVars
 
       -- Build renumbering map
@@ -297,8 +305,8 @@ renumber raw =
 
       -- Apply renumbering
       newConclusion = map (applyVarMap varMap) (rrConclusion raw)
-      newPremises = map (\(n, ts) -> (n, map (applyVarMap varMap) ts)) (rrPremises raw)
-  in DisplayRule (rrName raw) newConclusion newPremises
+      newPremises = map (\(n, ts, fmt) -> (n, map (applyVarMap varMap) ts, fmt)) (rrPremises raw)
+  in DisplayRule (rrName raw) newConclusion (rrConclFmt raw) newPremises
 
 -- | Collect all VarRefs from a RawTerm (in order of appearance).
 collectVars :: RawTerm -> [VarRef]
@@ -354,13 +362,15 @@ defaultFormatCon name args = name ++ "(" ++ intercalate ", " args ++ ")"
     intercalate sep = foldr1 (\x y -> x ++ sep ++ y)
 
 -- | Format a display rule as an ASCII inference rule.
-formatRule :: (TermFormatter fmt, JudgmentFormatter fmt)
-           => fmt -> NamingConfig -> String -> DisplayRule -> String
-formatRule fmt config judgmentName rule =
+--
+-- Uses the format functions stored in the rule itself (from judgment definitions).
+formatRule :: TermFormatter fmt
+           => fmt -> NamingConfig -> DisplayRule -> String
+formatRule fmt config rule =
   let conclStrs = map (formatDisplayTerm fmt config) (drConclusion rule)
-      conclusion = formatJudgment fmt judgmentName conclStrs
-      prems = map (\(pname, pargs) ->
-                     formatJudgment fmt pname (map (formatDisplayTerm fmt config) pargs))
+      conclusion = drConclFmt rule conclStrs
+      prems = map (\(_, pargs, pfmt) ->
+                     pfmt (map (formatDisplayTerm fmt config) pargs))
                   (drPremises rule)
       maxLen = maximum $ length conclusion : map length prems
       line = replicate (maxLen + 4) '─'
@@ -382,19 +392,21 @@ typesettingVar n = Free (Var (TVar n))
 
 -- | Extract and print rules for a judgment.
 --
+-- The format function is taken from the judgment definition itself,
+-- so no JudgmentFormatter instance is needed.
+--
 -- @
--- printRules emptyNaming SsubFormatter "ssub" $ appGoal applied
+-- printRules emptyNaming SsubFormatter $ appGoal applied
 -- @
-printRules :: (TermFormatter fmt, JudgmentFormatter fmt)
+printRules :: TermFormatter fmt
            => NamingConfig
            -> fmt
-           -> String
            -> TypesettingRedex ()
            -> IO ()
-printRules config fmt judgmentName goal = do
+printRules config fmt goal = do
   let rawRules = runTypesetting goal
       displayRules = map renumber rawRules
-  mapM_ (\r -> putStrLn (formatRule fmt config judgmentName r) >> putStrLn "") displayRules
+  mapM_ (\r -> putStrLn (formatRule fmt config r) >> putStrLn "") displayRules
 
 --------------------------------------------------------------------------------
 -- Support for moded judgments

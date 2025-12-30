@@ -20,6 +20,7 @@ library
     TypedRedex.Interp.Subst
     TypedRedex.Interp.Run
     TypedRedex.Interp.Format
+    TypedRedex.Interp.Display
     TypedRedex.Interp.Tracing
     TypedRedex.Interp.Typesetting
     TypedRedex.Test.Property

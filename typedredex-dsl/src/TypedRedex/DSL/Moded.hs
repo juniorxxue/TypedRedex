@@ -60,7 +60,7 @@ module TypedRedex.DSL.Moded
     -- * Moded terms
   , T(..)
   , ground
-  , lift1, lift2, lift3
+  , lift1, lift2, lift3, lift4
     -- * Argument lists
   , TArgs(..)
     -- * Moded judgments
@@ -191,6 +191,12 @@ lift3 :: (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel)
       -> T vs1 a rel -> T vs2 b rel -> T vs3 c rel
       -> T (Union vs1 (Union vs2 vs3)) d rel
 lift3 f (T vars1 x) (T vars2 y) (T vars3 z) = T (S.unions [vars1, vars2, vars3]) (f x y z)
+
+-- | Lift a quaternary function, merging variable sets.
+lift4 :: (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel)
+      -> T vs1 a rel -> T vs2 b rel -> T vs3 c rel -> T vs4 d rel
+      -> T (Union vs1 (Union vs2 (Union vs3 vs4))) e rel
+lift4 f (T vars1 x) (T vars2 y) (T vars3 z) (T vars4 w) = T (S.unions [vars1, vars2, vars3, vars4]) (f x y z w)
 
 --------------------------------------------------------------------------------
 -- Type-level Sets
@@ -478,11 +484,12 @@ liftRelDeferred action = RuleM $ \env -> pure
 
 -- | Result of applying a moded judgment. Carries mode info at type and runtime level.
 data AppliedM rel (name :: Symbol) (modes :: [Mode]) (vss :: [[Nat]]) (ts :: [Type]) = AppliedM
-  { amGoal    :: rel ()           -- ^ Goal to execute
-  , amName    :: String           -- ^ Judgment name
-  , amArgs    :: LTermList rel ts -- ^ Arguments (stripped of var tracking)
-  , amReqVars :: Set Int          -- ^ Runtime: variables required (inputs)
-  , amProdVars :: Set Int         -- ^ Runtime: variables produced (outputs)
+  { amGoal     :: rel ()           -- ^ Goal to execute
+  , amName     :: String           -- ^ Judgment name
+  , amArgs     :: LTermList rel ts -- ^ Arguments (stripped of var tracking)
+  , amReqVars  :: Set Int          -- ^ Runtime: variables required (inputs)
+  , amProdVars :: Set Int          -- ^ Runtime: variables produced (outputs)
+  , amFormat   :: [String] -> String -- ^ Format function for pretty printing
   }
 
 -- | Type alias for a unary moded judgment function.
@@ -575,102 +582,114 @@ instance (LogicType t, ToLTermList vss ts) => ToLTermList (vs ': vss) (t ': ts) 
 
 -- | A moded judgment definition.
 data MJudgeDef rel (name :: Symbol) (modes :: [Mode]) (ts :: [Type]) = MJudgeDef
-  { mjdName  :: String
-  , mjdRules :: [ModedRule rel ts]
+  { mjdName   :: String
+  , mjdFormat :: [String] -> String
+  , mjdRules  :: [ModedRule rel ts]
   }
 
 -- | Define a moded judgment. Returns a function that takes TArgs.
 mjudge :: forall name modes rel ts vss.
           (Redex rel, KnownSymbol name, InputVars modes vss ts, OutputVars modes vss ts, ToLTermList vss ts)
        => ModeList modes
+       -> ([String] -> String)  -- ^ Format function
        -> [ModedRule rel ts]
        -> TArgs vss ts rel
        -> AppliedM rel name modes vss ts
-mjudge modes rules args = AppliedM
-  { amGoal = asum [ call $ Relation name (captureArgs (toLTermList args)) (body args)
+mjudge modes format rules args = AppliedM
+  { amGoal = asum [ call $ Relation judgeName name (captureArgs (toLTermList args)) (body args) format
                   | ModedRule name body <- rules
                   ]
-  , amName = symbolVal (Proxy @name)
+  , amName = judgeName
   , amArgs = toLTermList args
   , amReqVars = inputVars modes args
   , amProdVars = outputVars modes args
+  , amFormat = format
   }
+  where
+    judgeName = symbolVal (Proxy @name)
 
 mjudge1 :: forall name modes rel t1.
            (Redex rel, KnownSymbol name, LogicType t1)
         => ModeList modes
+        -> ([String] -> String)
         -> [ModedRule rel '[t1]]
         -> (forall vs1. (InputVars modes '[vs1] '[t1], OutputVars modes '[vs1] '[t1])
             => T vs1 t1 rel -> AppliedM rel name modes '[vs1] '[t1])
-mjudge1 modes rules t1@(T vars1 _) =
+mjudge1 modes format rules t1@(T vars1 _) =
   let args = t1 :! ANil
-  in mjudge modes rules args
+  in mjudge modes format rules args
 
 mjudge2 :: forall name modes rel t1 t2.
            (Redex rel, KnownSymbol name, LogicType t1, LogicType t2)
         => ModeList modes
+        -> ([String] -> String)
         -> [ModedRule rel '[t1, t2]]
         -> (forall vs1 vs2. (InputVars modes '[vs1, vs2] '[t1, t2], OutputVars modes '[vs1, vs2] '[t1, t2])
             => T vs1 t1 rel -> T vs2 t2 rel
             -> AppliedM rel name modes '[vs1, vs2] '[t1, t2])
-mjudge2 modes rules t1@(T _ _) t2@(T _ _) =
+mjudge2 modes format rules t1@(T _ _) t2@(T _ _) =
   let args = t1 :! t2 :! ANil
-  in mjudge modes rules args
+  in mjudge modes format rules args
 
 mjudge3 :: forall name modes rel t1 t2 t3.
            (Redex rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3)
         => ModeList modes
+        -> ([String] -> String)
         -> [ModedRule rel '[t1, t2, t3]]
         -> (forall vs1 vs2 vs3. (InputVars modes '[vs1, vs2, vs3] '[t1, t2, t3], OutputVars modes '[vs1, vs2, vs3] '[t1, t2, t3])
             => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel
             -> AppliedM rel name modes '[vs1, vs2, vs3] '[t1, t2, t3])
-mjudge3 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) =
+mjudge3 modes format rules t1@(T _ _) t2@(T _ _) t3@(T _ _) =
   let args = t1 :! t2 :! t3 :! ANil
-  in mjudge modes rules args
+  in mjudge modes format rules args
 
 mjudge4 :: forall name modes rel t1 t2 t3 t4.
            (Redex rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4)
         => ModeList modes
+        -> ([String] -> String)
         -> [ModedRule rel '[t1, t2, t3, t4]]
         -> (forall vs1 vs2 vs3 vs4. (InputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4], OutputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4])
             => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel
             -> AppliedM rel name modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4])
-mjudge4 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) =
+mjudge4 modes format rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) =
   let args = t1 :! t2 :! t3 :! t4 :! ANil
-  in mjudge modes rules args
+  in mjudge modes format rules args
 
 mjudge5 :: forall name modes rel t1 t2 t3 t4 t5.
            (Redex rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, LogicType t5)
         => ModeList modes
+        -> ([String] -> String)
         -> [ModedRule rel '[t1, t2, t3, t4, t5]]
         -> (forall vs1 vs2 vs3 vs4 vs5. (InputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5], OutputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5])
             => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel
             -> AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5])
-mjudge5 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) t5@(T _ _) =
+mjudge5 modes format rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) t5@(T _ _) =
   let args = t1 :! t2 :! t3 :! t4 :! t5 :! ANil
-  in mjudge modes rules args
+  in mjudge modes format rules args
 
 mjudge6 :: forall name modes rel t1 t2 t3 t4 t5 t6.
            (Redex rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, LogicType t5, LogicType t6)
         => ModeList modes
+        -> ([String] -> String)
         -> [ModedRule rel '[t1, t2, t3, t4, t5, t6]]
         -> (forall vs1 vs2 vs3 vs4 vs5 vs6. (InputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6], OutputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6])
             => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel -> T vs6 t6 rel
             -> AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6])
-mjudge6 modes rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) t5@(T _ _) t6@(T _ _) =
+mjudge6 modes format rules t1@(T _ _) t2@(T _ _) t3@(T _ _) t4@(T _ _) t5@(T _ _) t6@(T _ _) =
   let args = t1 :! t2 :! t3 :! t4 :! t5 :! t6 :! ANil
-  in mjudge modes rules args
+  in mjudge modes format rules args
 
 -- | Define a unary moded judgment with scoped rule builder.
 defJudge1 :: forall name modes rel t1.
              (RedexNeg rel, KnownSymbol name, LogicType t1, UnifyLList rel '[t1], SingModeList modes)
-          => ((forall n steps. CheckSchedule name steps
+          => ([String] -> String)  -- ^ Format function
+          -> ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1])
               -> [ModedRule rel '[t1]])
           -> (forall vs1. (InputVars modes '[vs1] '[t1], OutputVars modes '[vs1] '[t1])
               => T vs1 t1 rel -> AppliedM rel name modes '[vs1] '[t1])
-defJudge1 mkRules = mjudge1 singModeList (mkRules rule)
+defJudge1 format mkRules = mjudge1 singModeList format (mkRules rule)
   where
     rule :: forall n steps. CheckSchedule name steps
          => String -> RuleM rel '[t1] ('St 0 '[] 'False) ('St n steps 'True) ()
@@ -679,14 +698,15 @@ defJudge1 mkRules = mjudge1 singModeList (mkRules rule)
 
 defJudge2 :: forall name modes rel t1 t2.
              (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, UnifyLList rel '[t1, t2], SingModeList modes)
-          => ((forall n steps. CheckSchedule name steps
+          => ([String] -> String)
+          -> ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2])
               -> [ModedRule rel '[t1, t2]])
           -> (forall vs1 vs2. (InputVars modes '[vs1, vs2] '[t1, t2], OutputVars modes '[vs1, vs2] '[t1, t2])
               => T vs1 t1 rel -> T vs2 t2 rel
               -> AppliedM rel name modes '[vs1, vs2] '[t1, t2])
-defJudge2 mkRules = mjudge2 singModeList (mkRules rule)
+defJudge2 format mkRules = mjudge2 singModeList format (mkRules rule)
   where
     rule :: forall n steps. CheckSchedule name steps
          => String -> RuleM rel '[t1, t2] ('St 0 '[] 'False) ('St n steps 'True) ()
@@ -695,14 +715,15 @@ defJudge2 mkRules = mjudge2 singModeList (mkRules rule)
 
 defJudge3 :: forall name modes rel t1 t2 t3.
              (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, UnifyLList rel '[t1, t2, t3], SingModeList modes)
-          => ((forall n steps. CheckSchedule name steps
+          => ([String] -> String)
+          -> ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2, t3] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2, t3])
               -> [ModedRule rel '[t1, t2, t3]])
           -> (forall vs1 vs2 vs3. (InputVars modes '[vs1, vs2, vs3] '[t1, t2, t3], OutputVars modes '[vs1, vs2, vs3] '[t1, t2, t3])
               => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel
               -> AppliedM rel name modes '[vs1, vs2, vs3] '[t1, t2, t3])
-defJudge3 mkRules = mjudge3 singModeList (mkRules rule)
+defJudge3 format mkRules = mjudge3 singModeList format (mkRules rule)
   where
     rule :: forall n steps. CheckSchedule name steps
          => String -> RuleM rel '[t1, t2, t3] ('St 0 '[] 'False) ('St n steps 'True) ()
@@ -711,14 +732,15 @@ defJudge3 mkRules = mjudge3 singModeList (mkRules rule)
 
 defJudge4 :: forall name modes rel t1 t2 t3 t4.
              (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, UnifyLList rel '[t1, t2, t3, t4], SingModeList modes)
-          => ((forall n steps. CheckSchedule name steps
+          => ([String] -> String)
+          -> ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2, t3, t4] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2, t3, t4])
               -> [ModedRule rel '[t1, t2, t3, t4]])
           -> (forall vs1 vs2 vs3 vs4. (InputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4], OutputVars modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4])
               => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel
               -> AppliedM rel name modes '[vs1, vs2, vs3, vs4] '[t1, t2, t3, t4])
-defJudge4 mkRules = mjudge4 singModeList (mkRules rule)
+defJudge4 format mkRules = mjudge4 singModeList format (mkRules rule)
   where
     rule :: forall n steps. CheckSchedule name steps
          => String -> RuleM rel '[t1, t2, t3, t4] ('St 0 '[] 'False) ('St n steps 'True) ()
@@ -727,14 +749,15 @@ defJudge4 mkRules = mjudge4 singModeList (mkRules rule)
 
 defJudge5 :: forall name modes rel t1 t2 t3 t4 t5.
              (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, LogicType t5, UnifyLList rel '[t1, t2, t3, t4, t5], SingModeList modes)
-          => ((forall n steps. CheckSchedule name steps
+          => ([String] -> String)
+          -> ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2, t3, t4, t5] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2, t3, t4, t5])
               -> [ModedRule rel '[t1, t2, t3, t4, t5]])
           -> (forall vs1 vs2 vs3 vs4 vs5. (InputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5], OutputVars modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5])
               => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel
               -> AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5] '[t1, t2, t3, t4, t5])
-defJudge5 mkRules = mjudge5 singModeList (mkRules rule)
+defJudge5 format mkRules = mjudge5 singModeList format (mkRules rule)
   where
     rule :: forall n steps. CheckSchedule name steps
          => String -> RuleM rel '[t1, t2, t3, t4, t5] ('St 0 '[] 'False) ('St n steps 'True) ()
@@ -743,14 +766,15 @@ defJudge5 mkRules = mjudge5 singModeList (mkRules rule)
 
 defJudge6 :: forall name modes rel t1 t2 t3 t4 t5 t6.
              (RedexNeg rel, KnownSymbol name, LogicType t1, LogicType t2, LogicType t3, LogicType t4, LogicType t5, LogicType t6, UnifyLList rel '[t1, t2, t3, t4, t5, t6], SingModeList modes)
-          => ((forall n steps. CheckSchedule name steps
+          => ([String] -> String)
+          -> ((forall n steps. CheckSchedule name steps
                => String -> RuleM rel '[t1, t2, t3, t4, t5, t6] ('St 0 '[] 'False) ('St n steps 'True) ()
                -> ModedRule rel '[t1, t2, t3, t4, t5, t6])
               -> [ModedRule rel '[t1, t2, t3, t4, t5, t6]])
           -> (forall vs1 vs2 vs3 vs4 vs5 vs6. (InputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6], OutputVars modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6])
               => T vs1 t1 rel -> T vs2 t2 rel -> T vs3 t3 rel -> T vs4 t4 rel -> T vs5 t5 rel -> T vs6 t6 rel
               -> AppliedM rel name modes '[vs1, vs2, vs3, vs4, vs5, vs6] '[t1, t2, t3, t4, t5, t6])
-defJudge6 mkRules = mjudge6 singModeList (mkRules rule)
+defJudge6 format mkRules = mjudge6 singModeList format (mkRules rule)
   where
     rule :: forall n steps. CheckSchedule name steps
          => String -> RuleM rel '[t1, t2, t3, t4, t5, t6] ('St 0 '[] 'False) ('St n steps 'True) ()
@@ -759,7 +783,7 @@ defJudge6 mkRules = mjudge6 singModeList (mkRules rule)
 
 -- | Convert AppliedM to Applied for running queries.
 toApplied :: AppliedM rel name modes vss ts -> Applied rel ts
-toApplied (AppliedM goal name args _ _) = Applied args goal name
+toApplied (AppliedM goal name args _ _ _) = Applied args goal name
 
 --------------------------------------------------------------------------------
 -- Conclusion and Premise
@@ -797,7 +821,7 @@ prem :: forall name modes rel vss ts ts' n steps c.
      -> RuleM rel ts ('St n steps c)
                   ('St n (Snoc steps ('PremStep ('Goal name (ReqVars modes vss) (ProdVars modes vss)))) c) ()
 prem applied = RuleM $ \env -> do
-  markPremise (amName applied) (captureArgs (amArgs applied))
+  markPremise (amName applied) (captureArgs (amArgs applied)) (amFormat applied)
   pure
     ( ()
     , env { reDeferred = PremA (PremAction (amReqVars applied) (amProdVars applied) (amGoal applied)) : reDeferred env }
@@ -822,11 +846,16 @@ infix 4 ===
       -> RuleM rel ts ('St n steps c)
                    ('St n (Snoc steps ('PremStep ('Goal "==" (Union vs1 vs2) '[]))) c) ()
 (===) (T vars1 t1) (T vars2 t2) = RuleM $ \env -> do
-  markPremise "==" [CapturedTerm t1, CapturedTerm t2]
+  markPremise "==" [CapturedTerm t1, CapturedTerm t2] eqFmt
   pure ( ()
        , env { reDeferred = PremA (PremAction (S.union vars1 vars2) S.empty (t1 <=> t2))
              : reDeferred env }
        )
+  where eqFmt [a, b] = a ++ " = " ++ b
+        eqFmt args = "==(" ++ intercalate ", " args ++ ")"
+        intercalate _ [] = ""
+        intercalate _ [x] = x
+        intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
 
 -- | Inequality constraint: both arguments must be ground.
 infix 4 =/=
@@ -836,11 +865,16 @@ infix 4 =/=
       -> RuleM rel ts ('St n steps c)
                    ('St n (Snoc steps ('PremStep ('Goal "=/=" (Union vs1 vs2) '[]))) c) ()
 (=/=) (T vars1 t1) (T vars2 t2) = RuleM $ \env -> do
-  markPremise "=/=" [CapturedTerm t1, CapturedTerm t2]
+  markPremise "=/=" [CapturedTerm t1, CapturedTerm t2] neqFmt
   pure ( ()
        , env { reDeferred = PremA (PremAction (S.union vars1 vars2) S.empty (R.neg (t1 <=> t2)))
              : reDeferred env }
        )
+  where neqFmt [a, b] = a ++ " ≠ " ++ b
+        neqFmt args = "=/=(" ++ intercalate ", " args ++ ")"
+        intercalate _ [] = ""
+        intercalate _ [x] = x
+        intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
 
 --------------------------------------------------------------------------------
 -- Schedule Checking

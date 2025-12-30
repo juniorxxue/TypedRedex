@@ -16,6 +16,7 @@ library
   exposed-modules:
     TypedRedex.Logic
     TypedRedex.Logic.Term
+    TypedRedex.Logic.Display
     TypedRedex.Logic.Redex
     TypedRedex.Logic.Unify
     TypedRedex.Logic.SubstCore

@@ -5,7 +5,4 @@ packages:
   experimental/typedredex-hkt
   experimental/typedredex-free
   examples/poly
-  examples/stlc-bidir
-  examples/pcf-step
   examples/system-f
-  examples/stlc-bidir-free

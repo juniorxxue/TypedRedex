@@ -70,9 +70,11 @@ data CapturedTerm (rel :: Type -> Type) where
 
 -- | A named logic relation (predicate).
 data Relation (rel :: Type -> Type) = Relation
-  { relName  :: String              -- ^ Relation name
-  , relTerms :: [CapturedTerm rel]  -- ^ Captured terms
-  , relBody  :: Goal rel            -- ^ The computation
+  { relJudgment :: String              -- ^ Judgment name (e.g., "ssub")
+  , relRule     :: String              -- ^ Rule name (e.g., "int", "arr")
+  , relTerms    :: [CapturedTerm rel]  -- ^ Captured terms
+  , relBody     :: Goal rel            -- ^ The computation
+  , relFormat   :: [String] -> String  -- ^ Format function for pretty printing
   }
 
 -- | How to allocate a fresh variable.
@@ -125,9 +127,9 @@ class (Monad rel, Alternative rel, Functor (RVar rel)) => Redex rel where
   markConclusion :: Goal rel
   markConclusion = pure ()
 
-  -- | Mark a premise call.
-  markPremise :: String -> [CapturedTerm rel] -> Goal rel
-  markPremise _ _ = pure ()
+  -- | Mark a premise call with format function.
+  markPremise :: String -> [CapturedTerm rel] -> ([String] -> String) -> Goal rel
+  markPremise _ _ _ = pure ()
 
   -- | Whether to skip lifted (deferred) actions.
   skipLiftedActions :: proxy rel -> Bool

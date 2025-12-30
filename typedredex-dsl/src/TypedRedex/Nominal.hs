@@ -3,6 +3,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DataKinds #-}
 
 -- | Nominal Logic for TypedRedex.
 --
@@ -74,13 +75,17 @@ module TypedRedex.Nominal
   , RedexHash(..)
     -- * High-Level API (Generic)
   , unbindWith
-    -- * Smart Constructor
+    -- * Smart Constructors
   , bind
+  , bindT
   ) where
 
+import qualified Data.Set as S
+import GHC.TypeNats (Nat)
 import TypedRedex.Logic
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Eval (eval)
+import TypedRedex.DSL.Moded (T(..), Union)
 import TypedRedex.Nominal.Nom
 import TypedRedex.Nominal.Bind
 import TypedRedex.Nominal.Subst
@@ -102,7 +107,7 @@ import TypedRedex.Nominal.Hash
 -- -- With custom types:
 -- unbindWith freshKindNom_ bnd -- for Bind KindNom body
 -- @
-unbindWith :: (RedexEval rel, NominalAtom name, LogicType body, Permute name body)
+unbindWith :: (RedexEval rel, NominalAtom name, LogicType body, Permute name body, HasDisplay name, HasDisplay body)
            => (forall a. (name -> rel a) -> rel a)  -- ^ Fresh name generator (CPS)
            -> LTerm (Bind name body) rel
            -> rel (LTerm name rel, LTerm body rel)
@@ -123,6 +128,19 @@ unbindWith freshGen bndL = do
 -- @
 -- bind x body  -- creates Bind x body
 -- @
-bind :: (NominalAtom name, LogicType body, Permute name body)
+bind :: (NominalAtom name, LogicType body, Permute name body, HasDisplay name, HasDisplay body)
      => name -> LTerm body rel -> LTerm (Bind name body) rel
 bind n b = mkBind n b
+
+-- | Create a moded binder (tracks variable dependencies).
+--
+-- Use this in moded rules where both name and body are pattern variables:
+--
+-- @
+-- rule "lam" $ do
+--   (x, tm, env) <- fresh3
+--   concl $ typeof env (lam (bindT x tm)) ...
+-- @
+bindT :: (NominalAtom name, LogicType name, LogicType body, Permute name body, HasDisplay name, HasDisplay body)
+      => T (vs1 :: [Nat]) name rel -> T (vs2 :: [Nat]) body rel -> T (Union vs1 vs2) (Bind name body) rel
+bindT (T vars1 n) (T vars2 b) = T (S.union vars1 vars2) (mkBindL n b)

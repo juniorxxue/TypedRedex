@@ -17,6 +17,11 @@ import TypedRedex.Logic
 import TypedRedex.DSL.Fresh
 import Control.Applicative (asum)
 import Data.Typeable (Typeable)
+import Data.List (intercalate)
+
+-- | Default format for judgments: name(arg1, arg2, ...)
+defaultFormat :: [String] -> String
+defaultFormat args = intercalate ", " args
 
 --------------------------------------------------------------------------------
 -- Relation construction
@@ -24,23 +29,23 @@ import Data.Typeable (Typeable)
 
 -- | Define a unary relation.
 relation :: (Redex rel, LogicType a, Typeable a) => String -> (LTerm a rel -> Goal rel) -> LTerm a rel -> Relation rel
-relation n f a_ = Relation n [CapturedTerm a_] $ argument a_ f
+relation n f a_ = Relation n n [CapturedTerm a_] (argument a_ f) defaultFormat
 
 -- | Define a binary relation.
 relation2 :: (Redex rel, LogicType a, Typeable a, LogicType b, Typeable b) => String -> (LTerm a rel -> LTerm b rel -> Goal rel) -> LTerm a rel -> LTerm b rel -> Relation rel
-relation2 n f a_ b_ = Relation n [CapturedTerm a_, CapturedTerm b_] $ argument2 a_ b_ f
+relation2 n f a_ b_ = Relation n n [CapturedTerm a_, CapturedTerm b_] (argument2 a_ b_ f) defaultFormat
 
 -- | Define a ternary relation.
 relation3 :: (Redex rel, LogicType a, Typeable a, LogicType b, Typeable b, LogicType c, Typeable c) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> Goal rel) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> Relation rel
-relation3 n f a_ b_ c_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_] $ argument3 a_ b_ c_ f
+relation3 n f a_ b_ c_ = Relation n n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_] (argument3 a_ b_ c_ f) defaultFormat
 
 -- | Define a quaternary relation.
 relation4 :: (Redex rel, LogicType a, Typeable a, LogicType b, Typeable b, LogicType c, Typeable c, LogicType d, Typeable d) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> Goal rel) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> Relation rel
-relation4 n f a_ b_ c_ d_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_] $ argument4 a_ b_ c_ d_ f
+relation4 n f a_ b_ c_ d_ = Relation n n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_] (argument4 a_ b_ c_ d_ f) defaultFormat
 
 -- | Define a 5-ary relation.
 relation5 :: (Redex rel, LogicType a, Typeable a, LogicType b, Typeable b, LogicType c, Typeable c, LogicType d, Typeable d, LogicType e, Typeable e) => String -> (LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel -> Goal rel) -> LTerm a rel -> LTerm b rel -> LTerm c rel -> LTerm d rel -> LTerm e rel -> Relation rel
-relation5 n f a_ b_ c_ d_ e_ = Relation n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_, CapturedTerm e_] $ argument5 a_ b_ c_ d_ e_ f
+relation5 n f a_ b_ c_ d_ e_ = Relation n n [CapturedTerm a_, CapturedTerm b_, CapturedTerm c_, CapturedTerm d_, CapturedTerm e_] (argument5 a_ b_ c_ d_ e_ f) defaultFormat
 
 --------------------------------------------------------------------------------
 -- Relation invocation

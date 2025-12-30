@@ -16,7 +16,7 @@ import TypedRedex.Logic
 import Control.Applicative (Alternative (empty))
 
 -- | Wrap a logic term as a field for quote.
-field :: LogicType t => Logic t var -> Field a var
+field :: (LogicType t, HasDisplay t) => Logic t var -> Field a var
 field x = Field Proxy x
 
 -- | Quote a nullary constructor.
@@ -24,13 +24,13 @@ quote0 :: String -> (String, [Field t v])
 quote0 c = (c, [])
 
 -- | Quote a unary constructor.
-quote1 :: LogicType a => String -> Logic a v -> (String, [Field t v])
+quote1 :: (LogicType a, HasDisplay a) => String -> Logic a v -> (String, [Field t v])
 quote1 c x = (c, [field x])
 
 -- | Quote a binary constructor.
-quote2 :: (LogicType a, LogicType b) => String -> Logic a v -> Logic b v -> (String, [Field t v])
+quote2 :: (LogicType a, HasDisplay a, LogicType b, HasDisplay b) => String -> Logic a v -> Logic b v -> (String, [Field t v])
 quote2 c x y = (c, [field x, field y])
 
 -- | Quote a ternary constructor.
-quote3 :: (LogicType a, LogicType b, LogicType c) => String -> Logic a v -> Logic b v -> Logic c v -> (String, [Field t v])
+quote3 :: (LogicType a, HasDisplay a, LogicType b, HasDisplay b, LogicType c, HasDisplay c) => String -> Logic a v -> Logic b v -> Logic c v -> (String, [Field t v])
 quote3 c x y z = (c, [field x, field y, field z])

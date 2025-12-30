@@ -4,182 +4,185 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Syntax where
 
-import TypedRedex
+import Prelude hiding (abs)
+import TypedRedex hiding (neg)
 import TypedRedex.Nominal
 import TypedRedex.Nominal.Bind (Bind(..))
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Nominal.Hash (Hash(..))
-import TypedRedex.DSL.TH (deriveLogicType, derivePermute, deriveHash, (~>))
+import TypedRedex.DSL.TH (deriveLogicType, derivePermute, deriveHash)
+import qualified TypedRedex.DSL.TH as TH
 import TypedRedex.DSL.Type (quote0, quote1, quote2, quote3)
 import TypedRedex.DSL.Moded (T(..), ground, Union)
+import TypedRedex.Interp.Display
 import qualified Data.Set as S
 
--- Matches Poly/app/Syntax.hs
-
 --------------------------------------------------------------------------------
--- Types (Ty)
--- data Ty = TInt | TBool | TVar TyName | TArr Ty Ty
---         | TForall (Bind TyName Ty) | TUncurry [Ty] Ty
---         | TList Ty | TProd Ty Ty | TST Ty Ty
+-- Data Types (defined first)
 --------------------------------------------------------------------------------
 
 data Ty
   = TInt
-  | TBool
   | TVar TyNom
   | TArr Ty Ty
-  | TForall (Bind TyNom Ty)   -- forall a. ty
-  | TList Ty                   -- [ty]
-  | TProd Ty Ty                -- ty1 * ty2
+  | TForall (Bind TyNom Ty)
   deriving (Eq, Show)
-
-derivePermute ''Ty [''TyNom]
-
--- Nom doesn't occur in Ty
-instance Permute Nom Ty where
-  swap _ _ ty = ty
-
-instance Hash Nom Ty where
-  occursIn _ _ = False
-
-deriveLogicType ''Ty
-  [ 'TInt    ~> "tint"
-  , 'TBool   ~> "tbool"
-  , 'TVar    ~> "tvar"
-  , 'TArr    ~> "tarr"
-  , 'TForall ~> "tforall"
-  , 'TList   ~> "tlist"
-  , 'TProd   ~> "tprod"
-  ]
-
-deriveHash ''Ty [''TyNom]
-
---------------------------------------------------------------------------------
--- Terms (Tm)
--- data Tm = LitInt Int | LitBool Bool | Var TmName
---         | Abs (Bind TmName Tm) | AbsAnn (Bind (TmName, Embed Ty) Tm)
---         | App Tm Tm | Ann Tm Ty
---         | TAbs (Bind TyName Tm) | TApp Tm Ty
---         | Nil | Pair Tm Tm | Fst Tm | Snd Tm
---------------------------------------------------------------------------------
 
 data Tm
-  = Var Nom
-  | Abs (Bind Nom Tm)              -- λx. e
-  | AbsAnn Ty (Bind Nom Tm)        -- λx:τ. e
-  | App Tm Tm                      -- e1 e2
-  | Ann Tm Ty                      -- e : τ
-  | TAbs (Bind TyNom Tm)           -- Λα. e
-  | TApp Tm Ty                     -- e @τ
-  | Nil                            -- nil
-  | Pair Tm Tm                     -- <e1, e2>
-  | Fst Tm                         -- fst e
-  | Snd Tm                         -- snd e
+  = Literal Int
+  | Var Nom
+  | Abs (Bind Nom Tm)
+  | App Tm Tm
+  | Ann Tm Ty
+  | TAbs (Bind TyNom Tm)
+  | TApp Tm Ty
   deriving (Eq, Show)
-
-derivePermute ''Tm [''TyNom, ''Nom]
-
--- Cross-nominal Permute instances for Bind and Ty in Tm
--- (Must come AFTER derivePermute which generates Permute Nom Tm, Permute TyNom Tm)
-instance Permute Nom (Bind TyNom Tm) where
-  swap a b (Bind n body) = Bind n (swap a b body)
-
-instance Permute TyNom (Bind Nom Tm) where
-  swap a b (Bind n body) = Bind n (swap a b body)
-
-deriveLogicType ''Tm
-  [ 'Var     ~> "var"
-  , 'Abs     ~> "abs"
-  , 'AbsAnn  ~> "absAnn"
-  , 'App     ~> "app"
-  , 'Ann     ~> "ann"
-  , 'TAbs    ~> "tabs"
-  , 'TApp    ~> "tapp"
-  , 'Nil     ~> "nil"
-  , 'Pair    ~> "pair"
-  , 'Fst     ~> "fst'"
-  , 'Snd     ~> "snd'"
-  ]
-
-deriveHash ''Tm [''TyNom, ''Nom]
-
--- Cross-nominal Hash instances (name type differs from binder type, so no shadowing)
-instance Hash Nom (Bind TyNom Tm) where
-  occursIn a (Bind _ body) = occursIn a body  -- TyNom doesn't shadow Nom
-
-instance Hash TyNom (Bind Nom Tm) where
-  occursIn a (Bind _ body) = occursIn a body  -- Nom doesn't shadow TyNom
-
---------------------------------------------------------------------------------
--- Polarity (Polar)
--- data Polar = Pos | Neg
---------------------------------------------------------------------------------
 
 data Polar
   = Pos
   | Neg
   deriving (Eq, Show)
 
-deriveLogicType ''Polar
-  [ 'Pos ~> "pos"
-  , 'Neg ~> "neg"
+data Env
+  = EEmpty
+  | ETrm Nom Ty Env
+  | EUvar TyNom Env
+  | EBound Ty TyNom Ty Env
+  deriving (Eq, Show)
+
+data Context
+   = CEmpty
+   | CType Ty
+   | CTm Tm Context
+   deriving (Eq, Show)
+
+--------------------------------------------------------------------------------
+-- Display tables and HasDisplay instances (before deriveLogicType!)
+--------------------------------------------------------------------------------
+
+tyDisplay :: Display Ty
+tyDisplay = display
+  [ #TInt    ~= "int"
+  , #TVar    ~> \a -> (a :: D)
+  , #TArr    ~> \(a, b) -> parens (a <+> " → " <+> b)
+  , #TForall ~> \bnd -> "∀" <+> bnd
+  , #Bind    ~> \(nm, body) -> nm <+> "." <+> body -- needs improve
   ]
 
+polarDisplay :: Display Polar
+polarDisplay = display
+  [ #Pos ~= "≤⁺"
+  , #Neg ~= "≤⁻"
+  ]
+
+envDisplay :: Display Env
+envDisplay = display
+  [ #EEmpty ~= "·"
+  , #ETrm   ~> \(x, ty, env) -> env <+> ", " <+> x <+> ":" <+> ty
+  , #EUvar  ~> \(a, env) -> env <+> ", " <+> a
+  , #ESvar  ~> \(ty1, a, ty2, env) -> env <+> ", " <+> ty1 <+> "<:" <+> a <+> "<:" <+> ty2
+  ]
+
+contextDisplay :: Display Context
+contextDisplay = display
+  [ #CEmpty      ~= "□"
+  , #CType       ~> \ty -> "[" <+> ty <+> "]"
+  , #CTm         ~> \(tm, ctx) -> tm <+> " ~> " <+> ctx
+  ]
+
+instance HasDisplay Ty where
+  formatCon = formatWithDisplay tyDisplay
+
+instance HasDisplay Polar where
+  formatCon = formatWithDisplay polarDisplay
+
+instance HasDisplay Env where
+  formatCon = formatWithDisplay envDisplay
+
+instance HasDisplay Context where
+  formatCon = formatWithDisplay contextDisplay
+
+instance HasDisplay Tm where
+  formatCon _ _ = Nothing
+
 --------------------------------------------------------------------------------
--- Environment (Env)
--- data Env = EEmpty | ETrm TmName Ty Env | EUvar TyName Env
---          | EEvar TyName Env | ESvar TyName Ty Env
+-- Permute instances (before deriveLogicType)
 --------------------------------------------------------------------------------
 
-data Env
-  = EEmpty                    -- ∅
-  | ETrm Nom Ty Env           -- Γ, x : τ
-  | EUvar TyNom Env           -- Γ, α
-  | EEvar TyNom Env           -- Γ, ^α
-  | ESvar TyNom Ty Env        -- Γ, α = τ
-  deriving (Eq, Show)
+derivePermute ''Ty [''TyNom]
+
+instance Permute Nom Ty where
+  swap _ _ ty = ty
+
+instance Hash Nom Ty where
+  occursIn _ _ = False
+
+derivePermute ''Tm [''TyNom, ''Nom]
+
+instance Permute Nom (Bind TyNom Tm) where
+  swap a b (Bind n body) = Bind n (swap a b body)
+
+instance Permute TyNom (Bind Nom Tm) where
+  swap a b (Bind n body) = Bind n (swap a b body)
 
 derivePermute ''Env [''TyNom, ''Nom]
 
-deriveLogicType ''Env
-  [ 'EEmpty ~> "eempty"
-  , 'ETrm   ~> "etrm"
-  , 'EUvar  ~> "euvar"
-  , 'EEvar  ~> "eevar"
-  , 'ESvar  ~> "esvar"
+--------------------------------------------------------------------------------
+-- LogicType derivations (now HasDisplay is available)
+--------------------------------------------------------------------------------
+
+deriveLogicType ''Ty
+  [ 'TInt    TH.~> "tint"
+  , 'TVar    TH.~> "tvar"
+  , 'TArr    TH.~> "tarr"
+  , 'TForall TH.~> "tforall"
   ]
 
+deriveLogicType ''Tm
+  [ 'Literal TH.~> "lit"
+  , 'Var     TH.~> "var"
+  , 'Abs     TH.~> "lam"
+  , 'App     TH.~> "app"
+  , 'Ann     TH.~> "ann"
+  , 'TAbs    TH.~> "tlam"
+  , 'TApp    TH.~> "tapp"
+  ]
+
+deriveLogicType ''Polar
+  [ 'Pos TH.~> "pos"
+  , 'Neg TH.~> "neg"
+  ]
+
+deriveLogicType ''Env
+  [ 'EEmpty TH.~> "eempty"
+  , 'ETrm   TH.~> "etrm"
+  , 'EUvar  TH.~> "euvar"
+  , 'EBound TH.~> "ebound"
+  ]
+
+deriveLogicType ''Context  
+  [ 'CEmpty TH.~> "cempty"
+  , 'CType  TH.~> "ctype"
+  , 'CTm    TH.~> "ctm"
+  ]
+
+--------------------------------------------------------------------------------
+-- Hash derivations (after LogicType)
+--------------------------------------------------------------------------------
+
+deriveHash ''Ty [''TyNom]
+
+deriveHash ''Tm [''TyNom, ''Nom]
+
+instance Hash Nom (Bind TyNom Tm) where
+  occursIn a (Bind _ body) = occursIn a body
+
+instance Hash TyNom (Bind Nom Tm) where
+  occursIn a (Bind _ body) = occursIn a body
+
 deriveHash ''Env [''TyNom, ''Nom]
-
---------------------------------------------------------------------------------
--- Pretty printing (matches Poly show instances)
---------------------------------------------------------------------------------
-
-prettyTy :: Ty -> String
-prettyTy TInt = "int"
-prettyTy TBool = "bool"
-prettyTy (TVar a) = prettyTyNom a
-prettyTy (TArr t1 t2) = prettyTy t1 ++ " -> " ++ prettyTy t2
-prettyTy (TForall (Bind a t)) = "forall " ++ prettyTyNom a ++ ". " ++ prettyTy t
-prettyTy (TList t) = "[" ++ prettyTy t ++ "]"
-prettyTy (TProd t1 t2) = prettyTy t1 ++ " * " ++ prettyTy t2
-
-prettyTyNom :: TyNom -> String
-prettyTyNom (TyNom n) = "a" ++ show n
-
-prettyNom :: Nom -> String
-prettyNom (Nom n) = "x" ++ show n
-
-prettyPolar :: Polar -> String
-prettyPolar Pos = "≤+"
-prettyPolar Neg = "≤-"
-
-prettyEnv :: Env -> String
-prettyEnv EEmpty = "∅"
-prettyEnv (ETrm x ty env) = prettyEnv env ++ ", " ++ prettyNom x ++ ":" ++ prettyTy ty
-prettyEnv (EUvar a env) = prettyEnv env ++ ", " ++ prettyTyNom a
-prettyEnv (EEvar a env) = prettyEnv env ++ ", " ++ prettyTyNom a ++ "^"
-prettyEnv (ESvar a ty env) = prettyEnv env ++ ", " ++ prettyTyNom a ++ "=" ++ prettyTy ty

@@ -25,7 +25,6 @@ module TypedRedex.Interp.Format
   ( -- * Term formatting
     TermFormatter(..)
   , DefaultTermFormatter(..)
-  , formatCon
   , formatConWith
     -- * Judgment formatting
   , JudgmentFormatter(..)
@@ -38,6 +37,8 @@ module TypedRedex.Interp.Format
     -- * Re-exports from PrettyPrint
   , subscriptNum
   , subscriptStr
+    -- * Re-export from Logic.Display
+  , defaultFormatCon
   ) where
 
 import TypedRedex.Logic
@@ -114,19 +115,6 @@ formatConWith fmt name args =
   case formatTerm fmt name args of
     Just s  -> s
     Nothing -> defaultFormatCon name args
-
--- | Format constructor application using default formatting.
---
--- This provides generic function-style formatting: @name(arg1, arg2, ...)@
--- For domain-specific formatting (lambda, types, etc.), define a
--- 'TermFormatter' instance in your example.
-formatCon :: String -> [String] -> String
-formatCon = defaultFormatCon
-
--- | Default generic formatting: @name(arg1, arg2, ...)@
-defaultFormatCon :: String -> [String] -> String
-defaultFormatCon n [] = n
-defaultFormatCon n args = n ++ "(" ++ intercalate ", " args ++ ")"
 
 --------------------------------------------------------------------------------
 -- Logic term pretty-printing

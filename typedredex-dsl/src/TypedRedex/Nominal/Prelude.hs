@@ -74,9 +74,41 @@ instance Show TyNom where
 
 instance NominalAtom TyNom
 
+-- | Default display for Nom (shows as variable name)
+instance HasDisplay Nom where
+  formatCon "Nom" [n] = Just $ "x" ++ n
+  formatCon _ _ = Nothing
+
+-- | Default display for TyNom (shows as type variable name)
+instance HasDisplay TyNom where
+  formatCon "TyNom" [n] = Just $ "α" ++ n
+  formatCon _ _ = Nothing
+
 --------------------------------------------------------------------------------
 -- LogicType Instances
 --------------------------------------------------------------------------------
+
+-- | LogicType instance for Int (primitive type).
+instance LogicType Int where
+  data Reified Int var = IntR Int
+
+  project n = IntR n
+
+  reify (IntR n) = Just n
+
+  children (IntR _) = []
+
+  quote (IntR n) = (show n, [])
+
+  unifyVal _ (IntR a) (IntR b)
+    | a == b    = pure ()
+    | otherwise = empty
+
+  derefVal _ (IntR n) = pure n
+
+instance HasDisplay Int where
+  formatCon name [] = Just name  -- Already formatted as number string
+  formatCon _ _ = Nothing
 
 instance LogicType Nom where
   data Reified Nom var = NomR Int
@@ -121,6 +153,14 @@ instance Permute Nom TyNom where
 instance Permute TyNom Nom where
   swap _ _ x = x
 
+-- Swapping Nom doesn't affect Int
+instance Permute Nom Int where
+  swap _ _ x = x
+
+-- Swapping TyNom doesn't affect Int
+instance Permute TyNom Int where
+  swap _ _ x = x
+
 --------------------------------------------------------------------------------
 -- Cross-namespace Hash instances
 --------------------------------------------------------------------------------
@@ -129,8 +169,15 @@ instance Permute TyNom Nom where
 instance Hash Nom TyNom where
   occursIn _ _ = False
 
--- TyNom never occurs free in Nom (different namespaces)
+-- TyNom never occurs free in Nom
 instance Hash TyNom Nom where
+  occursIn _ _ = False
+
+-- Names never occur in Int (primitive type)
+instance Hash Nom Int where
+  occursIn _ _ = False
+
+instance Hash TyNom Int where
   occursIn _ _ = False
 
 --------------------------------------------------------------------------------
@@ -170,7 +217,7 @@ instance RedexFresh rel => Freshable TyNom rel where
 --------------------------------------------------------------------------------
 
 -- | Open a term binder (Bind Nom) with a fresh name.
-unbind :: (RedexFresh rel, RedexEval rel, LogicType body, Permute Nom body)
+unbind :: (RedexFresh rel, RedexEval rel, LogicType body, Permute Nom body, HasDisplay body)
        => LTerm (Bind Nom body) rel
        -> rel (LTerm Nom rel, LTerm body rel)
 unbind bndL = do
@@ -180,7 +227,7 @@ unbind bndL = do
   pure (Ground (project fresh), Ground (project swappedBody))
 
 -- | Open a type binder (Bind TyNom) with a fresh name.
-unbindTy :: (RedexFresh rel, RedexEval rel, LogicType body, Permute TyNom body)
+unbindTy :: (RedexFresh rel, RedexEval rel, LogicType body, Permute TyNom body, HasDisplay body)
          => LTerm (Bind TyNom body) rel
          -> rel (LTerm TyNom rel, LTerm body rel)
 unbindTy bndL = do

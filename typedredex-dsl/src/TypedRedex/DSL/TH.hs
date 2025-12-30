@@ -52,8 +52,8 @@ import Control.Monad (when, forM)
 import Data.Proxy (Proxy(..))
 
 -- These need to be imported by the TH module to use '' syntax
-import TypedRedex.Logic (Logic(..), LogicType(project, Reified), Reified, Field(..), Redex(..), RedexEval(..), RedexFresh(..), RedexHash(..))
-import TypedRedex.DSL.Moded (T(..), ground, lift1, lift2, lift3, Union)
+import TypedRedex.Logic (Logic(..), LogicType(project, Reified), Reified, Field(..), Redex(..), RedexEval(..), RedexFresh(..), RedexHash(..), HasDisplay(..))
+import TypedRedex.DSL.Moded (T(..), ground, lift1, lift2, lift3, lift4, Union)
 import TypedRedex.Nominal.Bind (Bind(..), Permute(..))
 import TypedRedex.Nominal.Hash (Hash(..))
 import TypedRedex.Nominal (bind)
@@ -109,12 +109,12 @@ deriveAll typeName cons specs = do
 deriveLogicTypeInst :: Name -> [Con] -> Q [Dec]
 deriveLogicTypeInst typeName cons = do
   varName <- newName "var"
-  let varT = VarT varName
+  let varTy = VarT varName
 
   -- Generate Reified data family instance
-  reifiedCons <- mapM (genReifiedCon varT) cons
+  reifiedCons <- mapM (genReifiedCon varTy) cons
   let reifiedDec = DataInstD [] Nothing
-        (AppT (AppT (ConT ''Reified) (ConT typeName)) varT)
+        (AppT (AppT (ConT ''Reified) (ConT typeName)) varTy)
         Nothing reifiedCons []
 
   -- Generate project method
@@ -141,26 +141,26 @@ deriveLogicTypeInst typeName cons = do
 
 -- | Generate a Reified constructor from an original constructor
 genReifiedCon :: Type -> Con -> Q Con
-genReifiedCon varT con = case con of
+genReifiedCon varTy con = case con of
   NormalC name fields -> do
     let rName = mkName (nameBase name ++ "R")
-    rFields <- mapM (wrapFieldType varT) fields
+    rFields <- mapM (wrapFieldType varTy) fields
     return $ NormalC rName rFields
   RecC name fields -> do
     let rName = mkName (nameBase name ++ "R")
-    rFields <- mapM (wrapRecFieldType varT) fields
+    rFields <- mapM (wrapRecFieldType varTy) fields
     return $ RecC rName rFields
   _ -> fail "deriveLogicType: unsupported constructor form"
 
 wrapFieldType :: Type -> BangType -> Q BangType
-wrapFieldType varT (bang, ty) = do
-  let wrappedTy = AppT (AppT (ConT ''Logic) ty) varT
-  return (bang, wrappedTy)
+wrapFieldType varTy (bng, ty) = do
+  let wrappedTy = AppT (AppT (ConT ''Logic) ty) varTy
+  return (bng, wrappedTy)
 
 wrapRecFieldType :: Type -> VarBangType -> Q VarBangType
-wrapRecFieldType varT (name, bang, ty) = do
-  let wrappedTy = AppT (AppT (ConT ''Logic) ty) varT
-  return (name, bang, wrappedTy)
+wrapRecFieldType varTy (name, bng, ty) = do
+  let wrappedTy = AppT (AppT (ConT ''Logic) ty) varTy
+  return (name, bng, wrappedTy)
 
 -- | Generate project method
 genProject :: [Con] -> Q Dec
@@ -211,11 +211,11 @@ genReifyClause con = case con of
         let pat = ConP rName [] [ConP 'Ground [] [VarP v] | v <- varNames]
         -- Body: Con <$> reify x1 <*> reify x2 <*> ...
         let reifyExprs = [AppE (VarE (mkName "reify")) (VarE v) | v <- varNames]
-        let firstExpr = InfixE (Just (ConE name)) (VarE '(<$>)) (Just (head reifyExprs))
-        let body = if arity == 1
-                   then firstExpr
-                   else foldl (\acc e -> InfixE (Just acc) (VarE '(<*>)) (Just e))
-                              firstExpr (tail reifyExprs)
+        let body = case reifyExprs of
+              (e:es) ->
+                let firstExpr = InfixE (Just (ConE name)) (VarE '(<$>)) (Just e)
+                in foldl (\acc x -> InfixE (Just acc) (VarE '(<*>)) (Just x)) firstExpr es
+              [] -> error "genReifyClause: impossible - arity > 0 but no expressions"
         return $ Clause [pat] (NormalB body) []
   RecC name fields -> genReifyClause (NormalC name [(b, t) | (_, b, t) <- fields])
   _ -> fail "deriveLogicType: unsupported constructor form"
@@ -321,17 +321,18 @@ genDerefValClause derefName con = case con of
       then do
         let pat = ConP rName [] []
         let body = AppE (VarE 'pure) (ConE name)
-        return $ Clause [VarP derefName, pat] (NormalB body) []
+        -- Use WildP since deref function is not needed for nullary constructors
+        return $ Clause [WildP, pat] (NormalB body) []
       else do
         varNames <- mapM (\i -> newName ("x" ++ show i)) [1..arity]
         let pat = ConP rName [] (map VarP varNames)
         -- Con <$> deref x1 <*> deref x2 <*> ...
         let derefExprs = [AppE (VarE derefName) (VarE v) | v <- varNames]
-        let firstExpr = InfixE (Just (ConE name)) (VarE '(<$>)) (Just (head derefExprs))
-        let body = if arity == 1
-                   then firstExpr
-                   else foldl (\acc e -> InfixE (Just acc) (VarE '(<*>)) (Just e))
-                              firstExpr (tail derefExprs)
+        let body = case derefExprs of
+              (e:es) ->
+                let firstExpr = InfixE (Just (ConE name)) (VarE '(<$>)) (Just e)
+                in foldl (\acc x -> InfixE (Just acc) (VarE '(<*>)) (Just x)) firstExpr es
+              [] -> error "genDerefValClause: impossible - arity > 0 but no expressions"
         return $ Clause [VarP derefName, pat] (NormalB body) []
   RecC name fields -> genDerefValClause derefName (NormalC name [(b, t) | (_, b, t) <- fields])
   _ -> fail "deriveLogicType: unsupported constructor form"
@@ -363,76 +364,112 @@ genModedBuilder typeName specMap con = case con of
         let funDec = FunD modedName [Clause [] (NormalB body) []]
         return [sigDec, funDec]
 
-      1 -> do
-        -- Type: T vs A rel -> T vs TypeName rel
-        vsName <- newName "vs"
-        let vsT = VarT vsName
-        let (_, argTy) = head fields
-        let argT = AppT (AppT (AppT (ConT ''T) vsT) argTy) relT
-        let resultT = AppT (AppT (AppT (ConT ''T) vsT) (ConT typeName)) relT
-        let fullType = AppT (AppT ArrowT argT) resultT
-        let sigType = ForallT [PlainTV vsName SpecifiedSpec, PlainTV relName SpecifiedSpec] [] fullType
-        let sigDec = SigD modedName sigType
-        -- Body: lift1 (\x -> Ground (ConR x))
-        xName <- newName "x"
-        let rawExpr = AppE (ConE 'Ground) (AppE (ConE rName) (VarE xName))
-        let lambda = LamE [VarP xName] rawExpr
-        let body = AppE (VarE 'lift1) lambda
-        let funDec = FunD modedName [Clause [] (NormalB body) []]
-        return [sigDec, funDec]
+      1 -> case fields of
+        [(_, argTy)] -> do
+          -- Type: T vs A rel -> T vs TypeName rel
+          vsName <- newName "vs"
+          let vsT = VarT vsName
+          let argT = AppT (AppT (AppT (ConT ''T) vsT) argTy) relT
+          let resultT = AppT (AppT (AppT (ConT ''T) vsT) (ConT typeName)) relT
+          let fullType = AppT (AppT ArrowT argT) resultT
+          let sigType = ForallT [PlainTV vsName SpecifiedSpec, PlainTV relName SpecifiedSpec] [] fullType
+          let sigDec = SigD modedName sigType
+          -- Body: lift1 (\x -> Ground (ConR x))
+          xName <- newName "x"
+          let rawExpr = AppE (ConE 'Ground) (AppE (ConE rName) (VarE xName))
+          let lambda = LamE [VarP xName] rawExpr
+          let body = AppE (VarE 'lift1) lambda
+          let funDec = FunD modedName [Clause [] (NormalB body) []]
+          return [sigDec, funDec]
+        _ -> fail "genModedBuilder: arity 1 but fields list mismatch"
 
-      2 -> do
-        -- Type: T vs1 A rel -> T vs2 B rel -> T (Union vs1 vs2) TypeName rel
-        vs1Name <- newName "vs1"
-        vs2Name <- newName "vs2"
-        let vs1T = VarT vs1Name
-            vs2T = VarT vs2Name
-        let [(_, ty1), (_, ty2)] = fields
-        let arg1T = AppT (AppT (AppT (ConT ''T) vs1T) ty1) relT
-            arg2T = AppT (AppT (AppT (ConT ''T) vs2T) ty2) relT
-            unionT = AppT (AppT (ConT ''Union) vs1T) vs2T
-            resultT = AppT (AppT (AppT (ConT ''T) unionT) (ConT typeName)) relT
-        let fullType = AppT (AppT ArrowT arg1T) (AppT (AppT ArrowT arg2T) resultT)
-        let sigType = ForallT [PlainTV vs1Name SpecifiedSpec, PlainTV vs2Name SpecifiedSpec, PlainTV relName SpecifiedSpec] [] fullType
-        let sigDec = SigD modedName sigType
-        -- Body: lift2 (\x y -> Ground (ConR x y))
-        xName <- newName "x"
-        yName <- newName "y"
-        let rawExpr = AppE (ConE 'Ground) (foldl AppE (ConE rName) [VarE xName, VarE yName])
-        let lambda = LamE [VarP xName, VarP yName] rawExpr
-        let body = AppE (VarE 'lift2) lambda
-        let funDec = FunD modedName [Clause [] (NormalB body) []]
-        return [sigDec, funDec]
+      2 -> case fields of
+        [(_, ty1), (_, ty2)] -> do
+          -- Type: T vs1 A rel -> T vs2 B rel -> T (Union vs1 vs2) TypeName rel
+          vs1Name <- newName "vs1"
+          vs2Name <- newName "vs2"
+          let vs1T = VarT vs1Name
+              vs2T = VarT vs2Name
+          let arg1T = AppT (AppT (AppT (ConT ''T) vs1T) ty1) relT
+              arg2T = AppT (AppT (AppT (ConT ''T) vs2T) ty2) relT
+              unionT = AppT (AppT (ConT ''Union) vs1T) vs2T
+              resultT = AppT (AppT (AppT (ConT ''T) unionT) (ConT typeName)) relT
+          let fullType = AppT (AppT ArrowT arg1T) (AppT (AppT ArrowT arg2T) resultT)
+          let sigType = ForallT [PlainTV vs1Name SpecifiedSpec, PlainTV vs2Name SpecifiedSpec, PlainTV relName SpecifiedSpec] [] fullType
+          let sigDec = SigD modedName sigType
+          -- Body: lift2 (\x y -> Ground (ConR x y))
+          xName <- newName "x"
+          yName <- newName "y"
+          let rawExpr = AppE (ConE 'Ground) (foldl AppE (ConE rName) [VarE xName, VarE yName])
+          let lambda = LamE [VarP xName, VarP yName] rawExpr
+          let body = AppE (VarE 'lift2) lambda
+          let funDec = FunD modedName [Clause [] (NormalB body) []]
+          return [sigDec, funDec]
+        _ -> fail "genModedBuilder: arity 2 but fields list mismatch"
 
-      3 -> do
-        -- Type: T vs1 A rel -> T vs2 B rel -> T vs3 C rel -> T (Union vs1 (Union vs2 vs3)) TypeName rel
-        vs1Name <- newName "vs1"
-        vs2Name <- newName "vs2"
-        vs3Name <- newName "vs3"
-        let vs1T = VarT vs1Name
-            vs2T = VarT vs2Name
-            vs3T = VarT vs3Name
-        let [(_, ty1), (_, ty2), (_, ty3)] = fields
-        let arg1T = AppT (AppT (AppT (ConT ''T) vs1T) ty1) relT
-            arg2T = AppT (AppT (AppT (ConT ''T) vs2T) ty2) relT
-            arg3T = AppT (AppT (AppT (ConT ''T) vs3T) ty3) relT
-            union23T = AppT (AppT (ConT ''Union) vs2T) vs3T
-            unionT = AppT (AppT (ConT ''Union) vs1T) union23T
-            resultT = AppT (AppT (AppT (ConT ''T) unionT) (ConT typeName)) relT
-        let fullType = AppT (AppT ArrowT arg1T) (AppT (AppT ArrowT arg2T) (AppT (AppT ArrowT arg3T) resultT))
-        let sigType = ForallT [PlainTV vs1Name SpecifiedSpec, PlainTV vs2Name SpecifiedSpec, PlainTV vs3Name SpecifiedSpec, PlainTV relName SpecifiedSpec] [] fullType
-        let sigDec = SigD modedName sigType
-        -- Body: lift3 (\x y z -> Ground (ConR x y z))
-        xName <- newName "x"
-        yName <- newName "y"
-        zName <- newName "z"
-        let rawExpr = AppE (ConE 'Ground) (foldl AppE (ConE rName) [VarE xName, VarE yName, VarE zName])
-        let lambda = LamE [VarP xName, VarP yName, VarP zName] rawExpr
-        let body = AppE (VarE 'lift3) lambda
-        let funDec = FunD modedName [Clause [] (NormalB body) []]
-        return [sigDec, funDec]
+      3 -> case fields of
+        [(_, ty1), (_, ty2), (_, ty3)] -> do
+          -- Type: T vs1 A rel -> T vs2 B rel -> T vs3 C rel -> T (Union vs1 (Union vs2 vs3)) TypeName rel
+          vs1Name <- newName "vs1"
+          vs2Name <- newName "vs2"
+          vs3Name <- newName "vs3"
+          let vs1T = VarT vs1Name
+              vs2T = VarT vs2Name
+              vs3T = VarT vs3Name
+          let arg1T = AppT (AppT (AppT (ConT ''T) vs1T) ty1) relT
+              arg2T = AppT (AppT (AppT (ConT ''T) vs2T) ty2) relT
+              arg3T = AppT (AppT (AppT (ConT ''T) vs3T) ty3) relT
+              union23T = AppT (AppT (ConT ''Union) vs2T) vs3T
+              unionT = AppT (AppT (ConT ''Union) vs1T) union23T
+              resultT = AppT (AppT (AppT (ConT ''T) unionT) (ConT typeName)) relT
+          let fullType = AppT (AppT ArrowT arg1T) (AppT (AppT ArrowT arg2T) (AppT (AppT ArrowT arg3T) resultT))
+          let sigType = ForallT [PlainTV vs1Name SpecifiedSpec, PlainTV vs2Name SpecifiedSpec, PlainTV vs3Name SpecifiedSpec, PlainTV relName SpecifiedSpec] [] fullType
+          let sigDec = SigD modedName sigType
+          -- Body: lift3 (\x y z -> Ground (ConR x y z))
+          xName <- newName "x"
+          yName <- newName "y"
+          zName <- newName "z"
+          let rawExpr = AppE (ConE 'Ground) (foldl AppE (ConE rName) [VarE xName, VarE yName, VarE zName])
+          let lambda = LamE [VarP xName, VarP yName, VarP zName] rawExpr
+          let body = AppE (VarE 'lift3) lambda
+          let funDec = FunD modedName [Clause [] (NormalB body) []]
+          return [sigDec, funDec]
+        _ -> fail "genModedBuilder: arity 3 but fields list mismatch"
 
-      _ -> fail $ "deriveLogicType: constructor " ++ nameBase name ++ " has too many fields (max 3)"
+      4 -> case fields of
+        [(_, ty1), (_, ty2), (_, ty3), (_, ty4)] -> do
+          -- Type: T vs1 A rel -> T vs2 B rel -> T vs3 C rel -> T vs4 D rel -> T (Union vs1 (Union vs2 (Union vs3 vs4))) TypeName rel
+          vs1Name <- newName "vs1"
+          vs2Name <- newName "vs2"
+          vs3Name <- newName "vs3"
+          vs4Name <- newName "vs4"
+          let vs1T = VarT vs1Name
+              vs2T = VarT vs2Name
+              vs3T = VarT vs3Name
+              vs4T = VarT vs4Name
+          let arg1T = AppT (AppT (AppT (ConT ''T) vs1T) ty1) relT
+              arg2T = AppT (AppT (AppT (ConT ''T) vs2T) ty2) relT
+              arg3T = AppT (AppT (AppT (ConT ''T) vs3T) ty3) relT
+              arg4T = AppT (AppT (AppT (ConT ''T) vs4T) ty4) relT
+              union34T = AppT (AppT (ConT ''Union) vs3T) vs4T
+              union234T = AppT (AppT (ConT ''Union) vs2T) union34T
+              unionT = AppT (AppT (ConT ''Union) vs1T) union234T
+              resultT = AppT (AppT (AppT (ConT ''T) unionT) (ConT typeName)) relT
+          let fullType = AppT (AppT ArrowT arg1T) (AppT (AppT ArrowT arg2T) (AppT (AppT ArrowT arg3T) (AppT (AppT ArrowT arg4T) resultT)))
+          let sigType = ForallT [PlainTV vs1Name SpecifiedSpec, PlainTV vs2Name SpecifiedSpec, PlainTV vs3Name SpecifiedSpec, PlainTV vs4Name SpecifiedSpec, PlainTV relName SpecifiedSpec] [] fullType
+          let sigDec = SigD modedName sigType
+          -- Body: lift4 (\x y z w -> Ground (ConR x y z w))
+          xName <- newName "x"
+          yName <- newName "y"
+          zName <- newName "z"
+          wName <- newName "w"
+          let rawExpr = AppE (ConE 'Ground) (foldl AppE (ConE rName) [VarE xName, VarE yName, VarE zName, VarE wName])
+          let lambda = LamE [VarP xName, VarP yName, VarP zName, VarP wName] rawExpr
+          let body = AppE (VarE 'lift4) lambda
+          let funDec = FunD modedName [Clause [] (NormalB body) []]
+          return [sigDec, funDec]
+        _ -> fail "genModedBuilder: arity 4 but fields list mismatch"
+      _ -> fail $ "deriveLogicType: constructor " ++ nameBase name ++ " has too many fields (max 4)"
 
   RecC name fields -> genModedBuilder typeName specMap (NormalC name [(b, t) | (_, b, t) <- fields])
   _ -> fail "deriveLogicType: unsupported constructor form"
@@ -663,8 +700,8 @@ genSubstoInstance typeName cons varSpecs nameType = do
   let caseExpr = CaseE (VarE bodyVar) matches
   let doBody = DoE Nothing [evalStmt, NoBindS caseExpr]
 
-  let clause = Clause [VarP nameL, VarP bodyL, VarP replL, VarP resultL] (NormalB doBody) []
-  let substoDec = FunD (mkName "substo") [clause]
+  let substoClause = Clause [VarP nameL, VarP bodyL, VarP replL, VarP resultL] (NormalB doBody) []
+  let substoDec = FunD (mkName "substo") [substoClause]
 
   let instType = AppT (AppT (ConT ''Substo) (ConT nameType)) (ConT typeName)
   return [InstanceD Nothing [] instType [substoDec]]
@@ -690,8 +727,9 @@ genSubstoMatch nameType mVarCon typeName nameL replL resultL con = case con of
         case mVarCon of
           Just varConName | varConName == conName && arity == 1 -> do
             -- Variable case: conde [match/replace, hash/keep]
-            let v = head varNames
-            genVarCaseBody nameType nameL replL resultL conName rName v
+            case varNames of
+              [v] -> genVarCaseBody nameL replL resultL conName v
+              _ -> fail "genSubstoMatch: arity 1 but varNames mismatch"
           _ -> do
             -- Check for Bind fields and recursive fields
             genRecursiveCaseBody nameType typeName nameL replL resultL conName rName varNames fields
@@ -701,8 +739,8 @@ genSubstoMatch nameType mVarCon typeName nameL replL resultL con = case con of
   _ -> fail "deriveSubsto: unsupported constructor form"
 
 -- | Generate the variable case: conde [match/replace, hash/keep]
-genVarCaseBody :: Name -> Name -> Name -> Name -> Name -> Name -> Name -> Q Match
-genVarCaseBody nameType nameL replL resultL conName rName v = do
+genVarCaseBody :: Name -> Name -> Name -> Name -> Name -> Q Match
+genVarCaseBody nameL replL resultL conName v = do
   -- conde [ do { nameL <=> inject v; resultL <=> replL }
   --       , do { hash nameL (inject v); resultL <=> Ground (project (Con v)) } ]
 
@@ -735,8 +773,8 @@ genRecursiveCaseBody nameType typeName nameL replL resultL conName rName varName
   let hasBindField = any (\case { BindField _ _ _ -> True; _ -> False }) fieldInfos
 
   if hasBindField
-    then genBindCaseBody nameType nameL replL resultL conName rName varNames fields fieldInfos
-    else genSimpleRecursiveBody nameType nameL replL resultL conName rName varNames fieldInfos
+    then genBindCaseBody nameL replL resultL conName rName varNames fields fieldInfos
+    else genSimpleRecursiveBody nameL replL resultL conName rName varNames fieldInfos
 
 -- | Field classification for substitution
 data FieldInfo
@@ -781,8 +819,8 @@ isTargetType typeName (AppT t _) = isTargetType typeName t
 isTargetType _ _ = False
 
 -- | Generate simple recursive case (no Bind of same name type)
-genSimpleRecursiveBody :: Name -> Name -> Name -> Name -> Name -> Name -> [Name] -> [FieldInfo] -> Q Match
-genSimpleRecursiveBody nameType nameL replL resultL conName rName varNames fieldInfos = do
+genSimpleRecursiveBody :: Name -> Name -> Name -> Name -> Name -> [Name] -> [FieldInfo] -> Q Match
+genSimpleRecursiveBody nameL replL resultL conName rName varNames fieldInfos = do
   -- Build nested freshLogic for recursive fields
   let recursiveFields = [(v, r) | RecursiveField v r <- fieldInfos]
 
@@ -824,72 +862,71 @@ genSimpleRecursiveBody nameType nameL replL resultL conName rName varNames field
       return $ Match (ConP conName [] (map VarP varNames)) (NormalB fullBody) []
 
 -- | Generate Bind case with shadow/fresh+swap branches
-genBindCaseBody :: Name -> Name -> Name -> Name -> Name -> Name -> [Name] -> [BangType] -> [FieldInfo] -> Q Match
-genBindCaseBody nameType nameL replL resultL conName rName varNames fields fieldInfos = do
+genBindCaseBody :: Name -> Name -> Name -> Name -> Name -> [Name] -> [BangType] -> [FieldInfo] -> Q Match
+genBindCaseBody nameL replL resultL conName rName varNames fields fieldInfos = do
   -- Find the Bind field
-  let bindInfo = head [(v, bnd, bdy) | BindField v bnd bdy <- fieldInfos]
-  let (bindVar, _, _) = bindInfo
+  let bindInfos = [(v, bnd, bdy) | BindField v bnd bdy <- fieldInfos]
+  case bindInfos of
+    [] -> fail "genBindCaseBody: no BindField found"
+    (_bindVar, _, _):_ -> do
+      -- Find the index of the bind field to extract bound name and body
+      let bindIdxs = [i | (i, BindField _ _ _) <- zip [0..] fieldInfos]
+      case bindIdxs of
+        [] -> fail "genBindCaseBody: no BindField index found"
+        bindIdx:_ -> do
+          let (_, _bindFieldTy) = fields !! bindIdx
 
-  -- Find the index of the bind field to extract bound name and body
-  let bindIdx = head [i | (i, BindField _ _ _) <- zip [0..] fieldInfos]
-  let (_, bindFieldTy) = fields !! bindIdx
+          -- Generate pattern: Con x1 x2 ... (Bind alpha body) ...
+          alphaName <- newName "alpha"
+          bodyName <- newName "body"
 
-  -- Extract body type from Bind nameType bodyTy
-  let bodyTy = case bindFieldTy of
-        AppT (AppT (ConT _) _) bt -> bt
-        _ -> error "Expected Bind type"
+          let patterns = [if i == bindIdx
+                          then ConP 'Bind [] [VarP alphaName, VarP bodyName]
+                          else VarP (varNames !! i)
+                         | i <- [0..length varNames - 1]]
 
-  -- Generate pattern: Con x1 x2 ... (Bind alpha body) ...
-  alphaName <- newName "alpha"
-  bodyName <- newName "body"
+          -- Branch 1: Shadowed case
+          let injectAlpha = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE alphaName))
+          let unifyName = InfixE (Just (VarE nameL)) (VarE '(<=>)) (Just injectAlpha)
 
-  let patterns = [if i == bindIdx
-                  then ConP 'Bind [] [VarP alphaName, VarP bodyName]
-                  else VarP (varNames !! i)
-                 | i <- [0..length varNames - 1]]
+          let origArgs = [if i == bindIdx
+                          then AppE (AppE (ConE 'Bind) (VarE alphaName)) (VarE bodyName)
+                          else VarE (varNames !! i)
+                         | i <- [0..length varNames - 1]]
+          let origResult = AppE (ConE 'Ground) (AppE (VarE 'project) (foldl AppE (ConE conName) origArgs))
+          let unifyOrig = InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just origResult)
+          let shadowBranch = DoE Nothing [NoBindS unifyName, NoBindS unifyOrig]
 
-  -- Branch 1: Shadowed case
-  let injectAlpha = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE alphaName))
-  let unifyName = InfixE (Just (VarE nameL)) (VarE '(<=>)) (Just injectAlpha)
+          -- Branch 2: Substitute case with fresh+swap
+          freshName <- newName "fresh"
+          rBodyName <- newName "rBody"
 
-  let origArgs = [if i == bindIdx
-                  then AppE (AppE (ConE 'Bind) (VarE alphaName)) (VarE bodyName)
-                  else VarE (varNames !! i)
-                 | i <- [0..length varNames - 1]]
-  let origResult = AppE (ConE 'Ground) (AppE (VarE 'project) (foldl AppE (ConE conName) origArgs))
-  let unifyOrig = InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just origResult)
-  let shadowBranch = DoE Nothing [NoBindS unifyName, NoBindS unifyOrig]
+          let hashAlpha = foldl AppE (VarE 'hash) [VarE nameL, injectAlpha]
+          let injectFresh = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE freshName))
+          let hashFresh = foldl AppE (VarE 'hash) [injectFresh, VarE replL]
 
-  -- Branch 2: Substitute case with fresh+swap
-  freshName <- newName "fresh"
-  rBodyName <- newName "rBody"
+          let swapExpr = foldl AppE (VarE 'swap) [VarE alphaName, VarE freshName, VarE bodyName]
+          swappedName <- newName "swappedBody"
+          let swapLet = LetS [ValD (VarP swappedName) (NormalB swapExpr) []]
 
-  let hashAlpha = foldl AppE (VarE 'hash) [VarE nameL, injectAlpha]
-  let injectFresh = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE freshName))
-  let hashFresh = foldl AppE (VarE 'hash) [injectFresh, VarE replL]
+          let grounded = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE swappedName))
+          let substoCall = foldl AppE (VarE 'substo) [VarE nameL, grounded, VarE replL, VarE rBodyName]
 
-  let swapExpr = foldl AppE (VarE 'swap) [VarE alphaName, VarE freshName, VarE bodyName]
-  swappedName <- newName "swappedBody"
-  let swapLet = LetS [ValD (VarP swappedName) (NormalB swapExpr) []]
+          let bindExpr = foldl AppE (VarE 'bind) [VarE freshName, VarE rBodyName]
+          let resultArgs = [if i == bindIdx
+                            then bindExpr
+                            else AppE (ConE 'Ground) (AppE (VarE 'project) (VarE (varNames !! i)))
+                           | i <- [0..length varNames - 1]]
+          let resultExpr = AppE (ConE 'Ground) (foldl AppE (ConE rName) resultArgs)
+          let unifyResult = InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just resultExpr)
 
-  let grounded = AppE (ConE 'Ground) (AppE (VarE 'project) (VarE swappedName))
-  let substoCall = foldl AppE (VarE 'substo) [VarE nameL, grounded, VarE replL, VarE rBodyName]
+          let innerStmts = [NoBindS hashAlpha, NoBindS hashFresh, swapLet, NoBindS substoCall, NoBindS unifyResult]
+          let innerBody = DoE Nothing innerStmts
 
-  let bindExpr = foldl AppE (VarE 'bind) [VarE freshName, VarE rBodyName]
-  let resultArgs = [if i == bindIdx
-                    then bindExpr
-                    else AppE (ConE 'Ground) (AppE (VarE 'project) (VarE (varNames !! i)))
-                   | i <- [0..length varNames - 1]]
-  let resultExpr = AppE (ConE 'Ground) (foldl AppE (ConE rName) resultArgs)
-  let unifyResult = InfixE (Just (VarE resultL)) (VarE '(<=>)) (Just resultExpr)
+          let withRBody = AppE (VarE 'freshLogic) (LamE [VarP rBodyName] innerBody)
+          let withFresh = AppE (VarE 'freshOne) (LamE [VarP freshName] withRBody)
+          let substBranch = withFresh
 
-  let innerStmts = [NoBindS hashAlpha, NoBindS hashFresh, swapLet, NoBindS substoCall, NoBindS unifyResult]
-  let innerBody = DoE Nothing innerStmts
+          let condeExpr = AppE (VarE 'conde) (ListE [shadowBranch, substBranch])
 
-  let withRBody = AppE (VarE 'freshLogic) (LamE [VarP rBodyName] innerBody)
-  let withFresh = AppE (VarE 'freshOne) (LamE [VarP freshName] withRBody)
-  let substBranch = withFresh
-
-  let condeExpr = AppE (VarE 'conde) (ListE [shadowBranch, substBranch])
-
-  return $ Match (ConP conName [] patterns) (NormalB condeExpr) []
+          return $ Match (ConP conName [] patterns) (NormalB condeExpr) []

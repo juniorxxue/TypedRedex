@@ -56,7 +56,7 @@ instance (NominalAtom name, Permute name body) => Permute name (Bind name body) 
 data Bind name body = Bind !name body
   deriving (Eq, Show)
 
-instance (NominalAtom name, LogicType body, Permute name body) => LogicType (Bind name body) where
+instance (NominalAtom name, LogicType body, Permute name body, HasDisplay name, HasDisplay body) => LogicType (Bind name body) where
   data Reified (Bind name body) var = BindR (Logic name var) (Logic body var)
 
   project (Bind n b) = BindR (Ground (project n)) (Ground (project b))
@@ -101,6 +101,10 @@ instance (NominalAtom name, LogicType body, Permute name body) => LogicType (Bin
         unif a1 a2 *> unif b1 b2
 
   derefVal deref (BindR n b) = Bind <$> deref n <*> deref b
+
+-- | HasDisplay for Bind delegates to children - uses default formatting.
+instance (HasDisplay name, HasDisplay body) => HasDisplay (Bind name body) where
+  formatCon _ _ = Nothing  -- Use default "Bind(name, body)" formatting
 
 --------------------------------------------------------------------------------
 -- Smart Constructor

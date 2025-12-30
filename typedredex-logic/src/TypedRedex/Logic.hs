@@ -22,6 +22,9 @@ module TypedRedex.Logic
   , Var(..)
   , LogicType(..)
   , Field(..)
+    -- * Display
+  , HasDisplay(..)
+  , defaultFormatCon
     -- * Higher-rank helpers
   , Unifier
   , Evaluator
@@ -55,6 +58,7 @@ module TypedRedex.Logic
   ) where
 
 import TypedRedex.Logic.Term
+import TypedRedex.Logic.Display
 import TypedRedex.Logic.Redex
 import TypedRedex.Logic.Unify
 import TypedRedex.Logic.SubstCore
