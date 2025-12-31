@@ -13,6 +13,11 @@ Theoretical challenges in execution and static mode-checking?
 neg $ {x <- fresh; prem $ infer e x} 
 ```
 
+## Mode Checking
+
+1. inputs in premises are ground
+2. outputs in conclusions are ground
+
 # Free Monad Approach
 
 ## Overview

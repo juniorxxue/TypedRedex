@@ -28,6 +28,8 @@ import qualified Data.Set as S
 
 data Ty
   = TInt
+  | TTop
+  | TBot
   | TVar TyNom
   | TArr Ty Ty
   | TForall (Bind TyNom Ty)
@@ -68,6 +70,8 @@ data Context
 tyDisplay :: Display Ty
 tyDisplay = display
   [ #TInt    ~= "int"
+  , #TTop    ~= "top"
+  , #TBot    ~= "bot"
   , #TVar    ~> \a -> (a :: D)
   , #TArr    ~> \(a, b) -> parens (a <+> " → " <+> b)
   , #TForall ~> \bnd -> "∀" <+> bnd
@@ -85,7 +89,7 @@ envDisplay = display
   [ #EEmpty ~= "·"
   , #ETrm   ~> \(x, ty, env) -> env <+> ", " <+> x <+> ":" <+> ty
   , #EUvar  ~> \(a, env) -> env <+> ", " <+> a
-  , #ESvar  ~> \(ty1, a, ty2, env) -> env <+> ", " <+> ty1 <+> "<:" <+> a <+> "<:" <+> ty2
+  , #EBound  ~> \(ty1, a, ty2, env) -> env <+> ", " <+> ty1 <+> "<:" <+> a <+> "<:" <+> ty2
   ]
 
 contextDisplay :: Display Context
@@ -138,6 +142,8 @@ derivePermute ''Env [''TyNom, ''Nom]
 
 deriveLogicType ''Ty
   [ 'TInt    TH.~> "tint"
+  , 'TTop    TH.~> "ttop"
+  , 'TBot    TH.~> "tbot"
   , 'TVar    TH.~> "tvar"
   , 'TArr    TH.~> "tarr"
   , 'TForall TH.~> "tforall"
