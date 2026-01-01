@@ -1,22 +1,11 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedLabels #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
--- | Poly Type Inference - Polarized Subtyping Tests
--- Matches Poly's ssub :: (Env, Env) -> Ty -> Polar -> Ty -> m Env
+-- | Poly Type Inference - Print Extracted Inference Rules
 module Main (main) where
 
-import TypedRedex
-import TypedRedex.Interp.Subst (runSubstRedex, takeS, Stream)
-import TypedRedex.Interp.Tracing (runWithDerivationWith, prettyDerivationWith, Derivation(..))
-import TypedRedex.Interp.Display (renderGround)
-import qualified TypedRedex.DSL.Fresh as F
+import Control.Exception (catch, SomeException)
 
-import Syntax
 import Rules
 import Typeset
 
@@ -24,6 +13,27 @@ import Typeset
 -- Main
 --------------------------------------------------------------------------------
 
+-- | Try to print rules, handling exceptions gracefully
+tryTypeset :: String -> IO () -> IO ()
+tryTypeset name action = do
+  putStrLn $ "--- " ++ name ++ " ---\n"
+  action `catch` \(e :: SomeException) ->
+    putStrLn $ "(some rules could not be typeset: " ++ take 50 (show e) ++ "...)\n"
+
 main :: IO ()
 main = do
-  putStrLn "=== Extracted rules for ssub ===\n"
+  putStrLn "=== Extracted Inference Rules for Poly ===\n"
+
+  tryTypeset "flipPolar"      $ typeset2 polyConfig flipPolar
+  tryTypeset "lookupTmVar"    $ typeset3 polyConfig lookupTmVar
+  tryTypeset "lookupUvar"     $ typeset2 polyConfig lookupUvar
+  tryTypeset "lookupBoundVar" $ typeset4 polyConfig lookupBoundVar
+  tryTypeset "glb"            $ typeset3 polyConfig glb
+  tryTypeset "lub"            $ typeset3 polyConfig lub
+  tryTypeset "updateUpper"    $ typeset4 polyConfig updateUpper
+  tryTypeset "updateLower"    $ typeset4 polyConfig updateLower
+  tryTypeset "inst"           $ typeset5 polyConfig inst
+  tryTypeset "instP"          $ typeset6 polyConfig instP
+  tryTypeset "ssub"           $ typeset5 polyConfig ssub
+  tryTypeset "sub"            $ typeset5 polyConfig sub
+  tryTypeset "infer"          $ typeset5 polyConfig infer

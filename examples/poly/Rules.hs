@@ -264,10 +264,12 @@ updateLower = defJudge4 @"updateLower" format $ \rule ->
     format args = "updateLower(" ++ unwords args ++ ")"
 
 splitEnv :: PolyRel rel => MJudgment5 rel "splitEnv" (In Env) (In TyNom) (Out Env) (Out TyNom) (Out TyNom)
-splitEnv = undefined
+splitEnv = defJudge5 @"splitEnv" format $ \_ -> []
+  where format args = "splitEnv(" ++ unwords args ++ ")"
 
 unsplitEnv :: PolyRel rel => MJudgment5 rel "unsplitEnv" (In Env) (In TyNom) (In TyNom) (In TyNom) (Out Env)
-unsplitEnv = undefined
+unsplitEnv = defJudge5 @"unsplitEnv" format $ \_ -> []
+  where format args = "unsplitEnv(" ++ unwords args ++ ")"
 
 -- A <: a <: B
 -- C (a may appear in C)
