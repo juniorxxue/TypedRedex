@@ -27,6 +27,7 @@ module TypedRedex.Nominal.Prelude
     Nom(..)
   , TyNom(..)
     -- * Fresh Name Generation
+  , FreshName(..)
   , freshNom
   , freshTyNom
   , freshNom_
@@ -34,6 +35,8 @@ module TypedRedex.Nominal.Prelude
     -- * Convenience Unbind
   , unbind
   , unbindTy
+  , unbind2
+  , unbind2With
     -- * Smart Constructors
   , nom
   , tynom
@@ -201,6 +204,23 @@ freshTyNom_ :: RedexFresh rel => (TyNom -> rel a) -> rel a
 freshTyNom_ k = freshTyNom >>= k
 
 --------------------------------------------------------------------------------
+-- FreshName Typeclass
+--------------------------------------------------------------------------------
+
+-- | Typeclass for generating fresh names, abstracting over name types.
+--
+-- This allows generic functions like 'unbind' and 'unbind2' to work with
+-- any nominal atom type without requiring separate implementations.
+class NominalAtom name => FreshName name where
+  freshName_ :: RedexFresh rel => (name -> rel a) -> rel a
+
+instance FreshName Nom where
+  freshName_ = freshNom_
+
+instance FreshName TyNom where
+  freshName_ = freshTyNom_
+
+--------------------------------------------------------------------------------
 -- Freshable instances (for unified fresh)
 --------------------------------------------------------------------------------
 
@@ -216,25 +236,67 @@ instance RedexFresh rel => Freshable TyNom rel where
 -- Convenience Unbind
 --------------------------------------------------------------------------------
 
--- | Open a term binder (Bind Nom) with a fresh name.
-unbind :: (RedexFresh rel, RedexEval rel, LogicType body, Permute Nom body, HasDisplay body)
-       => LTerm (Bind Nom body) rel
-       -> rel (LTerm Nom rel, LTerm body rel)
+-- | Open a binder with a fresh name (generic over name type).
+--
+-- The type of the 'Bind' determines which 'FreshName' instance to use.
+unbind :: (RedexFresh rel, RedexEval rel, FreshName name,
+           LogicType body, Permute name body,
+           HasDisplay name, HasDisplay body)
+       => LTerm (Bind name body) rel
+       -> rel (LTerm name rel, LTerm body rel)
 unbind bndL = do
   Bind oldName body <- eval bndL
-  fresh <- freshNom
-  let swappedBody = swap oldName fresh body
-  pure (Ground (project fresh), Ground (project swappedBody))
+  freshName_ $ \fresh -> do
+    let swappedBody = swap oldName fresh body
+    pure (Ground (project fresh), Ground (project swappedBody))
 
--- | Open a type binder (Bind TyNom) with a fresh name.
+-- | Open a term binder (Bind Nom) with a fresh name.
+-- Specialized version of 'unbind' for term variables.
 unbindTy :: (RedexFresh rel, RedexEval rel, LogicType body, Permute TyNom body, HasDisplay body)
          => LTerm (Bind TyNom body) rel
          -> rel (LTerm TyNom rel, LTerm body rel)
-unbindTy bndL = do
-  Bind oldName body <- eval bndL
-  fresh <- freshTyNom
-  let swappedBody = swap oldName fresh body
-  pure (Ground (project fresh), Ground (project swappedBody))
+unbindTy = unbind
+
+-- | Open two binders with the SAME fresh name (generic version).
+--
+-- Takes a fresh name generator as the first argument.
+-- Use this when you need a custom fresh generator.
+unbind2With :: (RedexEval rel, NominalAtom name,
+                LogicType body1, LogicType body2,
+                Permute name body1, Permute name body2,
+                HasDisplay name, HasDisplay body1, HasDisplay body2)
+            => (forall a. (name -> rel a) -> rel a)
+            -> LTerm (Bind name body1) rel
+            -> LTerm (Bind name body2) rel
+            -> rel (LTerm name rel, LTerm body1 rel, LTerm body2 rel)
+unbind2With freshGen bnd1L bnd2L = do
+  Bind n1 body1 <- eval bnd1L
+  Bind n2 body2 <- eval bnd2L
+  freshGen $ \fresh -> do
+    let swapped1 = swap n1 fresh body1
+        swapped2 = swap n2 fresh body2
+    pure (Ground (project fresh), Ground (project swapped1), Ground (project swapped2))
+
+-- | Open two binders with the SAME fresh name.
+--
+-- Essential for rules comparing ∀-types (subtyping, equivalence)
+-- where both bodies must refer to the same bound variable.
+--
+-- @
+-- rule "forall" $ do
+--     (bd1, bd2) <- fresh2
+--     (a, tyA, tyB) <- unbind2 bd1 bd2  -- Opens both with same fresh name
+--     prem  $ ssub (euvar a env1) tyA p tyB (euvar a env2)
+--     concl $ ssub env1 (tforall bd1) p (tforall bd2) env2
+-- @
+unbind2 :: (RedexFresh rel, RedexEval rel, FreshName name,
+            LogicType body1, LogicType body2,
+            Permute name body1, Permute name body2,
+            HasDisplay name, HasDisplay body1, HasDisplay body2)
+        => LTerm (Bind name body1) rel
+        -> LTerm (Bind name body2) rel
+        -> rel (LTerm name rel, LTerm body1 rel, LTerm body2 rel)
+unbind2 = unbind2With freshName_
 
 --------------------------------------------------------------------------------
 -- Smart Constructors

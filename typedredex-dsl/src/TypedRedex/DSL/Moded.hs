@@ -90,6 +90,7 @@ module TypedRedex.DSL.Moded
   , concl
   , liftRel
   , liftRelDeferred
+  , unbind2M
     -- * QualifiedDo operators
   , return, (>>=), (>>)
     -- * Type-level machinery
@@ -107,11 +108,14 @@ import Control.Applicative (asum)
 import qualified Data.Set as S
 import Data.Set (Set)
 
-import TypedRedex.Logic (Redex(..), Relation(..), CapturedTerm(..), FreshType(..), RedexNeg, Logic(..), LogicType(..))
+import TypedRedex.Logic (Redex(..), Relation(..), CapturedTerm(..), FreshType(..), RedexNeg, Logic(..), LogicType(..), RedexEval, HasDisplay)
 import qualified TypedRedex.Logic as R (neg)
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Define (Applied(..), LTermList(..))
 import TypedRedex.DSL.Relation (call, (<=>))
+import TypedRedex.Nominal.Bind (Bind, Permute(..))
+import TypedRedex.Nominal.Prelude (FreshName(..), unbind2)
+import TypedRedex.Logic.Redex (RedexFresh)
 import Data.Typeable (Typeable)
 
 --------------------------------------------------------------------------------
@@ -496,6 +500,32 @@ liftRelDeferred action = RuleM $ \env -> pure
   ( ()
   , env { reDeferred = LiftedA action : reDeferred env }
   )
+
+-- | Moded version of 'unbind2' for opening two binders with the same fresh name.
+--
+-- Essential for rules comparing ∀-types (subtyping, equivalence)
+-- where both bodies must refer to the same bound variable.
+--
+-- @
+-- rule "forall" $ do
+--     (bd1, bd2) <- fresh2
+--     (a, tyA, tyB) <- unbind2M bd1 bd2  -- same fresh name for both
+--     prem  $ ssub (euvar a env1) tyA p tyB (euvar a env2)
+--     concl $ ssub env1 (tforall bd1) p (tforall bd2) env2
+-- @
+unbind2M :: (Redex rel, RedexFresh rel, RedexEval rel, FreshName name,
+             LogicType body1, LogicType body2,
+             Permute name body1, Permute name body2,
+             HasDisplay name, HasDisplay body1, HasDisplay body2)
+         => T vs1 (Bind name body1) rel
+         -> T vs2 (Bind name body2) rel
+         -> RuleM rel ts s s (T (Union vs1 vs2) name rel,
+                              T (Union vs1 vs2) body1 rel,
+                              T (Union vs1 vs2) body2 rel)
+unbind2M (T vs1 bd1) (T vs2 bd2) = liftRel $
+  unbind2 bd1 bd2 Prelude.>>= \(nameL, body1L, body2L) ->
+    let vs = S.union vs1 vs2
+    in Prelude.return (T vs nameL, T vs body1L, T vs body2L)
 
 --------------------------------------------------------------------------------
 -- Moded Judgments

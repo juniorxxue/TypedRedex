@@ -13,44 +13,24 @@ module Rules where
 import Prelude hiding ((>>=), (>>), return)
 import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, fresh6, ground, lift1, lift2, lift3, neg)
 import TypedRedex.Logic (RedexHash)
-import TypedRedex.Nominal.Prelude
-import TypedRedex.Nominal (RedexFresh(..), bindT, Substo(..), substoM)
+import TypedRedex.Nominal.Prelude (Nom, TyNom)
+import TypedRedex.Nominal (RedexFresh(..), bindT, substoM)
 import TypedRedex.DSL.Moded
-  ( Mode(..), T(..)
-  , AppliedM(..), MJudgment2, MJudgment3, MJudgment4, MJudgment5, In, Out
+  ( MJudgment2, MJudgment3, MJudgment4, MJudgment5, In, Out
   , defJudge2, defJudge3, defJudge4, defJudge5
   , fresh, fresh2, fresh3, fresh4, fresh5, fresh6, prem, concl
-  , ground, Union
+  , unbind2M
   , return, (>>=), (>>)
-  , (===), (=/=)
+  , (=/=)
   )
 
 import Syntax
-import Data.Data (typeOf3)
 
 --------------------------------------------------------------------------------
 -- Type constraint
 --------------------------------------------------------------------------------
 
 type PolyRel rel = (RedexFresh rel, RedexEval rel, RedexNeg rel, RedexHash rel)
-
---------------------------------------------------------------------------------
--- Judgment format functions
---------------------------------------------------------------------------------
-
--- | Format: p̄ = p'
-flipPolarFmt :: [String] -> String
-flipPolarFmt [p, p'] = formatPolarBar p ++ " = " ++ formatPolarVal p'
-  where
-    formatPolarBar x
-      | x == "≤⁺" = "⁺̄"
-      | x == "≤⁻" = "⁻̄"
-      | otherwise = x ++ "̄"
-    formatPolarVal x
-      | x == "≤⁺" = "⁺"
-      | x == "≤⁻" = "⁻"
-      | otherwise = x
-flipPolarFmt args = "flipPolar(" ++ unwords args ++ ")"
 
 --------------------------------------------------------------------------------
 -- ssub: Polarized subtyping (single judgment with Polar argument)
@@ -104,9 +84,10 @@ test_eq = defJudge2 @"test_eq" format $ \rule ->
       concl $ test_eq ty ty,
 
     rule "forall" $ do
-      (ty1, ty2, a, b) <- fresh4 -- this is wrong, since we do not have auto swap (rename), a possible api, is to adopt a unbind2
+      (bd1, bd2) <- fresh2
+      (a, ty1, ty2) <- unbind2M bd1 bd2
       prem  $ test_eq ty1 ty2
-      concl $ test_eq (tforall (bindT a ty1)) (tforall (bindT b ty2))
+      concl $ test_eq (tforall bd1) (tforall bd2)
   ]
   where format args = "test(" ++ unwords args ++ ")"
 
@@ -154,9 +135,10 @@ ssub = defJudge5 @"sub" format $ \rule ->
 
   , rule "forall" $ do
       (env1, env2, p) <- fresh3
-      (a, b, tyA, tyB) <- fresh4
+      (bd1, bd2) <- fresh2
+      (a, tyA, tyB) <- unbind2M bd1 bd2
       prem  $ ssub (euvar a env1) tyA p tyB (euvar a env2)
-      concl $ ssub env1 (tforall (bindT a tyA)) p (tforall (bindT b tyB)) env2
+      concl $ ssub env1 (tforall bd1) p (tforall bd2) env2
   ]
   where format [env1, ty1, polar, ty2, env2] = env1 ++ " |- " ++ ty1 ++ polar ++ ty2 ++ " ⊣ " ++ env2
         format args = "ssub(" ++ unwords args ++ ")"

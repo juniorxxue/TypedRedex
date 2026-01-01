@@ -76,6 +76,7 @@ module TypedRedex.Nominal
   , RedexHash(..)
     -- * High-Level API (Generic)
   , unbindWith
+  , unbind2With
     -- * Smart Constructors
   , bind
   , bindT
@@ -119,6 +120,32 @@ unbindWith freshGen bndL = do
   freshGen $ \fresh -> do
     let swappedBody = swap oldName fresh body
     pure (Ground (project fresh), Ground (project swappedBody))
+
+-- | Open two binders with the SAME fresh name (generic version).
+--
+-- Takes a fresh name generator as the first argument.
+-- Essential for rules comparing ∀-types (subtyping, equivalence)
+-- where both bodies must refer to the same bound variable.
+--
+-- @
+-- unbind2With freshTyNom_ bd1 bd2  -- for Bind TyNom body
+-- unbind2With freshNom_ bd1 bd2    -- for Bind Nom body
+-- @
+unbind2With :: (RedexEval rel, NominalAtom name,
+                LogicType body1, LogicType body2,
+                Permute name body1, Permute name body2,
+                HasDisplay name, HasDisplay body1, HasDisplay body2)
+            => (forall a. (name -> rel a) -> rel a)
+            -> LTerm (Bind name body1) rel
+            -> LTerm (Bind name body2) rel
+            -> rel (LTerm name rel, LTerm body1 rel, LTerm body2 rel)
+unbind2With freshGen bnd1L bnd2L = do
+  Bind n1 body1 <- eval bnd1L
+  Bind n2 body2 <- eval bnd2L
+  freshGen $ \fresh -> do
+    let swapped1 = swap n1 fresh body1
+        swapped2 = swap n2 fresh body2
+    pure (Ground (project fresh), Ground (project swapped1), Ground (project swapped2))
 
 --------------------------------------------------------------------------------
 -- Smart Constructor
