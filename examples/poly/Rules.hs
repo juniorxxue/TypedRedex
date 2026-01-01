@@ -11,14 +11,14 @@
 module Rules where
 
 import Prelude hiding ((>>=), (>>), return)
-import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, fresh6, ground, lift1, lift2, lift3, neg)
+import TypedRedex hiding (fresh, ground, lift1, lift2, lift3, neg)
 import TypedRedex.Logic (RedexHash)
 import TypedRedex.Nominal.Prelude (Nom, TyNom)
 import TypedRedex.Nominal (RedexFresh(..), bindT, substoM)
 import TypedRedex.DSL.Moded
   ( MJudgment2, MJudgment3, MJudgment4, MJudgment5, MJudgment6, In, Out
   , defJudge2, defJudge3, defJudge4, defJudge5, defJudge6
-  , fresh, fresh2, fresh3, fresh4, fresh5, fresh6, prem, concl
+  , fresh, prem, concl
   , unbind2M
   , return, (>>=), (>>)
   , (=/=)
@@ -59,22 +59,22 @@ flipPolar = defJudge2 @"flipPolar" flipPolarFmt $ \rule ->
 lookupTmVar :: PolyRel rel => MJudgment3 rel "lookupVar" (In Env) (In Nom) (Out Ty)
 lookupTmVar = defJudge3 @"lookupVar" format $ \rule ->
   [ rule "here" $ do
-      (x, ty, env) <- fresh3
+      (x, ty, env) <- fresh
       concl $ lookupTmVar (etrm x ty env) x ty
 
   , rule "skip-trm" $ do
-      (x, y, ty, ty', env) <- fresh5
+      (x, y, ty, ty', env) <- fresh
       x =/= y
       prem  $ lookupTmVar env x ty
       concl $ lookupTmVar (etrm y ty' env) x ty
 
   , rule "skip-uvar" $ do
-      (x, a, ty, env) <- fresh4
+      (x, a, ty, env) <- fresh
       prem  $ lookupTmVar env x ty
       concl $ lookupTmVar (euvar a env) x ty
 
   , rule "skip-bound" $ do
-      (x, a, tyL, tyU, ty, env) <- fresh6
+      (x, a, tyL, tyU, ty, env) <- fresh
       prem  $ lookupTmVar env x ty
       concl $ lookupTmVar (ebound tyL a tyU env) x ty
   ]
@@ -85,22 +85,22 @@ lookupTmVar = defJudge3 @"lookupVar" format $ \rule ->
 lookupUvar :: PolyRel rel => MJudgment2 rel "lookupUvar" (In Env) (In TyNom)
 lookupUvar = defJudge2 @"lookupUvar" format $ \rule ->
   [ rule "here" $ do
-      (a, env) <- fresh2
+      (a, env) <- fresh
       concl $ lookupUvar (euvar a env) a
 
   , rule "skip-trm" $ do
-      (a, x, ty, env) <- fresh4
+      (a, x, ty, env) <- fresh
       prem  $ lookupUvar env a
       concl $ lookupUvar (etrm x ty env) a
 
   , rule "skip-uvar" $ do
-      (a, b, env) <- fresh3
+      (a, b, env) <- fresh
       a =/= b
       prem  $ lookupUvar env a
       concl $ lookupUvar (euvar b env) a
 
   , rule "skip-bound" $ do
-      (a, b, tyL, tyU, env) <- fresh5
+      (a, b, tyL, tyU, env) <- fresh
       prem  $ lookupUvar env a
       concl $ lookupUvar (ebound tyL b tyU env) a
   ]
@@ -111,22 +111,22 @@ lookupUvar = defJudge2 @"lookupUvar" format $ \rule ->
 lookupBoundVar :: PolyRel rel => MJudgment4 rel "lookBoundVar" (In Env) (In TyNom) (Out Ty) (Out Ty)
 lookupBoundVar = defJudge4 @"lookBoundVar" format $ \rule ->
   [ rule "here" $ do
-      (a, tyL, tyU, env) <- fresh4
+      (a, tyL, tyU, env) <- fresh
       concl $ lookupBoundVar (ebound tyL a tyU env) a tyL tyU
 
   , rule "skip-trm" $ do
-      (a, x, ty, tyL, tyU, env) <- fresh6
+      (a, x, ty, tyL, tyU, env) <- fresh
       prem  $ lookupBoundVar env a tyL tyU
       concl $ lookupBoundVar (etrm x ty env) a tyL tyU
 
   , rule "skip-uvar" $ do
-      (a, b, tyL, tyU, env) <- fresh5
+      (a, b, tyL, tyU, env) <- fresh
       prem  $ lookupBoundVar env a tyL tyU
       concl $ lookupBoundVar (euvar b env) a tyL tyU
 
   , rule "skip-bound" $ do
-      (a, b, tyL, tyU) <- fresh4
-      (tyL', tyU', env) <- fresh3
+      (a, b, tyL, tyU) <- fresh
+      (tyL', tyU', env) <- fresh
       a =/= b
       prem  $ lookupBoundVar env a tyL tyU
       concl $ lookupBoundVar (ebound tyL' b tyU' env) a tyL tyU
@@ -161,7 +161,7 @@ glb = defJudge3 @"glb" format $ \rule ->
       concl $ glb (tvar a) (tvar a) (tvar a)
 
   , rule "arr" $ do
-      (tyA, tyB, tyC, tyD, tyAC, tyBD) <- fresh6
+      (tyA, tyB, tyC, tyD, tyAC, tyBD) <- fresh
       prem  $ lub tyA tyC tyAC  -- contravariant in domain
       prem  $ glb tyB tyD tyBD  -- covariant in codomain
       concl $ glb (tarr tyA tyB) (tarr tyC tyD) (tarr tyAC tyBD)
@@ -196,7 +196,7 @@ lub = defJudge3 @"lub" format $ \rule ->
       concl $ lub (tvar a) (tvar a) (tvar a)
 
   , rule "arr" $ do
-      (tyA, tyB, tyC, tyD, tyAC, tyBD) <- fresh6
+      (tyA, tyB, tyC, tyD, tyAC, tyBD) <- fresh
       prem  $ glb tyA tyC tyAC  -- contravariant in domain
       prem  $ lub tyB tyD tyBD  -- covariant in codomain
       concl $ lub (tarr tyA tyB) (tarr tyC tyD) (tarr tyAC tyBD)
@@ -209,23 +209,23 @@ lub = defJudge3 @"lub" format $ \rule ->
 updateUpper :: PolyRel rel => MJudgment4 rel "updateUpper" (In Env) (In TyNom) (In Ty) (Out Env)
 updateUpper = defJudge4 @"updateUpper" format $ \rule ->
   [ rule "here" $ do
-      (a, tyL, tyU, tyU', tyNew, env) <- fresh6
+      (a, tyL, tyU, tyU', tyNew, env) <- fresh
       prem  $ glb tyU tyNew tyU'
       concl $ updateUpper (ebound tyL a tyU env) a tyNew (ebound tyL a tyU' env)
 
   , rule "skip-trm" $ do
-      (a, x, ty, tyNew, env, env') <- fresh6
+      (a, x, ty, tyNew, env, env') <- fresh
       prem  $ updateUpper env a tyNew env'
       concl $ updateUpper (etrm x ty env) a tyNew (etrm x ty env')
 
   , rule "skip-uvar" $ do
-      (a, b, tyNew, env, env') <- fresh5
+      (a, b, tyNew, env, env') <- fresh
       prem  $ updateUpper env a tyNew env'
       concl $ updateUpper (euvar b env) a tyNew (euvar b env')
 
   , rule "skip-bound" $ do
-      (a, b, tyNew, env, env') <- fresh5
-      (tyL', tyU') <- fresh2
+      (a, b, tyNew, env, env') <- fresh
+      (tyL', tyU') <- fresh
       a =/= b
       prem  $ updateUpper env a tyNew env'
       concl $ updateUpper (ebound tyL' b tyU' env) a tyNew (ebound tyL' b tyU' env')
@@ -238,23 +238,23 @@ updateUpper = defJudge4 @"updateUpper" format $ \rule ->
 updateLower :: PolyRel rel => MJudgment4 rel "updateLower" (In Env) (In TyNom) (In Ty) (Out Env)
 updateLower = defJudge4 @"updateLower" format $ \rule ->
   [ rule "here" $ do
-      (a, tyL, tyL', tyU, tyNew, env) <- fresh6
+      (a, tyL, tyL', tyU, tyNew, env) <- fresh
       prem  $ lub tyL tyNew tyL'
       concl $ updateLower (ebound tyL a tyU env) a tyNew (ebound tyL' a tyU env)
 
   , rule "skip-trm" $ do
-      (a, x, ty, tyNew, env, env') <- fresh6
+      (a, x, ty, tyNew, env, env') <- fresh
       prem  $ updateLower env a tyNew env'
       concl $ updateLower (etrm x ty env) a tyNew (etrm x ty env')
 
   , rule "skip-uvar" $ do
-      (a, b, tyNew, env, env') <- fresh5
+      (a, b, tyNew, env, env') <- fresh
       prem  $ updateLower env a tyNew env'
       concl $ updateLower (euvar b env) a tyNew (euvar b env')
 
   , rule "skip-bound" $ do
-      (a, b, tyNew, env, env') <- fresh5
-      (tyL', tyU') <- fresh2
+      (a, b, tyNew, env, env') <- fresh
+      (tyL', tyU') <- fresh
       a =/= b
       prem  $ updateLower env a tyNew env'
       concl $ updateLower (ebound tyL' b tyU' env) a tyNew (ebound tyL' b tyU' env')
@@ -277,7 +277,7 @@ unsplitEnv = defJudge5 @"unsplitEnv" format $ \_ -> []
 inst :: PolyRel rel => MJudgment5 rel "inst" (In Ty) (In TyNom) (In Ty) (In Ty) (Out Ty)
 inst = defJudge5 @"inst" format $ \rule ->
   [ rule "inst" $ do
-      (tyL, a, tyU, tyC, tyR) <- fresh5
+      (tyL, a, tyU, tyC, tyR) <- fresh
       prem  $ instP tyL a tyU pos tyC tyR
       concl $ inst tyL a tyU tyC tyR
   ]
@@ -292,41 +292,41 @@ inst = defJudge5 @"inst" format $ \rule ->
 instP :: PolyRel rel => MJudgment6 rel "instP" (In Ty) (In TyNom) (In Ty) (In Polar) (In Ty) (Out Ty)
 instP = defJudge6 @"instP" format $ \rule ->
   [ rule "var-pos" $ do
-      (tyL, a, tyU) <- fresh3
+      (tyL, a, tyU) <- fresh
       concl $ instP tyL a tyU pos (tvar a) tyU
 
   , rule "var-neg" $ do
-      (tyL, a, tyU) <- fresh3
+      (tyL, a, tyU) <- fresh
       concl $ instP tyL a tyU neg (tvar a) tyL
 
   , rule "var-other" $ do
-      (tyL, a, tyU, p, b) <- fresh5
+      (tyL, a, tyU, p, b) <- fresh
       a =/= b
       concl $ instP tyL a tyU p (tvar b) (tvar b)
 
   , rule "int" $ do
-      (tyL, a, tyU, p) <- fresh4
+      (tyL, a, tyU, p) <- fresh
       concl $ instP tyL a tyU p tint tint
 
   , rule "top" $ do
-      (tyL, a, tyU, p) <- fresh4
+      (tyL, a, tyU, p) <- fresh
       concl $ instP tyL a tyU p ttop ttop
 
   , rule "bot" $ do
-      (tyL, a, tyU, p) <- fresh4
+      (tyL, a, tyU, p) <- fresh
       concl $ instP tyL a tyU p tbot tbot
 
   , rule "arr" $ do
-      (tyL, a, tyU, p, p') <- fresh5
-      (tyA, tyB, tyA', tyB') <- fresh4
+      (tyL, a, tyU, p, p') <- fresh
+      (tyA, tyB, tyA', tyB') <- fresh
       prem  $ flipPolar p p'
       prem  $ instP tyL a tyU p' tyA tyA'  -- contravariant in domain
       prem  $ instP tyL a tyU p tyB tyB'   -- covariant in codomain
       concl $ instP tyL a tyU p (tarr tyA tyB) (tarr tyA' tyB')
 
   , rule "forall" $ do
-      (tyL, a, tyU, p) <- fresh4
-      (bd, tyBody') <- fresh2
+      (tyL, a, tyU, p) <- fresh
+      (bd, tyBody') <- fresh
       (b, tyBody, _tyBody) <- unbind2M bd bd
       a =/= b
       prem  $ instP tyL a tyU p tyBody tyBody'
@@ -339,45 +339,45 @@ instP = defJudge6 @"instP" format $ \rule ->
 ssub :: PolyRel rel => MJudgment5 rel "sub" (In Env) (In Ty) (In Polar) (In Ty) (Out Env)
 ssub = defJudge5 @"sub" format $ \rule ->
   [ rule "int" $ do
-      (p, env) <- fresh2
+      (p, env) <- fresh
       concl $ ssub env tint p tint env
 
   , rule "uvar" $ do
-      (env, a, p) <- fresh3
+      (env, a, p) <- fresh
       prem  $ lookupUvar env a
       concl $ ssub env (tvar a) p (tvar a) env
 
   , rule "top" $ do
-      (env, tyA, p) <- fresh3
+      (env, tyA, p) <- fresh
       concl $ ssub env tyA p ttop env
 
   , rule "bot" $ do
-      (tyA, p, env) <- fresh3
+      (tyA, p, env) <- fresh
       concl $ ssub env tbot p tyA env
 
   , rule "var-l" $ do
-      (tyA, tyB, tyC, env1, env2, a) <- fresh6
+      (tyA, tyB, tyC, env1, env2, a) <- fresh
       prem  $ lookupBoundVar env1 a tyB tyC
       prem  $ updateUpper env1 a tyA env2
       concl $ ssub env1 (tvar a) pos tyA env2
 
   , rule "var-r" $ do
-      (tyA, tyB, tyC, env1, env2, a) <- fresh6
+      (tyA, tyB, tyC, env1, env2, a) <- fresh
       prem  $ lookupBoundVar env1 a tyB tyC
       prem  $ updateLower env1 a tyA env2
       concl $ ssub env1 tyA neg (tvar a) env2
 
   , rule "arr" $ do
-      (p, p', env1, env2, env3) <- fresh5
-      (tyA, tyB, tyC, tyD) <- fresh4
+      (p, p', env1, env2, env3) <- fresh
+      (tyA, tyB, tyC, tyD) <- fresh
       prem  $ flipPolar p p'
       prem  $ ssub env1 tyC p' tyA env2
       prem  $ ssub env2 tyB p tyD env3
       concl $ ssub env1 (tarr tyA tyB) p (tarr tyC tyD) env3
 
   , rule "forall" $ do
-      (env1, env2, p) <- fresh3
-      (bd1, bd2) <- fresh2
+      (env1, env2, p) <- fresh
+      (bd1, bd2) <- fresh
       (a, tyA, tyB) <- unbind2M bd1 bd2
       prem  $ ssub (euvar a env1) tyA p tyB (euvar a env2)
       concl $ ssub env1 (tforall bd1) p (tforall bd2) env2
@@ -388,34 +388,34 @@ ssub = defJudge5 @"sub" format $ \rule ->
 sub :: PolyRel rel => MJudgment5 rel "sub" (In Env) (In Ty) (In Context) (Out Env) (Out Ty)
 sub = defJudge5 @"sub" format $ \rule ->
   [ rule "empty" $ do
-      (env, ty) <- fresh2
+      (env, ty) <- fresh
       concl $ sub env ty cempty env ty
 
   , rule "type" $ do
-      (env1, env2, tyA, tyB) <- fresh4
+      (env1, env2, tyA, tyB) <- fresh
       prem  $ ssub env1 tyA neg tyB env2
       concl $ sub env1 tyA (ctype tyB) env2 tyB
 
   , rule "forallL" $ do
-      (tyA, tyB, tyC, tyD) <- fresh4
-      (a, env1, env2) <- fresh3
-      (tm, ctx, inst_ty) <- fresh3
+      (tyA, tyB, tyC, tyD) <- fresh
+      (a, env1, env2) <- fresh
+      (tm, ctx, inst_ty) <- fresh
       prem  $ inst tyC a tyD tyB inst_ty
       prem  $ sub (ebound tbot a ttop env1) tyA (ctm tm ctx) (ebound tyC a tyD env2) tyB
       concl $ sub env1 (tforall (bindT a tyA)) (ctm tm ctx) env2 inst_ty
 
   , rule "term" $ do
-      (env1, env2, env3) <- fresh3
-      (tyA, tyB, tyD, tyA') <- fresh4
-      (ctx, tm) <- fresh2
+      (env1, env2, env3) <- fresh
+      (tyA, tyB, tyD, tyA') <- fresh
+      (ctx, tm) <- fresh
       prem  $ infer env1 (ctype tyA) tm tyA' env2
       prem  $ sub env2  tyB ctx env3 tyD
       concl $ sub env1 (tarr tyA tyB) (ctm tm ctx) env3 (tarr tyA' tyD)
 
   , rule "svar" $ do
-      (tyA, tyB, tyC) <- fresh3
-      (env1, env2) <- fresh2
-      (a, ctx) <- fresh2
+      (tyA, tyB, tyC) <- fresh
+      (env1, env2) <- fresh
+      (a, ctx) <- fresh
       prem  $ lookupBoundVar env1 a tyA tyB
       prem  $ sub env1 tyB ctx env2 tyC
       concl $ sub env1 (tvar a) ctx env2 tyC
@@ -427,36 +427,36 @@ sub = defJudge5 @"sub" format $ \rule ->
 infer :: PolyRel rel => MJudgment5 rel "infer" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
 infer = defJudge5 @"infer" format $ \rule ->
   [ rule "lit" $ do
-      (n, env) <- fresh2
+      (n, env) <- fresh
       concl $ infer env cempty (lit n) tint env
 
   , rule "var" $ do
-      (x, ty, env) <- fresh3
+      (x, ty, env) <- fresh
       prem $ lookupTmVar env x ty
       concl $ infer env cempty (var x) ty env
 
   , rule "ann" $ do
-      (tm, ty, env1, env2) <- fresh4
+      (tm, ty, env1, env2) <- fresh
       prem $ infer env1 (ctype ty) tm ty env2
       concl $ infer env1 cempty (ann tm ty) ty env2
 
   , rule "lam1" $ do
-      (x, tm, env1, env2) <- fresh4
-      (ty1, ty2, ty3) <- fresh3
+      (x, tm, env1, env2) <- fresh
+      (ty1, ty2, ty3) <- fresh
       prem  $ infer (etrm x ty1 env1) (ctype ty2) tm ty3 env2
       concl $ infer env1 (ctype (tarr ty1 ty2)) (lam (bindT x tm)) (tarr ty1 ty3) env2
 
   , rule "lam2" $ do
-      (x, tm1, tm2, env1, ctx, env2) <- fresh6
-      (ty1, ty2) <- fresh2
+      (x, tm1, tm2, env1, ctx, env2) <- fresh
+      (ty1, ty2) <- fresh
       prem  $ infer env1 cempty tm2 ty1 env2
       prem  $ infer (etrm x ty1 env1) ctx tm1 ty2 (etrm x ty1 env2)
       concl $ infer env1 (ctm tm2 ctx) (lam (bindT x tm1)) (tarr ty1 ty2) env2
 
   , rule "lam3" $ do
-      (x, tm, env1, env2, env3, env4) <- fresh6
-      (ty1, ty2, ty3) <- fresh3
-      (a, b, c) <- fresh3
+      (x, tm, env1, env2, env3, env4) <- fresh
+      (ty1, ty2, ty3) <- fresh
+      (a, b, c) <- fresh
       prem  $ lookupBoundVar env1 a ty1 ty2
       prem  $ splitEnv env1 a env2 b c
       prem  $ infer (etrm x (tvar b) env2) (ctype (tvar c)) tm ty3 (etrm x (tvar b) env3)
@@ -464,32 +464,32 @@ infer = defJudge5 @"infer" format $ \rule ->
       concl $ infer env1 (ctype (tvar a)) (lam (bindT x tm)) (tarr ty1 ty3) env4
 
   , rule "tlam1" $ do
-      (a, tm, env1, env2, ty) <- fresh5
+      (a, tm, env1, env2, ty) <- fresh
       prem  $ infer (euvar a env1) cempty tm ty (euvar a env2)
       concl $ infer env1 cempty (tlam (bindT a tm)) (tforall (bindT a ty)) env2
 
   , rule "tlam2" $ do
-      (a, tm, env1, ty1, ty2, env2) <- fresh6
+      (a, tm, env1, ty1, ty2, env2) <- fresh
       prem  $ infer (euvar a env1) (ctype ty2) tm ty1 (euvar a env2)
       concl $ infer env1 (ctype (tforall (bindT a ty2))) (tlam (bindT a tm)) (tforall (bindT a ty1)) env2
 
   , rule "app" $ do
-      (tm1, tm2, env1, ctx, env2) <- fresh5
-      (ty1, ty2) <- fresh2
+      (tm1, tm2, env1, ctx, env2) <- fresh
+      (ty1, ty2) <- fresh
       prem  $ infer env1 (ctm tm2 ctx) tm1 (tarr ty1 ty2) env2
       concl $ infer env1 ctx (app tm1 tm2) ty2 env2
 
   , rule "tapp" $ do
-      (tm, ty2, env1, ctx, env2, _env) <- fresh6
-      (a, ty1, ty3, st_ty) <- fresh4
+      (tm, ty2, env1, ctx, env2, _env) <- fresh
+      (a, ty1, ty3, st_ty) <- fresh
       prem  $ infer env1 cempty tm (tforall (bindT a ty1)) _env
       prem  $ substoM a ty1 ty2 st_ty
       prem  $ sub env1 st_ty ctx env2 ty3
       concl $ infer env1 ctx (tapp tm ty2) ty3 env2
 
   , rule "sub" $ do
-      (env1, _env, env2) <- fresh3
-      (ctx, g, tyA, tyB) <- fresh4
+      (env1, _env, env2) <- fresh
+      (ctx, g, tyA, tyB) <- fresh
       prem  $ infer env1 cempty g tyA _env
       ctx =/= cempty
       prem  $ sub env1 tyA ctx env2 tyB

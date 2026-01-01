@@ -37,7 +37,7 @@
 module TestTypeCheck where
 
 import Prelude hiding ((>>=), (>>), return)
-import TypedRedex hiding (fresh, fresh2, fresh3, fresh4, fresh5, fresh6, ground, lift1, lift2, lift3, neg)
+import TypedRedex hiding (fresh, ground, lift1, lift2, lift3, neg)
 import TypedRedex.Logic (RedexHash)
 import TypedRedex.Nominal.Prelude
 import TypedRedex.Nominal (RedexFresh(..), bindT)
@@ -45,7 +45,7 @@ import TypedRedex.DSL.Moded
   ( Mode(..), T(..)
   , AppliedM(..), MJudgment2, MJudgment3, MJudgment4, MJudgment5, MJudgment6, In, Out
   , defJudge2, defJudge3, defJudge4, defJudge5, defJudge6, ModedRule(..)
-  , fresh, fresh2, fresh3, fresh4, fresh5, fresh6, prem, concl
+  , fresh, prem, concl
   , ground, Union
   , return, (>>=), (>>)
   , (===), (=/=)
@@ -76,10 +76,10 @@ unsplitEnv' = undefined
 inferTest1 :: PolyRel rel => MJudgment5 rel "inferTest1" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
 inferTest1 = defJudge5 @"inferTest1" format $ \rule ->
   [ rule "lam3-fixed" $ do
-      (x, tm, env1, env2, env3) <- fresh5 @Nom @Tm @Env @Env @Env
-      (ty1, ty2, ty3) <- fresh3 @Ty @Ty @Ty
-      (a, b, c) <- fresh3 @TyNom @TyNom @TyNom
-      env4 <- fresh @Env
+      (x, tm, env1, env2, env3) <- fresh
+      (ty1, ty2, ty3) <- fresh
+      (a, b, c) <- fresh
+      env4 <- fresh
       prem  $ lookupBoundVar' env1 a ty1 ty2
       prem  $ splitEnv' env1 a env2 b c
       prem  $ inferTest1 (etrm x (tvar b) env2) (ctype (tvar c)) tm ty3 (etrm x (tvar b) env3)
@@ -98,10 +98,10 @@ inferTest1 = defJudge5 @"inferTest1" format $ \rule ->
 inferTest2 :: PolyRel rel => MJudgment5 rel "inferTest2" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
 inferTest2 = defJudge5 @"inferTest2" format $ \rule ->
   [ rule "complex" $ do
-      (x, tm, env1, env2, _env3) <- fresh5 @Nom @Tm @Env @Env @Env
-      (ty1, ty2, ty3) <- fresh3 @Ty @Ty @Ty
-      (a, b, c) <- fresh3 @TyNom @TyNom @TyNom
-      (env4, env5, env6) <- fresh3 @Env @Env @Env
+      (x, tm, env1, env2, _env3) <- fresh
+      (ty1, ty2, ty3) <- fresh
+      (a, b, c) <- fresh
+      (env4, env5, env6) <- fresh
       prem  $ lookupBoundVar' env1 a ty1 ty2
       prem  $ splitEnv' env1 a env2 b c
       prem  $ inferTest2 (etrm x (tvar b) env2) (ctype (tvar c)) tm ty3 env4
@@ -122,10 +122,10 @@ inferTest2 = defJudge5 @"inferTest2" format $ \rule ->
 inferTest3 :: PolyRel rel => MJudgment5 rel "inferTest3" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
 inferTest3 = defJudge5 @"inferTest3" format $ \rule ->
   [ rule "bad-schedule" $ do
-      (x, tm, env1, env2, env3) <- fresh5 @Nom @Tm @Env @Env @Env
-      (ty1, ty2, ty3) <- fresh3 @Ty @Ty @Ty
-      (a, b, c) <- fresh3 @TyNom @TyNom @TyNom
-      env4 <- fresh @Env
+      (x, tm, env1, env2, env3) <- fresh
+      (ty1, ty2, ty3) <- fresh
+      (a, b, c) <- fresh
+      env4 <- fresh
       -- BUG: env4 used as input before produced!
       prem  $ unsplitEnv' env4 a b c env3
       prem  $ lookupBoundVar' env1 a ty1 ty2
@@ -145,32 +145,32 @@ inferTest3 = defJudge5 @"inferTest3" format $ \rule ->
 inferTest4 :: PolyRel rel => MJudgment5 rel "inferTest4" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
 inferTest4 = defJudge5 @"inferTest4" format $ \rule ->
   [ rule "rule1" $ do
-      (n, env) <- fresh2 @Int @Env
+      (n, env) <- fresh
       concl $ inferTest4 env cempty (lit n) tint env
 
   , rule "rule2" $ do
-      (tm, ty, env1, env2) <- fresh4 @Tm @Ty @Env @Env
+      (tm, ty, env1, env2) <- fresh
       prem $ inferTest4 env1 (ctype ty) tm ty env2
       concl $ inferTest4 env1 cempty (ann tm ty) ty env2
 
   , rule "rule3" $ do
-      (x, tm, env1, env2) <- fresh4 @Nom @Tm @Env @Env
-      (ty1, ty2, ty3) <- fresh3 @Ty @Ty @Ty
+      (x, tm, env1, env2) <- fresh
+      (ty1, ty2, ty3) <- fresh
       prem  $ inferTest4 (etrm x ty1 env1) (ctype ty2) tm ty3 env2
       concl $ inferTest4 env1 (ctype (tarr ty1 ty2)) (lam (bindT x tm)) (tarr ty1 ty3) env2
 
   , rule "rule4" $ do
-      (x, tm1, tm2, env1, ctx, env2) <- fresh6 @Nom @Tm @Tm @Env @Context @Env
-      (ty1, ty2) <- fresh2 @Ty @Ty
+      (x, tm1, tm2, env1, ctx, env2) <- fresh
+      (ty1, ty2) <- fresh
       prem  $ inferTest4 env1 cempty tm2 ty1 env2
       prem  $ inferTest4 (etrm x ty1 env1) ctx tm1 ty2 (etrm x ty1 env2)
       concl $ inferTest4 env1 (ctm tm2 ctx) (lam (bindT x tm1)) (tarr ty1 ty2) env2
 
   , rule "rule5" $ do
-      (x, tm, env1, env2, env3) <- fresh5 @Nom @Tm @Env @Env @Env
-      (ty1, ty2, ty3) <- fresh3 @Ty @Ty @Ty
-      (a, b, c) <- fresh3 @TyNom @TyNom @TyNom
-      env4 <- fresh @Env
+      (x, tm, env1, env2, env3) <- fresh
+      (ty1, ty2, ty3) <- fresh
+      (a, b, c) <- fresh
+      env4 <- fresh
       prem  $ lookupBoundVar' env1 a ty1 ty2
       prem  $ splitEnv' env1 a env2 b c
       prem  $ inferTest4 (etrm x (tvar b) env2) (ctype (tvar c)) tm ty3 (etrm x (tvar b) env3)

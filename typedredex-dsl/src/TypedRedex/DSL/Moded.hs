@@ -83,7 +83,7 @@ module TypedRedex.DSL.Moded
   , ruleM
   , ModedRule(..)
     -- * Rule operations
-  , fresh, fresh2, fresh3, fresh4, fresh5, fresh6
+  , Fresh(..)
   , prem
   , neg
   , (===), (=/=)
@@ -107,6 +107,8 @@ import Data.Proxy (Proxy(..))
 import Control.Applicative (asum)
 import qualified Data.Set as S
 import Data.Set (Set)
+
+import GHC.Generics (Generic, Rep, to, K1(..), M1(..), U1(..), (:*:)(..), (:+:))
 
 import TypedRedex.Logic (Redex(..), Relation(..), CapturedTerm(..), FreshType(..), RedexNeg, Logic(..), LogicType(..), RedexEval, HasDisplay)
 import qualified TypedRedex.Logic as R (neg)
@@ -402,73 +404,86 @@ m >> k = m >>= \_ -> k
 -- Fresh
 --------------------------------------------------------------------------------
 
--- | Create a fresh logic variable with runtime ID tracking.
-fresh :: forall a rel ts n steps c.
-         (Redex rel, LogicType a)
-      => RuleM rel ts ('St n steps c) ('St (n + 1) steps c) (T '[n] a rel)
-fresh = RuleM $ \env -> fresh_ FreshVar $ \lterm ->
+-- | Create a fresh logic variable with runtime ID tracking (single variable).
+fresh1 :: forall a rel ts n steps c.
+          (Redex rel, LogicType a)
+       => RuleM rel ts ('St n steps c) ('St (n + 1) steps c) (T '[n] a rel)
+fresh1 = RuleM $ \env -> fresh_ FreshVar $ \lterm ->
   let varId = reNextVar env
   in pure (T (S.singleton varId) (Free lterm), env { reNextVar = varId + 1 })
 
--- | Create 2 fresh logic variables.
-fresh2 :: forall a b rel ts n steps c.
-          (Redex rel, LogicType a, LogicType b)
-       => RuleM rel ts ('St n steps c) ('St (n + 2) steps c)
-            (T '[n] a rel, T '[n + 1] b rel)
-fresh2 = RuleM $ \env -> do
-  (ta, env1) <- runRuleM (fresh @a) env
-  (tb, env2) <- runRuleM (fresh @b) env1
-  pure ((ta, tb), env2)
+--------------------------------------------------------------------------------
+-- Fresh typeclass (generic fresh for tuples)
+--------------------------------------------------------------------------------
 
--- | Create 3 fresh logic variables.
-fresh3 :: forall a b c rel ts n steps cc.
-          (Redex rel, LogicType a, LogicType b, LogicType c)
-       => RuleM rel ts ('St n steps cc) ('St (n + 3) steps cc)
-            (T '[n] a rel, T '[n + 1] b rel, T '[n + 2] c rel)
-fresh3 = RuleM $ \env -> do
-  (ta, env1) <- runRuleM (fresh @a) env
-  (tb, env2) <- runRuleM (fresh @b) env1
-  (tc, env3) <- runRuleM (fresh @c) env2
-  pure ((ta, tb, tc), env3)
+-- | Closed type family for counting fresh variables.
+-- Single T values produce 1; tuples use GFreshCount via Generics.
+type family FreshCount r :: Nat where
+  FreshCount (T vs a rel) = 1
+  FreshCount r = GFreshCount (Rep r)
 
--- | Create 4 fresh logic variables.
-fresh4 :: forall a b c d rel ts n steps cc.
-          (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d)
-       => RuleM rel ts ('St n steps cc) ('St (n + 4) steps cc)
-            (T '[n] a rel, T '[n + 1] b rel, T '[n + 2] c rel, T '[n + 3] d rel)
-fresh4 = RuleM $ \env -> do
-  (ta, env1) <- runRuleM (fresh @a) env
-  (tb, env2) <- runRuleM (fresh @b) env1
-  (tc, env3) <- runRuleM (fresh @c) env2
-  (td, env4) <- runRuleM (fresh @d) env3
-  pure ((ta, tb, tc, td), env4)
+-- | Typeclass for allocating fresh logic variables.
+-- Works for single T values and tuples of T values.
+class Fresh r rel ts n steps c where
+  fresh :: RuleM rel ts ('St n steps c) ('St (n + FreshCount r) steps c) r
 
--- | Create 5 fresh logic variables.
-fresh5 :: forall a b c d e rel ts n steps cc.
-          (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e)
-       => RuleM rel ts ('St n steps cc) ('St (n + 5) steps cc)
-            (T '[n] a rel, T '[n + 1] b rel, T '[n + 2] c rel, T '[n + 3] d rel, T '[n + 4] e rel)
-fresh5 = RuleM $ \env -> do
-  (ta, env1) <- runRuleM (fresh @a) env
-  (tb, env2) <- runRuleM (fresh @b) env1
-  (tc, env3) <- runRuleM (fresh @c) env2
-  (td, env4) <- runRuleM (fresh @d) env3
-  (te, env5) <- runRuleM (fresh @e) env4
-  pure ((ta, tb, tc, td, te), env5)
+-- Base case: single variable (constrain vs ~ '[n] to force correct indices)
+instance (Redex rel, LogicType a, vs ~ '[n]) => Fresh (T vs a rel) rel ts n steps c where
+  fresh = fresh1 @a
 
--- | Create 6 fresh logic variables.
-fresh6 :: forall a b c d e f rel ts n steps cc.
-          (Redex rel, LogicType a, LogicType b, LogicType c, LogicType d, LogicType e, LogicType f)
-       => RuleM rel ts ('St n steps cc) ('St (n + 6) steps cc)
-            (T '[n] a rel, T '[n + 1] b rel, T '[n + 2] c rel, T '[n + 3] d rel, T '[n + 4] e rel, T '[n + 5] f rel)
-fresh6 = RuleM $ \env -> do
-  (ta, env1) <- runRuleM (fresh @a) env
-  (tb, env2) <- runRuleM (fresh @b) env1
-  (tc, env3) <- runRuleM (fresh @c) env2
-  (td, env4) <- runRuleM (fresh @d) env3
-  (te, env5) <- runRuleM (fresh @e) env4
-  (tf, env6) <- runRuleM (fresh @f) env5
-  pure ((ta, tb, tc, td, te, tf), env6)
+-- Generic case: tuples and other product types
+instance {-# OVERLAPPABLE #-}
+  ( Redex rel, Generic r, GFresh (Rep r) rel ts n steps c
+  , FreshCount r ~ GFreshCount (Rep r)
+  ) => Fresh r rel ts n steps c where
+  fresh = RuleM $ \env -> runRuleM (gfresh @(Rep r) @rel @ts @n @steps @c) env Prelude.>>= \(rep, env') ->
+    Prelude.pure (to rep, env')
+
+--------------------------------------------------------------------------------
+-- GFresh (Generic traversal for fresh allocation)
+--------------------------------------------------------------------------------
+
+-- | Generic fresh variable allocation for product types
+class GFresh f rel ts n steps c where
+  type GFreshCount f :: Nat
+  gfresh :: RuleM rel ts ('St n steps c) ('St (n + GFreshCount f) steps c) (f p)
+
+-- Unit (empty product)
+instance Redex rel => GFresh U1 rel ts n steps c where
+  type GFreshCount U1 = 0
+  gfresh = return U1
+
+-- Metadata wrapper (pass through)
+instance (Redex rel, GFresh f rel ts n steps c) => GFresh (M1 i m f) rel ts n steps c where
+  type GFreshCount (M1 i m f) = GFreshCount f
+  gfresh = liftGFresh M1 (gfresh @f @rel @ts @n @steps @c)
+
+-- Product: process left then right, threading state
+instance ( Redex rel
+         , GFresh f rel ts n steps c
+         , GFresh g rel ts (n + GFreshCount f) steps c
+         ) => GFresh (f :*: g) rel ts n steps c where
+  type GFreshCount (f :*: g) = GFreshCount f + GFreshCount g
+  gfresh = RuleM $ \env -> do
+    (a, env1) <- runRuleM (gfresh @f @rel @ts @n @steps @c) env
+    (b, env2) <- runRuleM (gfresh @g @rel @ts @(n + GFreshCount f) @steps @c) env1
+    Prelude.pure (a :*: b, env2)
+
+-- Leaf: single T value (constrain vs ~ '[n] to force correct indices)
+instance (Redex rel, LogicType a, vs ~ '[n]) => GFresh (K1 i (T vs a rel)) rel ts n steps c where
+  type GFreshCount (K1 i (T vs a rel)) = 1
+  gfresh = RuleM $ \env -> runRuleM (fresh1 @a) env Prelude.>>= \(t, env') ->
+    Prelude.pure (K1 t, env')
+
+-- Sum types: reject with TypeError
+instance TypeError ('Text "Fresh does not support sum types (use product types like tuples)")
+  => GFresh (f :+: g) rel ts n steps c where
+  type GFreshCount (f :+: g) = 0
+  gfresh = error "unreachable"
+
+-- Helper for M1 lifting
+liftGFresh :: Redex rel => (f p -> g p) -> RuleM rel ts s t (f p) -> RuleM rel ts s t (g p)
+liftGFresh f m = RuleM $ \env -> runRuleM m env Prelude.>>= \(a, env') -> Prelude.pure (f a, env')
 
 --------------------------------------------------------------------------------
 -- Lifting rel actions
@@ -508,7 +523,7 @@ liftRelDeferred action = RuleM $ \env -> pure
 --
 -- @
 -- rule "forall" $ do
---     (bd1, bd2) <- fresh2
+--     (bd1, bd2) <- fresh
 --     (a, tyA, tyB) <- unbind2M bd1 bd2  -- same fresh name for both
 --     prem  $ ssub (euvar a env1) tyA p tyB (euvar a env2)
 --     concl $ ssub env1 (tforall bd1) p (tforall bd2) env2
