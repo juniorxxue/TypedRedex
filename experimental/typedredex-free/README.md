@@ -221,7 +221,7 @@ The same rule definition serves for:
 import qualified TypedRedex.Free as R
 
 lookupCtx :: R.Judgment3 rel "lookup" '[R.I, R.I, R.O] Ctx Nat Ty
-lookupCtx = R.defJudge3 @"lookup" $ \rule ->
+lookupCtx = R.defJudge3 $ \rule ->
   [ rule "lookup-here" $ R.do
       (ty, rest) <- R.fresh2
       R.concl $ lookupCtx (cons ty rest) zro ty

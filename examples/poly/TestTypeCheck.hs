@@ -74,7 +74,7 @@ unsplitEnv' = undefined
 --------------------------------------------------------------------------------
 
 inferTest1 :: PolyRel rel => MJudgment5 rel "inferTest1" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
-inferTest1 = defJudge5 @"inferTest1" format $ \rule ->
+inferTest1 = defJudge5 format $ \rule ->
   [ rule "lam3-fixed" $ do
       (x, tm, env1, env2, env3) <- fresh
       (ty1, ty2, ty3) <- fresh
@@ -96,7 +96,7 @@ inferTest1 = defJudge5 @"inferTest1" format $ \rule ->
 --------------------------------------------------------------------------------
 
 inferTest2 :: PolyRel rel => MJudgment5 rel "inferTest2" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
-inferTest2 = defJudge5 @"inferTest2" format $ \rule ->
+inferTest2 = defJudge5 format $ \rule ->
   [ rule "complex" $ do
       (x, tm, env1, env2, _env3) <- fresh
       (ty1, ty2, ty3) <- fresh
@@ -143,7 +143,7 @@ inferTest3 = defJudge5 @"inferTest3" format $ \rule ->
 --------------------------------------------------------------------------------
 
 inferTest4 :: PolyRel rel => MJudgment5 rel "inferTest4" (In Env) (In Context) (In Tm) (Out Ty) (Out Env)
-inferTest4 = defJudge5 @"inferTest4" format $ \rule ->
+inferTest4 = defJudge5 format $ \rule ->
   [ rule "rule1" $ do
       (n, env) <- fresh
       concl $ inferTest4 env cempty (lit n) tint env

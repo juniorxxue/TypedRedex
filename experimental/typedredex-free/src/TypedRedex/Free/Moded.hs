@@ -27,7 +27,7 @@
 -- import qualified TypedRedex.Free.Moded as R
 --
 -- lookupCtx :: Judgment3 rel "lookup" '[I, I, O] Ctx Nat Ty
--- lookupCtx = defJudge3 @"lookup" $ \\rule ->
+-- lookupCtx = defJudge3 $ \\rule ->
 --   [ rule "lookup-here" $ R.do
 --       (ty, rest) <- R.fresh2
 --       R.concl $ lookupCtx (cons ty rest) zro ty

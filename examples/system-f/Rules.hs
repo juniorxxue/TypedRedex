@@ -38,7 +38,7 @@ import Syntax
 type SystemFRel rel = (RedexFresh rel, RedexEval rel, RedexNeg rel, RedexHash rel)
 
 lookupTm :: SystemFRel rel => Judgment3 rel "lookupTm" '[I, I, O] Ctx Nom Ty
-lookupTm = defJudge3 @"lookupTm" $ \rule ->
+lookupTm = defJudge3 $ \rule ->
   [ -- lookup-here: lookupTm (x:ty, rest) x ty
     rule "lookup-here" $ do
       (ty, rest, x) <- fresh3
@@ -64,7 +64,7 @@ lookupTm = defJudge3 @"lookupTm" $ \rule ->
 --------------------------------------------------------------------------------
 
 substTy :: SystemFRel rel => Judgment4 rel "substTy" '[I, I, I, O] TyNom Ty Ty Ty
-substTy = defJudge4 @"substTy" $ \rule ->
+substTy = defJudge4 $ \rule ->
   [ rule "subst" $ do
       (alpha, tyArg, tyBody, result) <- fresh4
       concl $ substTy alpha tyArg tyBody result
@@ -77,7 +77,7 @@ substTy = defJudge4 @"substTy" $ \rule ->
 --------------------------------------------------------------------------------
 
 typeof :: SystemFRel rel => Judgment3 rel "typeof" '[I, I, O] Ctx Tm Ty
-typeof = defJudge3 @"typeof" $ \rule ->
+typeof = defJudge3 $ \rule ->
   [ -- typeof-unit: typeof ctx () Unit
     rule "typeof-unit" $ do
       ctx <- fresh
