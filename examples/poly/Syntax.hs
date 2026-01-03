@@ -95,8 +95,20 @@ envDisplay = display
 contextDisplay :: Display Context
 contextDisplay = display
   [ #CEmpty      ~= "□"
-  , #CType       ~> \ty -> "[" <+> ty <+> "]"
+  , #CType       ~> \ty -> (ty :: D)
   , #CTm         ~> \(tm, ctx) -> tm <+> " ~> " <+> ctx
+  ]
+
+tmDisplay :: Display Tm
+tmDisplay = display
+  [ #Literal ~> \n -> (n :: D)                          -- literal number
+  , #Var     ~> \x -> (x :: D)                          -- variable
+  , #Abs     ~> \bnd -> "λ" <+> bnd                     -- λx.e
+  , #App     ~> \(e1, e2) -> parens (e1 <+> " " <+> e2) -- (e₁ e₂)
+  , #Ann     ~> \(e, ty) -> parens (e <+> " : " <+> ty) -- (e : A)
+  , #TAbs    ~> \bnd -> "Λ" <+> bnd                     -- Λα.e
+  , #TApp    ~> \(e, ty) -> e <+> "[" <+> ty <+> "]"    -- e[A]
+  , #Bind    ~> \(nm, body) -> nm <+> "." <+> body      -- x.e or α.e
   ]
 
 instance HasDisplay Ty where
@@ -112,7 +124,7 @@ instance HasDisplay Context where
   formatCon = formatWithDisplay contextDisplay
 
 instance HasDisplay Tm where
-  formatCon _ _ = Nothing
+  formatCon = formatWithDisplay tmDisplay
 
 --------------------------------------------------------------------------------
 -- Permute instances (before deriveLogicType)
@@ -171,7 +183,7 @@ deriveLogicType ''Env
   , 'EBound TH.~> "ebound"
   ]
 
-deriveLogicType ''Context  
+deriveLogicType ''Context
   [ 'CEmpty TH.~> "cempty"
   , 'CType  TH.~> "ctype"
   , 'CTm    TH.~> "ctm"

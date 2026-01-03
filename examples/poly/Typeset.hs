@@ -36,7 +36,7 @@ import TypedRedex.DSL.Define (Applied(..))
 import TypedRedex.Logic (LogicType)
 import TypedRedex.Nominal.Prelude (TyNom, Nom)
 
-import Syntax (Ty, Env, Polar, tyDisplay, polarDisplay, envDisplay)
+import Syntax (Ty, Tm, Env, Polar, Context, tyDisplay, polarDisplay, envDisplay, tmDisplay, contextDisplay)
 
 --------------------------------------------------------------------------------
 -- TypesetConfig: combines naming + term formatting
@@ -66,11 +66,15 @@ polyConfig = TypesetConfig
              $ namingFor @Polar  (cycleNames ["p", "q"])
              $ namingFor @TyNom  (cycleNames ["α", "β", "γ", "δ"])
              $ namingFor @Nom    (cycleNames ["x", "y", "z", "w"])
+             $ namingFor @Tm     (numberedNames "e")
+             $ namingFor @Context (numberedNames "Σ")
              $ emptyNaming
   , tsFormat = \name args ->
       formatWithDisplay tyDisplay name args <|>
       formatWithDisplay polarDisplay name args <|>
-      formatWithDisplay envDisplay name args
+      formatWithDisplay envDisplay name args <|>
+      formatWithDisplay tmDisplay name args <|>
+      formatWithDisplay contextDisplay name args
   }
 
 --------------------------------------------------------------------------------
