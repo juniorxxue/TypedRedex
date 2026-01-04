@@ -77,7 +77,7 @@ type Evaluator rel var =
 -- (e.g., for occurs check). The 'Proxy' carries the child's type.
 -- The 'HasDisplay' constraint enables recursive pretty-printing.
 data Field parent var where
-  Field :: (LogicType t, Typeable t, HasDisplay t) => Proxy t -> Logic t var -> Field parent var
+  Field :: LogicType t => Proxy t -> Logic t var -> Field parent var
 
 --------------------------------------------------------------------------------
 -- LogicType class
@@ -95,7 +95,7 @@ data Field parent var where
 --
 -- Note: The 'quote' method is optional and primarily used by the interpreter
 -- layer for pretty-printing. Core functionality only requires 'children'.
-class Typeable a => LogicType a where
+class (Typeable a, HasDisplay a) => LogicType a where
   -- | Reified representation of @a@ that stores children as 'Logic' terms.
   data Reified a (var :: Type -> Type) :: Type
 

@@ -66,21 +66,21 @@ cycleNames bases =
     suffix 0 = ""
     suffix n = subscriptNum n
 
--- | Create numbered names with subscripts starting from 0.
+-- | Create numbered names, with the first one unsubscripted.
 --
 -- @
--- numberedNames "τ" = ["τ₀", "τ₁", "τ₂", "τ₃", ...]
+-- numberedNames "τ" = ["τ", "τ₁", "τ₂", "τ₃", ...]
 -- @
 numberedNames :: String -> VarNames
-numberedNames sym = [sym ++ subscriptNum i | i <- [0..]]
+numberedNames sym = sym : [sym ++ subscriptNum i | i <- [1..]]
 
--- | Create numbered names, with first one unsubscripted.
+-- | Backwards-compatible alias for 'numberedNames'.
 --
 -- @
 -- numberedNames' "τ" = ["τ", "τ₁", "τ₂", "τ₃", ...]
 -- @
 numberedNames' :: String -> VarNames
-numberedNames' sym = sym : [sym ++ subscriptNum i | i <- [1..]]
+numberedNames' = numberedNames
 
 --------------------------------------------------------------------------------
 -- Naming configuration

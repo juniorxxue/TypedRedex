@@ -17,8 +17,8 @@
 --      ▼                       ▼                    ▼
 --   RawRule    ────────►  DisplayRule  ────────►  String
 --
---   (VarRef with            (DisplayVar with      (Uses TermFormatter +
---    internal IDs)           display numbers)      NamingConfig)
+--   (VarRef with            (DisplayVar with      (Uses HasDisplay:
+--    internal IDs)           display numbers)      typeNaming + formatCon)
 -- @
 module TypedRedex.Interp.Typesetting
   ( -- * Core types
@@ -45,17 +45,16 @@ module TypedRedex.Interp.Typesetting
   , modedVar
   ) where
 
-import TypedRedex.Logic hiding (defaultFormatCon)
-import TypedRedex.Interp.Format (TermFormatter(..), DefaultTermFormatter(..))
-import TypedRedex.Interp.PrettyPrint (NamingConfig, lookupNaming, subscriptNum, emptyNaming)
-import TypedRedex.DSL.Define (Applied(..), appGoal)
+import TypedRedex.Logic
+import TypedRedex.Logic.Display (VarNames)
+import TypedRedex.DSL.Define (Applied(..))
 import TypedRedex.DSL.Moded (T(..), AppliedM(..), toApplied, ground)
 import Control.Monad (when)
 import Control.Monad.State
 import Data.Proxy (Proxy(..))
-import Data.Typeable (TypeRep, Typeable, typeRep)
+import Data.Typeable (TypeRep, typeRep)
 import qualified Data.Map.Strict as M
-import Control.Applicative (Alternative(..))
+import qualified Data.Set as S
 
 --------------------------------------------------------------------------------
 -- Structural Representations
@@ -65,15 +64,38 @@ import Control.Applicative (Alternative(..))
 data VarRef = VarRef
   { vrId      :: Int      -- ^ Internal variable ID (from fresh)
   , vrTypeRep :: TypeRep  -- ^ Type for naming lookup
-  } deriving (Eq, Ord, Show)
+  , vrNaming  :: VarNames -- ^ Naming scheme (from HasDisplay)
+  }
+
+instance Eq VarRef where
+  VarRef aId aTy _ == VarRef bId bTy _ = aId == bId && aTy == bTy
+
+instance Ord VarRef where
+  compare (VarRef aId aTy _) (VarRef bId bTy _) =
+    compare (aTy, aId) (bTy, bId)
+
+instance Show VarRef where
+  show (VarRef n tyRep _) = "VarRef " ++ show n ++ " " ++ show tyRep
 
 -- | Raw term: structural representation before renumbering.
 --
 -- Produced by the typesetting interpreter.
 data RawTerm
   = RVar VarRef              -- ^ A logic variable
-  | RCon String [RawTerm]    -- ^ Constructor with name and children
-  deriving (Show, Eq)
+  | RCon
+      { rtConName     :: String
+      , rtConFormat   :: String -> [String] -> Maybe String
+      , rtConChildren :: [RawTerm]
+      }
+
+instance Eq RawTerm where
+  RVar a == RVar b = a == b
+  RCon nameA _ kidsA == RCon nameB _ kidsB = nameA == nameB && kidsA == kidsB
+  _ == _ = False
+
+instance Show RawTerm where
+  show (RVar v) = show v
+  show (RCon name _ kids) = "RCon " ++ show name ++ " " ++ show kids
 
 -- | Raw rule: structural representation before renumbering.
 data RawRule = RawRule
@@ -87,13 +109,32 @@ data RawRule = RawRule
 data DisplayVar = DisplayVar
   { dvNum     :: Int      -- ^ Display number (0, 1, 2, ...)
   , dvTypeRep :: TypeRep  -- ^ Type for naming lookup
-  } deriving (Show, Eq)
+  , dvNaming  :: VarNames -- ^ Naming scheme (from HasDisplay)
+  }
+
+instance Eq DisplayVar where
+  DisplayVar aNum aTy _ == DisplayVar bNum bTy _ = aNum == bNum && aTy == bTy
+
+instance Show DisplayVar where
+  show (DisplayVar n tyRep _) = "DisplayVar " ++ show n ++ " " ++ show tyRep
 
 -- | Display term: after renumbering.
 data DisplayTerm
   = DVar DisplayVar            -- ^ A display variable
-  | DCon String [DisplayTerm]  -- ^ Constructor with name and children
-  deriving (Show, Eq)
+  | DCon
+      { dtConName     :: String
+      , dtConFormat   :: String -> [String] -> Maybe String
+      , dtConChildren :: [DisplayTerm]
+      }
+
+instance Eq DisplayTerm where
+  DVar a == DVar b = a == b
+  DCon nameA _ kidsA == DCon nameB _ kidsB = nameA == nameB && kidsA == kidsB
+  _ == _ = False
+
+instance Show DisplayTerm where
+  show (DVar v) = show v
+  show (DCon name _ kids) = "DCon " ++ show name ++ " " ++ show kids
 
 -- | Display rule: after renumbering, ready for formatting.
 data DisplayRule = DisplayRule
@@ -139,10 +180,16 @@ data TypesettingState = TypesettingState
   , tsBuilder    :: RuleBuilder
   , tsRules      :: [RawRule]
   , tsDepth      :: Int
+  , tsSubst      :: M.Map VarRef RawTerm
   }
 
+-- | Reserve low IDs for the caller-provided argument variables (modedVar 0,1,...)
+-- so rule-local fresh variables don't collide with them.
+initialVarCounter :: Int
+initialVarCounter = 1000
+
 initState :: TypesettingState
-initState = TypesettingState 0 emptyBuilder [] 0
+initState = TypesettingState initialVarCounter emptyBuilder [] 0 M.empty
 
 --------------------------------------------------------------------------------
 -- Typesetting Redex Interpreter
@@ -156,13 +203,13 @@ instance Alternative TypesettingRedex where
   a <|> b = do
     s0 <- get
     -- Run branch a
-    put $ s0 { tsBuilder = emptyBuilder, tsRules = [], tsVarCounter = 0 }
+    put $ s0 { tsBuilder = emptyBuilder, tsRules = [], tsVarCounter = initialVarCounter, tsSubst = M.empty }
     _ <- a
     rulesA <- gets tsRules
     builderA <- gets tsBuilder
     let rulesA' = if null (rbName builderA) then rulesA else rulesA ++ [finishRule builderA]
     -- Run branch b
-    put $ s0 { tsBuilder = emptyBuilder, tsRules = [], tsVarCounter = 0 }
+    put $ s0 { tsBuilder = emptyBuilder, tsRules = [], tsVarCounter = initialVarCounter, tsSubst = M.empty }
     _ <- b
     rulesB <- gets tsRules
     builderB <- gets tsBuilder
@@ -175,29 +222,56 @@ instance Alternative TypesettingRedex where
 -- Pattern Capture (Logic term → RawTerm)
 --------------------------------------------------------------------------------
 
--- | Capture a logic term as a RawTerm.
-capturePattern :: forall a. (LogicType a, Typeable a)
-               => Logic a (RVar TypesettingRedex)
-               -> RawTerm
-capturePattern (Free v) =
+-- | Resolve a RawTerm through the current substitution map.
+resolveRaw :: M.Map VarRef RawTerm -> S.Set VarRef -> RawTerm -> RawTerm
+resolveRaw subst visited t0 =
+  case t0 of
+    RVar v
+      | S.member v visited -> RVar v
+      | otherwise ->
+          case M.lookup v subst of
+            Nothing -> RVar v
+            Just t  -> resolveRaw subst (S.insert v visited) t
+    RCon name fmt children ->
+      RCon name fmt (map (resolveRaw subst visited) children)
+
+-- | Capture a logic term as a RawTerm, following recorded substitutions.
+capturePatternWith :: forall a. LogicType a
+                   => M.Map VarRef RawTerm
+                   -> S.Set VarRef
+                   -> Logic a (RVar TypesettingRedex)
+                   -> RawTerm
+capturePatternWith subst visited (Free v) =
   let TVar n = unVar v
-  in RVar (VarRef n (typeRep (Proxy @a)))
-capturePattern (Ground r) =
+      vr = VarRef n (typeRep (Proxy @a)) (typeNaming @a)
+  in case M.lookup vr subst of
+       Nothing -> RVar vr
+       Just t  -> resolveRaw subst (S.insert vr visited) t
+capturePatternWith subst visited (Ground r) =
   let (name, fields) = quote r
-      children = map captureField fields
-  in RCon name children
+      children = map (captureFieldWith subst visited) fields
+  in RCon name (formatCon @a) children
 
 -- | Capture a field (existential wrapper).
-captureField :: Field a (RVar TypesettingRedex) -> RawTerm
-captureField (Field (proxy :: Proxy t) logic) =
-  capturePatternAny proxy logic
+captureFieldWith :: M.Map VarRef RawTerm -> S.Set VarRef -> Field a (RVar TypesettingRedex) -> RawTerm
+captureFieldWith subst visited (Field (proxy :: Proxy t) logic) =
+  capturePatternAnyWith subst visited proxy logic
 
--- | Capture any logic term (dispatches by Typeable).
-capturePatternAny :: forall t. (LogicType t, Typeable t)
-                  => Proxy t
-                  -> Logic t (RVar TypesettingRedex)
-                  -> RawTerm
-capturePatternAny _ = capturePattern @t
+-- | Capture any logic term.
+capturePatternAnyWith :: forall t. LogicType t
+                      => M.Map VarRef RawTerm
+                      -> S.Set VarRef
+                      -> Proxy t
+                      -> Logic t (RVar TypesettingRedex)
+                      -> RawTerm
+capturePatternAnyWith subst visited _ = capturePatternWith @t subst visited
+
+capturePatternM :: forall a. LogicType a
+                => Logic a (RVar TypesettingRedex)
+                -> TypesettingRedex RawTerm
+capturePatternM term = do
+  subst <- gets tsSubst
+  pure $ capturePatternWith @a subst S.empty term
 
 --------------------------------------------------------------------------------
 -- Redex Instance
@@ -217,10 +291,14 @@ instance Redex TypesettingRedex where
     modify $ \s -> s { tsVarCounter = n + 1 }
     k (Var (TVar n))
 
-  unify x _ = do
+  unify x y = do
+    -- Record simple bindings (for typesetting-only unification), so helper
+    -- operations like binder opening can expose structure without forcing eval.
+    recordBinding x y
+
     inConcl <- gets (rbInConclusion . tsBuilder)
     when inConcl $ do
-      let pattern = capturePattern x
+      pattern <- capturePatternM x
       modify $ \s -> s { tsBuilder = (tsBuilder s)
         { rbConclusion = pattern : rbConclusion (tsBuilder s) } }
 
@@ -242,7 +320,7 @@ instance Redex TypesettingRedex where
     s { tsBuilder = (tsBuilder s) { rbInConclusion = True } }
 
   markPremise name args fmt = do
-    argTerms <- pure $ map captureCaptured args
+    argTerms <- mapM captureCapturedM args
     modify $ \s -> s { tsBuilder = (tsBuilder s) {
       rbPremises = (name, argTerms, fmt) : rbPremises (tsBuilder s)
     } }
@@ -250,8 +328,41 @@ instance Redex TypesettingRedex where
   skipLiftedActions _ = True
 
 -- | Capture a CapturedTerm as RawTerm.
-captureCaptured :: CapturedTerm TypesettingRedex -> RawTerm
-captureCaptured (CapturedTerm term) = capturePattern term
+captureCapturedM :: CapturedTerm TypesettingRedex -> TypesettingRedex RawTerm
+captureCapturedM (CapturedTerm term) = capturePatternM term
+
+-- | Record a binding @v := term@ for the typesetting interpreter.
+--
+-- This is intentionally incomplete (no occurs check, no deep unification);
+-- it exists only so the rule printer can follow structural equalities.
+recordBinding :: forall a. LogicType a
+              => Logic a (RVar TypesettingRedex)
+              -> Logic a (RVar TypesettingRedex)
+              -> TypesettingRedex ()
+recordBinding (Free v) t = bindIfUnbound @a v t
+recordBinding t (Free v) = bindIfUnbound @a v t
+recordBinding _ _ = pure ()
+
+bindIfUnbound :: forall a. LogicType a
+              => Var a (RVar TypesettingRedex)
+              -> Logic a (RVar TypesettingRedex)
+              -> TypesettingRedex ()
+bindIfUnbound v t =
+  case t of
+    Free v'
+      | varEq (unVar v) (unVar v') -> pure ()  -- avoid v := v
+      | otherwise -> bind
+    _ -> bind
+  where
+    bind = do
+      subst <- gets tsSubst
+      let TVar n = unVar v
+          key = VarRef n (typeRep (Proxy @a)) (typeNaming @a)
+      case M.lookup key subst of
+        Just _  -> pure ()  -- don't overwrite existing bindings
+        Nothing -> do
+          rhs <- capturePatternM @a t
+          modify $ \s -> s { tsSubst = M.insert key rhs (tsSubst s) }
 
 instance EqVar TypesettingRedex where
   varEq (TVar a) (TVar b) = a == b
@@ -311,7 +422,7 @@ renumber raw =
 -- | Collect all VarRefs from a RawTerm (in order of appearance).
 collectVars :: RawTerm -> [VarRef]
 collectVars (RVar v) = [v]
-collectVars (RCon _ children) = concatMap collectVars children
+collectVars (RCon _ _ children) = concatMap collectVars children
 
 -- | Build a map from VarRef to display number (per-type).
 -- Each type gets its own counter: first Env→0, second Env→1, first Ty→0, etc.
@@ -331,46 +442,36 @@ buildVarMap = fst . foldl go (M.empty, M.empty)
 applyVarMap :: M.Map VarRef Int -> RawTerm -> DisplayTerm
 applyVarMap m (RVar v) =
   let displayNum = M.findWithDefault 0 v m
-  in DVar (DisplayVar displayNum (vrTypeRep v))
-applyVarMap m (RCon name children) =
-  DCon name (map (applyVarMap m) children)
+  in DVar (DisplayVar displayNum (vrTypeRep v) (vrNaming v))
+applyVarMap m (RCon name fmt children) =
+  DCon name fmt (map (applyVarMap m) children)
 
 --------------------------------------------------------------------------------
 -- Formatting
 --------------------------------------------------------------------------------
 
--- | Format a display variable using the naming configuration.
-formatVar :: NamingConfig -> DisplayVar -> String
-formatVar config (DisplayVar n tyRep) =
-  let names = lookupNaming tyRep config
-  in names !! n  -- Safe: VarNames is infinite
+-- | Format a display variable using its naming scheme.
+formatVar :: DisplayVar -> String
+formatVar (DisplayVar n _ names) = names !! n  -- Safe: VarNames is infinite
 
 -- | Format a display term to a string.
-formatDisplayTerm :: TermFormatter fmt => fmt -> NamingConfig -> DisplayTerm -> String
-formatDisplayTerm _ config (DVar dv) = formatVar config dv
-formatDisplayTerm fmt config (DCon name children) =
-  let childStrs = map (formatDisplayTerm fmt config) children
-  in case formatTerm fmt name childStrs of
+formatDisplayTerm :: DisplayTerm -> String
+formatDisplayTerm (DVar dv) = formatVar dv
+formatDisplayTerm (DCon name fmt children) =
+  let childStrs = map formatDisplayTerm children
+  in case fmt name childStrs of
        Just s  -> s
        Nothing -> defaultFormatCon name childStrs
-
--- | Default constructor formatting.
-defaultFormatCon :: String -> [String] -> String
-defaultFormatCon name [] = name
-defaultFormatCon name args = name ++ "(" ++ intercalate ", " args ++ ")"
-  where
-    intercalate sep = foldr1 (\x y -> x ++ sep ++ y)
 
 -- | Format a display rule as an ASCII inference rule.
 --
 -- Uses the format functions stored in the rule itself (from judgment definitions).
-formatRule :: TermFormatter fmt
-           => fmt -> NamingConfig -> DisplayRule -> String
-formatRule fmt config rule =
-  let conclStrs = map (formatDisplayTerm fmt config) (drConclusion rule)
+formatRule :: DisplayRule -> String
+formatRule rule =
+  let conclStrs = map formatDisplayTerm (drConclusion rule)
       conclusion = drConclFmt rule conclStrs
       prems = map (\(_, pargs, pfmt) ->
-                     pfmt (map (formatDisplayTerm fmt config) pargs))
+                     pfmt (map formatDisplayTerm pargs))
                   (drPremises rule)
       maxLen = maximum $ length conclusion : map length prems
       line = replicate (maxLen + 4) '─'
@@ -396,17 +497,13 @@ typesettingVar n = Free (Var (TVar n))
 -- so no JudgmentFormatter instance is needed.
 --
 -- @
--- printRules emptyNaming SsubFormatter $ appGoal applied
+-- printRules $ appGoal applied
 -- @
-printRules :: TermFormatter fmt
-           => NamingConfig
-           -> fmt
-           -> TypesettingRedex ()
-           -> IO ()
-printRules config fmt goal = do
+printRules :: TypesettingRedex () -> IO ()
+printRules goal = do
   let rawRules = runTypesetting goal
       displayRules = map renumber rawRules
-  mapM_ (\r -> putStrLn (formatRule fmt config r) >> putStrLn "") displayRules
+  mapM_ (\r -> putStrLn (formatRule r) >> putStrLn "") displayRules
 
 --------------------------------------------------------------------------------
 -- Support for moded judgments

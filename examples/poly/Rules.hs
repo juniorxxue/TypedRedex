@@ -2,6 +2,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RebindableSyntax #-}
@@ -11,18 +13,26 @@
 module Rules where
 
 import Prelude hiding ((>>=), (>>), return)
+import qualified Prelude as P
+import Data.Proxy (Proxy(..))
+import qualified Data.Set as S
 import TypedRedex hiding (fresh, ground, lift1, lift2, lift3, neg)
-import TypedRedex.Logic (RedexHash)
-import TypedRedex.Nominal.Prelude (Nom, TyNom)
-import TypedRedex.Nominal (RedexFresh(..), bindT, substoM)
+import TypedRedex.Logic (HasDisplay, Redex(..), RedexHash, FreshType(..))
+import TypedRedex.Nominal.Bind (mkBindL)
+import TypedRedex.Nominal.Prelude (FreshName, Nom, TyNom)
+import TypedRedex.Nominal (Bind, Permute, RedexFresh(..), bindT, substoM)
 import TypedRedex.DSL.Moded
   ( MJudgment2, MJudgment3, MJudgment4, MJudgment5, MJudgment6, In, Out
+  , RuleM
+  , T(..)
+  , Union
   , defJudge2, defJudge3, defJudge4, defJudge5, defJudge6
   , fresh, prem, concl
-  , unbind2M
+  , liftRel
   , return, (>>=), (>>)
   , (=/=)
   )
+import qualified TypedRedex.DSL.Moded as Moded (unbind2M)
 
 import Syntax
 
@@ -35,6 +45,43 @@ type PolyRel rel = (RedexFresh rel, RedexEval rel, RedexNeg rel, RedexHash rel)
 --------------------------------------------------------------------------------
 -- ssub: Polarized subtyping (single judgment with Polar argument)
 --------------------------------------------------------------------------------
+
+-- | Typesetting workaround for opening binders.
+--
+-- The nominal 'unbind2' family requires evaluation to a ground binder.
+-- During typesetting we only need structure, so we generate fresh parts and
+-- unify them with the binder terms instead.
+unbind2M ::
+  forall rel name body1 body2 vs1 vs2 ts s.
+  ( Redex rel
+  , RedexFresh rel
+  , RedexEval rel
+  , FreshName name
+  , LogicType body1
+  , LogicType body2
+  , Permute name body1
+  , Permute name body2
+  , HasDisplay name
+  , HasDisplay body1
+  , HasDisplay body2
+  ) =>
+  T vs1 (Bind name body1) rel ->
+  T vs2 (Bind name body2) rel ->
+  RuleM rel ts s s (T (Union vs1 vs2) name rel, T (Union vs1 vs2) body1 rel, T (Union vs1 vs2) body2 rel)
+unbind2M (T vars1 bd1) (T vars2 bd2)
+  | skipLiftedActions (Proxy :: Proxy rel) = do
+      let vars = S.union vars1 vars2
+      liftRel $
+        fresh_ FreshVar $ \nameVar ->
+          fresh_ FreshVar $ \bodyVar1 ->
+            fresh_ FreshVar $ \bodyVar2 ->
+              let nameL  = Free nameVar
+                  body1L = Free bodyVar1
+                  body2L = Free bodyVar2
+              in unify bd1 (mkBindL nameL body1L) P.>>
+                 unify bd2 (mkBindL nameL body2L) P.>>
+                 P.return (T vars nameL, T vars body1L, T vars body2L)
+  | otherwise = Moded.unbind2M (T @vs1 vars1 bd1) (T @vs2 vars2 bd2)
 
 
 flipPolar :: PolyRel rel => MJudgment2 rel "flipPolar" (In Polar) (Out Polar)
@@ -382,7 +429,7 @@ ssub = defJudge5 format $ \rule ->
       prem  $ ssub (euvar a env1) tyA p tyB (euvar a env2)
       concl $ ssub env1 (tforall bd1) p (tforall bd2) env2
   ]
-  where format [env1, ty1, polar, ty2, env2] = env1 ++ " |- " ++ ty1 ++ polar ++ ty2 ++ " ⊣ " ++ env2
+  where format [env1, ty1, polar, ty2, env2] = env1 ++ " |- " ++ ty1 ++ " " ++ polar ++ " " ++ ty2 ++ " ⊣ " ++ env2
         format args = "ssub(" ++ unwords args ++ ")"
 
 sub :: PolyRel rel => MJudgment5 rel "sub" (In Env) (In Ty) (In Context) (Out Env) (Out Ty)

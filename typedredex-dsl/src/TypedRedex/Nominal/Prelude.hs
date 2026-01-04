@@ -43,7 +43,9 @@ module TypedRedex.Nominal.Prelude
   ) where
 
 import Control.Applicative (empty)
+import Data.Proxy (Proxy(..))
 import TypedRedex.Logic
+import TypedRedex.Logic.Display (cycleNames)
 import TypedRedex.DSL.Fresh (LTerm, Freshable(..))
 import TypedRedex.DSL.Eval (eval)
 import TypedRedex.Nominal.Nom (NominalAtom(..))
@@ -79,12 +81,20 @@ instance NominalAtom TyNom
 
 -- | Default display for Nom (shows as variable name)
 instance HasDisplay Nom where
-  formatCon "Nom" [n] = Just $ "x" ++ n
+  typeNaming = cycleNames ["x", "y", "z", "w"]
+  formatCon "Nom" [n] =
+    case reads n of
+      [(i, "")] -> Just $ cycleNames ["x", "y", "z", "w"] !! i
+      _         -> Just $ "x" ++ n
   formatCon _ _ = Nothing
 
 -- | Default display for TyNom (shows as type variable name)
 instance HasDisplay TyNom where
-  formatCon "TyNom" [n] = Just $ "α" ++ n
+  typeNaming = cycleNames ["α", "β", "γ", "δ"]
+  formatCon "TyNom" [n] =
+    case reads n of
+      [(i, "")] -> Just $ cycleNames ["α", "β", "γ", "δ"] !! i
+      _         -> Just $ "α" ++ n
   formatCon _ _ = Nothing
 
 --------------------------------------------------------------------------------
@@ -110,6 +120,7 @@ instance LogicType Int where
   derefVal _ (IntR n) = pure n
 
 instance HasDisplay Int where
+  typeNaming = cycleNames ["n"]
   formatCon name [] = Just name  -- Already formatted as number string
   formatCon _ _ = Nothing
 
@@ -120,7 +131,9 @@ instance LogicType Nom where
 
   reify (NomR n) = Just (Nom n)
 
-  children (NomR _) = []
+  children (NomR n) = [Field (Proxy :: Proxy Int) (Ground (project n))]
+
+  quote (NomR n) = ("Nom", [Field (Proxy :: Proxy Int) (Ground (project n))])
 
   unifyVal _ (NomR a) (NomR b)
     | a == b    = pure ()
@@ -136,7 +149,9 @@ instance LogicType TyNom where
 
   reify (TyNomR n) = Just (TyNom n)
 
-  children (TyNomR _) = []
+  children (TyNomR n) = [Field (Proxy :: Proxy Int) (Ground (project n))]
+
+  quote (TyNomR n) = ("TyNom", [Field (Proxy :: Proxy Int) (Ground (project n))])
 
   unifyVal _ (TyNomR a) (TyNomR b)
     | a == b    = pure ()

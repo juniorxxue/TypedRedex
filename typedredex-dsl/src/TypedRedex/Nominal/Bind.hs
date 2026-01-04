@@ -102,9 +102,10 @@ instance (NominalAtom name, LogicType body, Permute name body, HasDisplay name, 
 
   derefVal deref (BindR n b) = Bind <$> deref n <*> deref b
 
--- | HasDisplay for Bind delegates to children - uses default formatting.
+-- | Default display for binders: @name.body@.
 instance (HasDisplay name, HasDisplay body) => HasDisplay (Bind name body) where
-  formatCon _ _ = Nothing  -- Use default "Bind(name, body)" formatting
+  formatCon "Bind" [nm, body] = Just $ nm ++ "." ++ body
+  formatCon _ _ = Nothing
 
 --------------------------------------------------------------------------------
 -- Smart Constructor

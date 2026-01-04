@@ -75,7 +75,6 @@ tyDisplay = display
   , #TVar    ~> \a -> (a :: D)
   , #TArr    ~> \(a, b) -> parens (a <+> " → " <+> b)
   , #TForall ~> \bnd -> "∀" <+> bnd
-  , #Bind    ~> \(nm, body) -> nm <+> "." <+> body -- needs improve
   ]
 
 polarDisplay :: Display Polar
@@ -108,22 +107,26 @@ tmDisplay = display
   , #Ann     ~> \(e, ty) -> parens (e <+> " : " <+> ty) -- (e : A)
   , #TAbs    ~> \bnd -> "Λ" <+> bnd                     -- Λα.e
   , #TApp    ~> \(e, ty) -> e <+> "[" <+> ty <+> "]"    -- e[A]
-  , #Bind    ~> \(nm, body) -> nm <+> "." <+> body      -- x.e or α.e
   ]
 
 instance HasDisplay Ty where
+  typeNaming = cycleNames ["A", "B", "C", "D", "E", "F"]
   formatCon = formatWithDisplay tyDisplay
 
 instance HasDisplay Polar where
+  typeNaming = numberedNames "≤"
   formatCon = formatWithDisplay polarDisplay
 
 instance HasDisplay Env where
+  typeNaming = numberedNames "Γ"
   formatCon = formatWithDisplay envDisplay
 
 instance HasDisplay Context where
+  typeNaming = numberedNames "Σ"
   formatCon = formatWithDisplay contextDisplay
 
 instance HasDisplay Tm where
+  typeNaming = numberedNames "e"
   formatCon = formatWithDisplay tmDisplay
 
 --------------------------------------------------------------------------------
