@@ -49,7 +49,7 @@ import TypedRedex.Logic
 import TypedRedex.Logic.Display (VarNames)
 import TypedRedex.DSL.Define (Applied(..))
 import TypedRedex.DSL.Moded (T(..), AppliedM(..), toApplied, ground)
-import Control.Monad (when)
+import Control.Monad (when, forM)
 import Control.Monad.State
 import Data.Proxy (Proxy(..))
 import Data.Typeable (TypeRep, typeRep)
@@ -153,7 +153,7 @@ data RuleBuilder = RuleBuilder
   , rbInConclusion :: Bool
   , rbConclusion  :: [RawTerm]                 -- ^ Conclusion patterns (reverse order)
   , rbConclFmt    :: [String] -> String        -- ^ Conclusion format function
-  , rbPremises    :: [(String, [RawTerm], [String] -> String)]  -- ^ Premises (reverse order)
+  , rbPremises    :: [(String, [CapturedTerm TypesettingRedex], [String] -> String)]  -- ^ Deferred premises (reverse order)
   }
 
 emptyBuilder :: RuleBuilder
@@ -163,13 +163,21 @@ emptyBuilder = RuleBuilder "" False [] defaultFmt []
         intercalate _ [x] = x
         intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
 
-finishRule :: RuleBuilder -> RawRule
-finishRule rb = RawRule
-  { rrName = rbName rb
-  , rrConclusion = reverse (rbConclusion rb)
-  , rrConclFmt = rbConclFmt rb
-  , rrPremises = reverse (rbPremises rb)
-  }
+-- | Finish building a rule, capturing premises with the current substitution.
+--
+-- This must be called after the conclusion has established bindings, so that
+-- premises resolve variables consistently with the conclusion.
+finishRuleM :: RuleBuilder -> TypesettingRedex RawRule
+finishRuleM rb = do
+  capturedPremises <- forM (reverse (rbPremises rb)) $ \(name, args, fmt) -> do
+    argTerms <- mapM captureCapturedM args
+    pure (name, argTerms, fmt)
+  pure $ RawRule
+    { rrName = rbName rb
+    , rrConclusion = reverse (rbConclusion rb)
+    , rrConclFmt = rbConclFmt rb
+    , rrPremises = capturedPremises
+    }
 
 --------------------------------------------------------------------------------
 -- Typesetting Interpreter State
@@ -207,13 +215,21 @@ instance Alternative TypesettingRedex where
     _ <- a
     rulesA <- gets tsRules
     builderA <- gets tsBuilder
-    let rulesA' = if null (rbName builderA) then rulesA else rulesA ++ [finishRule builderA]
+    rulesA' <- if null (rbName builderA)
+               then pure rulesA
+               else do
+                 finished <- finishRuleM builderA
+                 pure (rulesA ++ [finished])
     -- Run branch b
     put $ s0 { tsBuilder = emptyBuilder, tsRules = [], tsVarCounter = initialVarCounter, tsSubst = M.empty }
     _ <- b
     rulesB <- gets tsRules
     builderB <- gets tsBuilder
-    let rulesB' = if null (rbName builderB) then rulesB else rulesB ++ [finishRule builderB]
+    rulesB' <- if null (rbName builderB)
+               then pure rulesB
+               else do
+                 finished <- finishRuleM builderB
+                 pure (rulesB ++ [finished])
     -- Combine rules (in order: existing, then a, then b)
     put $ s0 { tsRules = tsRules s0 ++ rulesA' ++ rulesB' }
     pure (error "TypesettingRedex: <|> result")
@@ -320,9 +336,10 @@ instance Redex TypesettingRedex where
     s { tsBuilder = (tsBuilder s) { rbInConclusion = True } }
 
   markPremise name args fmt = do
-    argTerms <- mapM captureCapturedM args
+    -- Don't capture immediately; store CapturedTerms for deferred capture
+    -- after the conclusion establishes bindings
     modify $ \s -> s { tsBuilder = (tsBuilder s) {
-      rbPremises = (name, argTerms, fmt) : rbPremises (tsBuilder s)
+      rbPremises = (name, args, fmt) : rbPremises (tsBuilder s)
     } }
 
   skipLiftedActions _ = True
@@ -388,13 +405,15 @@ instance RedexEval TypesettingRedex where
 
 -- | Run a TypesettingRedex computation and extract all raw rules.
 runTypesetting :: TypesettingRedex () -> [RawRule]
-runTypesetting (TypesettingRedex m) =
-  let finalState = execState m initState
-      builder = tsBuilder finalState
-      rules = tsRules finalState
-  in if null (rbName builder)
-     then rules
-     else rules ++ [finishRule builder]
+runTypesetting goal =
+  let TypesettingRedex action = do
+        _ <- goal
+        builder <- gets tsBuilder
+        when (not $ null $ rbName builder) $ do
+          finished <- finishRuleM builder
+          modify $ \s -> s { tsRules = tsRules s ++ [finished] }
+      (_, finalState) = runState action initState
+  in tsRules finalState
 
 --------------------------------------------------------------------------------
 -- Renumbering (conclusion-first ordering)
