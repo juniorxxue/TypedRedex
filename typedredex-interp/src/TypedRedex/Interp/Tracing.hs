@@ -267,6 +267,8 @@ instance Redex (TracingRedex s) where
   -- | Unification
   unify = flatteningUnify unif
     where
+      -- Unifying a variable with itself should succeed (not fail the occurs check).
+      unif v (Free v') | unVar v `varEq` unVar v' = pure ()
       unif v y
         | occursCheck v y = empty
         | otherwise = do
