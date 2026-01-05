@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeFamilies, DeriveFunctor, Rank2Types, GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE GADTs, ExistentialQuantification, ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 -- | TracingRedex: A derivation-tracking interpreter for TypedRedex
 --
@@ -322,32 +323,38 @@ resolveCaptured :: CapturedTerm (TracingRedex s) -> TracingRedex s String
 resolveCaptured (CapturedTerm term) = prettyResolved term
 
 -- | Pretty-print a logic term after resolving through substitution.
-prettyResolved :: LogicType a => LTerm a (TracingRedex s) -> TracingRedex s String
+prettyResolved :: forall a s. LogicType a => LTerm a (TracingRedex s) -> TracingRedex s String
 prettyResolved (Free v) = do
   mx <- gets (readSubst (unVar v))
   case mx of
     Nothing -> pure $ displayVar (unVar v)  -- Still unbound, show variable name
     Just x  -> prettyResolved x     -- Bound, resolve and recurse
 prettyResolved (Ground r) = do
-  fmt <- gets tsFormatter
   let (name, fields) = quote r
   fieldStrs <- mapM prettyField fields
-  pure $ fmt name fieldStrs
+  case formatCon @a name fieldStrs of
+    Just s  -> pure s
+    Nothing -> do
+      fmt <- gets tsFormatter
+      pure $ fmt name fieldStrs
   where
-    prettyField :: Field a (RVar (TracingRedex s)) -> TracingRedex s String
+    prettyField :: forall parent. Field parent (RVar (TracingRedex s)) -> TracingRedex s String
     prettyField (Field _ logic) = prettyResolvedAny logic
 
-    prettyResolvedAny :: LogicType t => Logic t (RVar (TracingRedex s)) -> TracingRedex s String
+    prettyResolvedAny :: forall t. LogicType t => Logic t (RVar (TracingRedex s)) -> TracingRedex s String
     prettyResolvedAny (Free v) = do
       mx <- gets (readSubst (unVar v))
       case mx of
         Nothing -> pure $ displayVar (unVar v)
         Just x  -> prettyResolvedAny x
     prettyResolvedAny (Ground r') = do
-      fmt <- gets tsFormatter
       let (name', fields') = quote r'
       fieldStrs' <- mapM prettyField fields'
-      pure $ fmt name' fieldStrs'
+      case formatCon @t name' fieldStrs' of
+        Just s  -> pure s
+        Nothing -> do
+          fmt <- gets tsFormatter
+          pure $ fmt name' fieldStrs'
 
 --------------------------------------------------------------------------------
 -- RedexStructure Instance (Derivation Tracking)
