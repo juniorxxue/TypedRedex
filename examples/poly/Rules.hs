@@ -490,7 +490,7 @@ infer = defJudge5 format $ \rule ->
   , rule "lam1" $ do
       (x, tm, env1, env2) <- fresh
       (ty1, ty2, ty3) <- fresh
-      prem  $ infer (etrm x ty1 env1) (ctype ty2) tm ty3 env2
+      prem  $ infer (etrm x ty1 env1) (ctype ty2) tm ty3 (etrm x ty1 env2)
       concl $ infer env1 (ctype (tarr ty1 ty2)) (lam (bindT x tm)) (tarr ty1 ty3) env2
 
   , rule "lam2" $ do
