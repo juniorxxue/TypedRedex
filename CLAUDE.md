@@ -6,6 +6,8 @@ A typed shallow embedding of PLT Redex in Haskell using miniKanren-style logic p
 
 **No backward compatibility** - Break old formats freely.
 
+Use augment context engine MCP for code retrieval.
+
 ## Project Goal
 
 Provide a type-safe alternative to PLT Redex (Racket) for experimenting with operational semantics and type systems. The key insight: use Haskell's type system to catch errors that PLT Redex allows at runtime.

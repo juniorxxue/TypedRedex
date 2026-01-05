@@ -44,8 +44,10 @@ module TypedRedex
     -- * Evaluation
   , eval   -- ^ Extract ground value from a logic term
 
-    -- * Running logic programs
-    -- | Execute relations and return streams of solutions
+    -- * Running moded judgments
+    -- | Run moded judgments with lambda-captured outputs
+  , inject   -- ^ Convert ground Haskell value to moded term
+  , goal     -- ^ Extract goal from judgment application
   , run, run2, run3, run4, run5
 
     -- * Unification
@@ -99,4 +101,7 @@ import TypedRedex.DSL.Define (Applied(..), LTermList(..))
 import TypedRedex.DSL.Relation (relation, relation2, relation3, relation4, relation5, call, callDirect, (<=>), conde)
 
 -- Evaluation and running (from typedredex-interp)
-import TypedRedex.Interp.Run (eval, run, run2, run3, run4, run5)
+import TypedRedex.Interp.Run
+  ( eval, run, run2, run3, run4, run5
+  , inject, goal
+  )

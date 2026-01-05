@@ -1,11 +1,18 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- | Poly Type Inference - Print Extracted Inference Rules
 module Main (main) where
 
 import Control.Exception (catch, SomeException)
 
+import TypedRedex (run2, goal, inject)
+import TypedRedex.Interp.Stream (takeS)
+import TypedRedex.Nominal (bindT)
+import TypedRedex.Nominal.Prelude (Nom(..))
+
+import Syntax
 import Rules
 import Typeset
 
@@ -22,6 +29,44 @@ tryTypeset name action = do
 
 main :: IO ()
 main = do
+  putStrLn "=== Quick Test with run2 API ==="
+  putStrLn ""
+
+  -- Test 1: Literal
+  putStrLn "Test 1: infer eempty cempty (lit 1)"
+  let results1 = run2 $ \ty env -> goal $ infer eempty cempty (lit (inject (1 :: Int))) ty env
+  case takeS (1 :: Int) results1 of
+    [] -> putStrLn "  No results!"
+    (ty, _):_ -> putStrLn $ "  => Type: " ++ show ty
+
+  -- Test 2: Annotated identity (λx.x : int→int)
+  putStrLn "\nTest 2: infer eempty cempty (ann (lam x.x) (int→int))"
+  let results2 = run2 $ \ty env ->
+        let x = inject (Nom 0)
+        in goal $ infer eempty cempty (ann (lam (bindT x (var x))) (tarr tint tint)) ty env
+  case takeS (1 :: Int) results2 of
+    [] -> putStrLn "  No results!"
+    (ty, _):_ -> putStrLn $ "  => Type: " ++ show ty
+
+  -- Test 3: Application ((λx.x : int→int) 1)
+  putStrLn "\nTest 3: infer eempty cempty (app (ann (lam x.x) (int→int)) 1)"
+  let results3 = run2 $ \ty env ->
+        let x = inject (Nom 0)
+        in goal $ infer eempty cempty (app (ann (lam (bindT x (var x))) (tarr tint tint)) (lit (inject (1 :: Int)))) ty env
+  case takeS (1 :: Int) results3 of
+    [] -> putStrLn "  No results!"
+    (ty, _):_ -> putStrLn $ "  => Type: " ++ show ty
+
+  -- Test 4: Unannotated application ((λx.x) 1) - this was the original test2
+  putStrLn "\nTest 4: infer eempty cempty (app (lam x.x) 1)"
+  let results4 = run2 $ \ty env ->
+        let x = inject (Nom 0)
+        in goal $ infer eempty cempty (app (lam (bindT x (var x))) (lit (inject (1 :: Int)))) ty env
+  case takeS (1 :: Int) results4 of
+    [] -> putStrLn "  No results!"
+    (ty, _):_ -> putStrLn $ "  => Type: " ++ show ty
+
+  putStrLn ""
   putStrLn "=== Extracted Inference Rules for Poly ===\n"
 
   tryTypeset "flipPolar"      $ typeset2 flipPolar
