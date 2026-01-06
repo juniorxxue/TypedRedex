@@ -16,11 +16,12 @@ import TypedRedex.DSL.Fresh (fresh2)
 import TypedRedex.Interp.Stream (Stream, takeS)
 import TypedRedex.Interp.Tracing (TracingRedex, runTracingRedex, Derivation, prettyDerivation)
 import TypedRedex.Nominal (bindT)
-import TypedRedex.Nominal.Prelude (Nom(..))
+import TypedRedex.Nominal.Prelude (Nom(..), TyNom(..))
 
 import Syntax
 import Rules
 import Typeset
+import Syntax (eempty)
 
 --------------------------------------------------------------------------------
 -- Tracing helpers (like run2 but with derivation trees)
@@ -51,56 +52,85 @@ tryTypeset name action = do
   action `catch` \(e :: SomeException) ->
     putStrLn $ "(some rules could not be typeset: " ++ take 50 (show e) ++ "...)\n"
 
+-- | Run an inference test and print results
+runTest :: Show a => String -> Stream ((a, b), Derivation) -> IO ()
+runTest name results = do
+  putStrLn $ "\n" ++ name
+  case takeS (1 :: Int) results of
+    [] -> putStrLn "  No results!"
+    ((ty, _), deriv):_ -> do
+      putStrLn $ "  => Type: " ++ show ty
+      putStrLn "  => Derivation:"
+      putStrLn $ prettyDerivation deriv
+
 main :: IO ()
 main = do
+  tryTypeset "ssub"           $ typeset5 ssub
+  tryTypeset "sub"            $ typeset5 sub
+  tryTypeset "infer"          $ typeset5 infer
+
   putStrLn "=== Quick Test with Tracing Interpreter ==="
-  putStrLn ""
 
   -- Test 1: Literal
-  putStrLn "Test 1: infer eempty cempty (lit 1)"
-  let results1 = trace2 $ \ty env -> goal $ infer eempty cempty (lit (inject (1 :: Int))) ty env
-  case takeS (1 :: Int) results1 of
-    [] -> putStrLn "  No results!"
-    ((ty, _), deriv):_ -> do
-      putStrLn $ "  => Type: " ++ show ty
-      putStrLn "  => Derivation:"
-      putStrLn $ prettyDerivation deriv
+  runTest "Test 1: infer eempty cempty (lit 1)" $
+    trace2 $ \ty env -> goal $ infer eempty cempty (lit (inject (1 :: Int))) ty env
 
   -- Test 2: Annotated identity (λx.x : int→int)
-  putStrLn "\nTest 2: infer eempty cempty (ann (lam x.x) (int→int))"
-  let results2 = trace2 $ \ty env ->
-        let x = inject (Nom 0)
-        in goal $ infer eempty cempty (ann (lam (bindT x (var x))) (tarr tint tint)) ty env
-  case takeS (1 :: Int) results2 of
-    [] -> putStrLn "  No results!"
-    ((ty, _), deriv):_ -> do
-      putStrLn $ "  => Type: " ++ show ty
-      putStrLn "  => Derivation:"
-      putStrLn $ prettyDerivation deriv
+  runTest "Test 2: infer eempty cempty (ann (lam x.x) (int→int))" $
+    trace2 $ \ty env ->
+      let x = inject (Nom 0)
+      in goal $ infer eempty cempty (ann (lam (bindT x (var x))) (tarr tint tint)) ty env
 
   -- Test 3: Application ((λx.x : int→int) 1)
-  putStrLn "\nTest 3: infer eempty cempty (app (ann (lam x.x) (int→int)) 1)"
-  let results3 = trace2 $ \ty env ->
-        let x = inject (Nom 0)
-        in goal $ infer eempty cempty (app (ann (lam (bindT x (var x))) (tarr tint tint)) (lit (inject (1 :: Int)))) ty env
-  case takeS (1 :: Int) results3 of
-    [] -> putStrLn "  No results!"
-    ((ty, _), deriv):_ -> do
-      putStrLn $ "  => Type: " ++ show ty
-      putStrLn "  => Derivation:"
-      putStrLn $ prettyDerivation deriv
+  runTest "Test 3: infer eempty cempty (app (ann (lam x.x) (int→int)) 1)" $
+    trace2 $ \ty env ->
+      let x = inject (Nom 0)
+      in goal $ infer eempty cempty (app (ann (lam (bindT x (var x))) (tarr tint tint)) (lit (inject (1 :: Int)))) ty env
 
-  -- Test 4: Unannotated application ((λx.x) 1) - this was the original test2
-  putStrLn "\nTest 4: infer eempty cempty (app (lam x.x) 1)"
-  let results4 = trace2 $ \ty env ->
-        let x = inject (Nom 0)
-        in goal $ infer eempty cempty (app (lam (bindT x (var x))) (lit (inject (1 :: Int)))) ty env
-  case takeS (1 :: Int) results4 of
-    [] -> putStrLn "  No results!"
-    ((ty, _), deriv):_ -> do
-      putStrLn $ "  => Type: " ++ show ty
-      putStrLn "  => Derivation:"
-      putStrLn $ prettyDerivation deriv
+  -- Test 4: Unannotated application ((λx.x) 1)
+  runTest "Test 4: infer eempty cempty (app (lam x.x) 1)" $
+    trace2 $ \ty env ->
+      let x = inject (Nom 0)
+      in goal $ infer eempty cempty (app (lam (bindT x (var x))) (lit (inject (1 :: Int)))) ty env
+
+  -- Test 5: Polymorphic identity: id = /\a. (\x. x : a -> a)
+  runTest "Test 5: infer eempty cempty (/\\a. (\\x. x : a -> a))" $
+    trace2 $ \ty env ->
+      let a = inject (TyNom 0)
+          x = inject (Nom 1)
+      in goal $ infer eempty cempty
+           (tlam (bindT a (ann (lam (bindT x (var x))) (tarr (tvar a) (tvar a)))))
+           ty env
+
+  -- -- Test 6: id applied to 1: (id 1)
+  -- runTest "Test 6: infer eempty cempty ((/\\a. (\\x. x : a -> a)) 1)" $
+  --   trace2 $ \ty env ->
+  --     let a = inject (TyNom 0)
+  --         x = inject (Nom 1)
+  --         idTerm = tlam (bindT a (ann (lam (bindT x (var x))) (tarr (tvar a) (tvar a))))
+  --     in goal $ infer eempty cempty (app idTerm (lit (inject (1 :: Int)))) ty env
+
+  -- -- Test 7: id with type application: id @Int
+  -- runTest "Test 7: infer eempty cempty ((/\\a. (\\x. x : a -> a)) @Int)" $
+  --   trace2 $ \ty env ->
+  --     let a = inject (TyNom 0)
+  --         x = inject (Nom 1)
+  --         idTerm = tlam (bindT a (ann (lam (bindT x (var x))) (tarr (tvar a) (tvar a))))
+  --     in goal $ infer eempty cempty (tapp idTerm tint) ty env
+
+  -- -- Test 8: id @Int applied to 1: id @Int 1
+  -- runTest "Test 8: infer eempty cempty (((/\\a. (\\x. x : a -> a)) @Int) 1)" $
+  --   trace2 $ \ty env ->
+  --     let a = inject (TyNom 0)
+  --         x = inject (Nom 1)
+  --         idTerm = tlam (bindT a (ann (lam (bindT x (var x))) (tarr (tvar a) (tvar a))))
+  --     in goal $ infer eempty cempty (app (tapp idTerm tint) (lit (inject (1 :: Int)))) ty env
+
+  -- Test 9: sub eempty (forall a. a -> a) (ctm 1 cempty)
+  runTest "Test 9: sub eempty (forall a. a -> a) (ctm 1 cempty)" $
+    trace2 $ \env' resultTy ->
+      let a = inject (TyNom 0)
+      in goal $ sub eempty (tforall (bindT a (tarr (tvar a) (tvar a)))) (ctm (lit (inject (1 :: Int))) cempty) env' resultTy
 
   -- putStrLn ""
   -- putStrLn "=== Extracted Inference Rules for Poly ===\n"
@@ -115,6 +145,3 @@ main = do
   -- tryTypeset "updateLower"    $ typeset4 updateLower
   -- tryTypeset "inst"           $ typeset5 inst
   -- tryTypeset "instP"          $ typeset6 instP
-  -- tryTypeset "ssub"           $ typeset5 ssub
-  -- tryTypeset "sub"            $ typeset5 sub
-  tryTypeset "infer"          $ typeset5 infer

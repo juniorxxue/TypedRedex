@@ -21,18 +21,3 @@ executable example-poly
     QuickCheck >=2.14 && <3
   default-language: Haskell2010
   ghc-options:      -Wall
-
-executable poly-test
-  main-is:          Test.hs
-  other-modules:
-    Syntax
-    Rules
-  hs-source-dirs:   .
-  build-depends:
-    base >=4.12 && <5,
-    typedredex-logic,
-    typedredex-dsl,
-    typedredex-interp,
-    containers
-  default-language: Haskell2010
-  ghc-options:      -Wall
