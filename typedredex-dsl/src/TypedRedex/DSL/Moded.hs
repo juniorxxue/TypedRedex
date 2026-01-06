@@ -115,7 +115,7 @@ import qualified TypedRedex.Logic as R (neg)
 import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Define (Applied(..), LTermList(..))
 import TypedRedex.DSL.Relation (call, (<=>))
-import TypedRedex.Nominal.Bind (Bind, Permute(..))
+import TypedRedex.Nominal.Bind (Bind, Permute(..), mkBindL)
 import TypedRedex.Nominal.Prelude (FreshName(..), unbind2)
 import TypedRedex.Logic.Redex (RedexFresh)
 import Data.Typeable (Typeable)
@@ -518,29 +518,68 @@ liftRelDeferred action = RuleM $ \env -> pure
 
 -- | Moded version of 'unbind2' for opening two binders with the same fresh name.
 --
+-- Participates in mode-based scheduling: the unbind operation is deferred
+-- until the input binders become ground. This allows placing @unbind2M@
+-- anywhere in the rule body.
+--
 -- Essential for rules comparing ∀-types (subtyping, equivalence)
 -- where both bodies must refer to the same bound variable.
 --
 -- @
 -- rule "forall" $ do
+--     (env1, env2, p) <- fresh
 --     (bd1, bd2) <- fresh
---     (a, tyA, tyB) <- unbind2M bd1 bd2  -- same fresh name for both
+--     (a, tyA, tyB) <- unbind2M bd1 bd2  -- scheduled after concl grounds bd1, bd2
 --     prem  $ ssub (euvar a env1) tyA p tyB (euvar a env2)
 --     concl $ ssub env1 (tforall bd1) p (tforall bd2) env2
 -- @
-unbind2M :: (Redex rel, RedexFresh rel, RedexEval rel, FreshName name,
-             LogicType body1, LogicType body2,
-             Permute name body1, Permute name body2,
-             HasDisplay name, HasDisplay body1, HasDisplay body2)
-         => T vs1 (Bind name body1) rel
-         -> T vs2 (Bind name body2) rel
-         -> RuleM rel ts s s (T (Union vs1 vs2) name rel,
-                              T (Union vs1 vs2) body1 rel,
-                              T (Union vs1 vs2) body2 rel)
-unbind2M (T vs1 bd1) (T vs2 bd2) = liftRel $
-  unbind2 bd1 bd2 Prelude.>>= \(nameL, body1L, body2L) ->
-    let vs = S.union vs1 vs2
-    in Prelude.return (T vs nameL, T vs body1L, T vs body2L)
+unbind2M ::
+  forall name body1 body2 rel ts vs1 vs2 n steps c.
+  ( Redex rel, RedexFresh rel, RedexEval rel
+  , FreshName name, LogicType name
+  , LogicType body1, LogicType body2
+  , Permute name body1, Permute name body2
+  , HasDisplay name, HasDisplay body1, HasDisplay body2
+  ) =>
+  T vs1 (Bind name body1) rel ->
+  T vs2 (Bind name body2) rel ->
+  RuleM rel ts ('St n steps c)
+               ('St (n + 3) (Snoc steps ('PremStep ('Goal "unbind2" (Union vs1 vs2) '[n, n + 1, n + 2]))) c)
+               (T '[n] name rel, T '[n + 1] body1 rel, T '[n + 2] body2 rel)
+unbind2M (T vs1 bd1) (T vs2 bd2) = RuleM $ \env -> do
+  let n = reNextVar env
+      reqVars = S.union vs1 vs2
+      prodVars = S.fromList [n, n + 1, n + 2]
+  -- Allocate 3 fresh logic variables for the outputs
+  fresh_ FreshVar $ \nameVar ->
+    fresh_ FreshVar $ \bodyVar1 ->
+      fresh_ FreshVar $ \bodyVar2 -> do
+        let nameL  = Free nameVar
+            body1L = Free bodyVar1
+            body2L = Free bodyVar2
+            -- The goal: open binders and unify with fresh vars
+            goal
+              | skipLiftedActions (Proxy :: Proxy rel) =
+                  -- Typesetting mode: unify with synthetic binders to extract structure
+                  unify bd1 (mkBindL nameL body1L) Prelude.>>
+                  unify bd2 (mkBindL nameL body2L)
+              | otherwise =
+                  unbind2 bd1 bd2 Prelude.>>= \(name', body1', body2') ->
+                    (nameL <=> name') Prelude.>>
+                    (body1L <=> body1') Prelude.>>
+                    (body2L <=> body2')
+        markPremise "unbind2" [CapturedTerm bd1, CapturedTerm bd2] unbind2Fmt
+        Prelude.pure
+          ( ( T (S.singleton n) nameL
+            , T (S.singleton (n + 1)) body1L
+            , T (S.singleton (n + 2)) body2L )
+          , env { reNextVar = n + 3
+                , reDeferred = PremA (PremAction reqVars prodVars goal) : reDeferred env
+                }
+          )
+  where
+    unbind2Fmt [b1, b2] = "unbind2(" ++ b1 ++ ", " ++ b2 ++ ")"
+    unbind2Fmt args = "unbind2(" ++ unwords args ++ ")"
 
 --------------------------------------------------------------------------------
 -- Moded Judgments
