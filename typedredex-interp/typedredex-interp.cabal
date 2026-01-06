@@ -22,6 +22,7 @@ library
     TypedRedex.Interp.Format
     TypedRedex.Interp.Display
     TypedRedex.Interp.Tracing
+    TypedRedex.Interp.Tracing.Deterministic
     TypedRedex.Interp.Typesetting
     TypedRedex.Test.Property
   build-depends:

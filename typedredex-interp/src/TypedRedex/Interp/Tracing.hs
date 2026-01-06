@@ -112,7 +112,7 @@ prettyDerivation d = unlines $ renderDeriv d
   where
     renderDeriv :: Derivation -> [String]
     renderDeriv (Leaf name) = [name]
-    renderDeriv (Deriv "top" _ children) =
+    renderDeriv (Deriv "__goal__" _ children) =
       case children of
         [c] -> renderDeriv c
         cs -> concatMap renderDeriv cs
@@ -201,7 +201,7 @@ emptyStateWith :: (String -> [String] -> String) -> TracingState s
 emptyStateWith fmt = TracingState
   { tsSubst = \v -> error $ "Invalid variable " ++ show (varToInt v)
   , tsNextVar = 0
-  , tsDerivStack = [DerivFrame "top" "top" [] [] defaultTopFormat]  -- Start with top-level frame
+  , tsDerivStack = [DerivFrame "__goal__" "__goal__" [] [] defaultTopFormat]  -- Start with top-level frame
   , tsFormatter = fmt
   , tsFreshCounter = 0
   , tsHashConstraints = []
@@ -497,7 +497,7 @@ runTracingRedexWith fmt (TracingRedex r) = fmap extractDeriv $ runStateT r (empt
       let deriv = case tsDerivStack st of
             [frame] -> case frameChildren frame of
               [d] -> d
-              ds -> Deriv "top" "" (reverse ds)
+              ds -> Deriv "__goal__" "" (reverse ds)
             (frame:_) -> Deriv (frameRule frame) "" (reverse $ frameChildren frame)
             [] -> Leaf "?"
       in (result, deriv)

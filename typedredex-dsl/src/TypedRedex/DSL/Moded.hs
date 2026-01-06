@@ -886,9 +886,19 @@ prem :: forall name modes rel vss ts ts' n steps c.
                   ('St n (Snoc steps ('PremStep ('Goal name (ReqVars modes vss) (ProdVars modes vss)))) c) ()
 prem applied = RuleM $ \env -> do
   markPremise (amName applied) (captureArgs (amArgs applied)) (amFormat applied)
+  -- Wrap the premise goal in a synthetic "__goal__" relation call.
+  --
+  -- This is a no-op for normal execution (it just calls the underlying goal),
+  -- but it gives tracing interpreters a stable call boundary for producing
+  -- premise-level diagnostics when the goal has no solutions.
+  --
+  -- The tracing pretty-printer treats rule name "__goal__" as transparent, so this
+  -- wrapper does not clutter successful derivations.
+  let wrappedGoal =
+        call $ Relation (amName applied) "__goal__" (captureArgs (amArgs applied)) (amGoal applied) (amFormat applied)
   pure
     ( ()
-    , env { reDeferred = PremA (PremAction (amReqVars applied) (amProdVars applied) (amGoal applied)) : reDeferred env }
+    , env { reDeferred = PremA (PremAction (amReqVars applied) (amProdVars applied) wrappedGoal) : reDeferred env }
     )
 
 -- | Declare negation-as-failure. The goal must fail for the rule to succeed.

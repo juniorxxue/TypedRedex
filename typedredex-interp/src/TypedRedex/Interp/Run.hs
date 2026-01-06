@@ -1,6 +1,7 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -39,6 +40,7 @@ import qualified Data.Set as S
 import TypedRedex.Logic
 import TypedRedex.DSL.Fresh
 import TypedRedex.DSL.Moded (T(..), AppliedM(..))
+import TypedRedex.DSL.Define (LTermList(..))
 import TypedRedex.Interp.Subst (runSubstRedex)
 import TypedRedex.Interp.Stream (Stream)
 
@@ -73,8 +75,21 @@ inject x = T S.empty (Ground (project x))
 -- @
 -- run2 $ \\ty env -> goal $ infer eempty cempty (lit 1) ty env
 -- @
-goal :: AppliedM rel name modes vss ts -> rel ()
-goal = amGoal
+goal :: Redex rel => AppliedM rel name modes vss ts -> rel ()
+goal applied =
+  -- Wrap the goal in a synthetic "__goal__" relation call.
+  --
+  -- For normal execution this is observationally equivalent to `amGoal`, but
+  -- it creates a stable call boundary for tracing interpreters to attach a
+  -- "no rule applies" diagnostic when the judgment has no solutions.
+  --
+  -- The tracing pretty-printer treats rule name "__goal__" as transparent, so this
+  -- wrapper does not clutter successful derivations.
+  call_ Opaque $ Relation (amName applied) "__goal__" (captureArgs (amArgs applied)) (amGoal applied) (amFormat applied)
+  where
+    captureArgs :: LTermList rel ts' -> [CapturedTerm rel]
+    captureArgs TNil = []
+    captureArgs (x :> xs) = CapturedTerm x : captureArgs xs
 
 --------------------------------------------------------------------------------
 -- Running moded judgments with lambda-captured outputs

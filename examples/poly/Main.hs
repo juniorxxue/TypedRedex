@@ -12,9 +12,10 @@ import Control.Exception (catch, SomeException)
 import qualified Data.Set as S
 import TypedRedex (goal, inject, eval, T(..))
 import TypedRedex.Logic (LogicType, Redex, RedexEval, RedexFresh, RedexNeg, RedexHash)
-import TypedRedex.DSL.Fresh (fresh2)
+import TypedRedex.DSL.Fresh (fresh, fresh2)
 import TypedRedex.Interp.Stream (Stream, takeS)
 import TypedRedex.Interp.Tracing (TracingRedex, runTracingRedex, Derivation, prettyDerivation)
+import TypedRedex.Interp.Tracing.Deterministic (TracingRedexDet, TraceOutcome(..), runTracingRedexDet)
 import TypedRedex.Nominal (bindT)
 import TypedRedex.Nominal.Prelude (Nom(..), TyNom(..))
 
@@ -41,6 +42,46 @@ trace2 f = runTracingRedex $ fresh2 $ \x y -> do
   f (T S.empty x) (T S.empty y)
   (,) <$> eval x <*> eval y
 
+-- | Run a judgment with 1 output, returning results with derivation trees.
+trace1 :: LogicType a
+       => (forall s. FullRel (TracingRedex s) => T '[] a (TracingRedex s) -> TracingRedex s ())
+       -> Stream (a, Derivation)
+trace1 f = runTracingRedex $ fresh $ \x -> do
+  f (T S.empty x)
+  eval x
+
+--------------------------------------------------------------------------------
+-- Deterministic failure tracing (for partial derivations on failed examples)
+--------------------------------------------------------------------------------
+
+-- | Like trace1, but returns either a success derivation or a partial failure tree.
+trace1Det :: LogicType a
+          => (forall s. FullRel (TracingRedexDet s) => T '[] a (TracingRedexDet s) -> TracingRedexDet s ())
+          -> TraceOutcome a
+trace1Det f = runTracingRedexDet $ fresh $ \x -> do
+  f (T S.empty x)
+  eval x
+
+-- | Run a goal (no outputs) and still get either a success derivation or a
+-- partial failure tree. Useful when the goal itself is the thing you're
+-- debugging, and evaluating outputs isn't necessary.
+trace0Det :: (forall s. FullRel (TracingRedexDet s) => TracingRedexDet s ())
+          -> TraceOutcome ()
+trace0Det = runTracingRedexDet
+
+runTestDet :: Show a => String -> TraceOutcome a -> IO ()
+runTestDet name outcome = do
+  putStrLn $ "\n" ++ name
+  case outcome of
+    TraceSuccess result deriv -> do
+      putStrLn $ "  => Result: " ++ show result
+      putStrLn "  => Derivation:"
+      putStrLn $ prettyDerivation deriv
+    TraceFailure deriv -> do
+      putStrLn "  No results."
+      putStrLn "  => Partial derivation:"
+      putStrLn $ prettyDerivation deriv
+
 --------------------------------------------------------------------------------
 -- Main
 --------------------------------------------------------------------------------
@@ -60,6 +101,17 @@ runTest name results = do
     [] -> putStrLn "  No results!"
     ((ty, _), deriv):_ -> do
       putStrLn $ "  => Type: " ++ show ty
+      putStrLn "  => Derivation:"
+      putStrLn $ prettyDerivation deriv
+
+-- | Run a test with 1 output and print results
+runTest1 :: Show a => String -> Stream (a, Derivation) -> IO ()
+runTest1 name results = do
+  putStrLn $ "\n" ++ name
+  case takeS (1 :: Int) results of
+    [] -> putStrLn "  No results!"
+    (result, deriv):_ -> do
+      putStrLn $ "  => Result: " ++ show result
       putStrLn "  => Derivation:"
       putStrLn $ prettyDerivation deriv
 
@@ -94,13 +146,13 @@ main = do
       in goal $ infer eempty cempty (app (lam (bindT x (var x))) (lit (inject (1 :: Int)))) ty env
 
   -- Test 5: Polymorphic identity: id = /\a. (\x. x : a -> a)
-  runTest "Test 5: infer eempty cempty (/\\a. (\\x. x : a -> a))" $
-    trace2 $ \ty env ->
-      let a = inject (TyNom 0)
-          x = inject (Nom 1)
-      in goal $ infer eempty cempty
-           (tlam (bindT a (ann (lam (bindT x (var x))) (tarr (tvar a) (tvar a)))))
-           ty env
+  -- runTest "Test 5: infer eempty cempty (/\\a. (\\x. x : a -> a))" $
+  --   trace2 $ \ty env ->
+  --     let a = inject (TyNom 0)
+  --         x = inject (Nom 1)
+  --     in goal $ infer eempty cempty
+  --          (tlam (bindT a (ann (lam (bindT x (var x))) (tarr (tvar a) (tvar a)))))
+  --          ty env
 
   -- -- Test 6: id applied to 1: (id 1)
   -- runTest "Test 6: infer eempty cempty ((/\\a. (\\x. x : a -> a)) 1)" $
@@ -126,11 +178,39 @@ main = do
   --         idTerm = tlam (bindT a (ann (lam (bindT x (var x))) (tarr (tvar a) (tvar a))))
   --     in goal $ infer eempty cempty (app (tapp idTerm tint) (lit (inject (1 :: Int)))) ty env
 
-  -- Test 9: sub eempty (forall a. a -> a) (ctm 1 cempty)
-  runTest "Test 9: sub eempty (forall a. a -> a) (ctm 1 cempty)" $
+  -- -- Test 9: sub eempty (forall a. a -> a) (ctm 1 cempty)
+  -- runTest "Test 9: sub eempty (forall a. a -> a) (ctm 1 cempty)" $
+  --   trace2 $ \env' resultTy ->
+  --     let a = inject (TyNom 0)
+  --     in goal $ sub eempty (tforall (bindT a (tarr (tvar a) (tvar a)))) (ctm (lit (inject (1 :: Int))) cempty) env' resultTy
+
+  -- Test 10: infer (bot <: a <: top) (ctype a) (lit 1)
+  runTest "Test 10: infer (ebound bot a top eempty) (ctype a) (lit 1)" $
+    trace2 $ \ty env' ->
+      let a = inject (TyNom 0)
+      in goal $ infer (ebound tbot a ttop eempty) (ctype (tvar a)) (lit (inject (1 :: Int))) ty env'
+
+  -- Test 11: sub (bot <: a <: top) int (ctype a)
+  runTest "Test 11: sub (ebound bot a top eempty) int (ctype a)" $
     trace2 $ \env' resultTy ->
       let a = inject (TyNom 0)
-      in goal $ sub eempty (tforall (bindT a (tarr (tvar a) (tvar a)))) (ctm (lit (inject (1 :: Int))) cempty) env' resultTy
+      in goal $ sub (ebound tbot a ttop eempty) tint (ctype (tvar a)) env' resultTy
+
+  runTestDet "Test 11 new: sub (ebound bot a top eempty) int (ctype a)" $
+    trace0Det $ fresh $ \env' ->
+      let a = inject (TyNom 0)
+      in goal $ ssub (ebound tbot a ttop eempty) tint neg (tvar a) (T S.empty env')
+
+  -- -- Test 12: updateLower (bot <: a <: top) a int
+  -- runTest1 "Test 12: updateLower (ebound bot a top eempty) a int" $
+  --   trace1 $ \env' ->
+  --     let a = inject (TyNom 0)
+  --     in goal $ updateLower (ebound tbot a ttop eempty) a tint env'
+
+  -- Test 13: ssub failure trace (arr rule matches, then gets stuck on top <: int)
+  runTestDet "Test 13: ssub eempty (int→int) ≤⁺ (top→top)  (expected fail)" $
+    trace0Det $ fresh $ \env' ->
+      goal $ ssub eempty (tarr tint tint) pos (tarr ttop ttop) (T S.empty env')
 
   -- putStrLn ""
   -- putStrLn "=== Extracted Inference Rules for Poly ===\n"

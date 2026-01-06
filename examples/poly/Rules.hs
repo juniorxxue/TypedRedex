@@ -425,9 +425,9 @@ ssub = defJudge5 format $ \rule ->
   , rule "forall" $ do
       (env1, env2, p) <- fresh
       (bd1, bd2) <- fresh
+      concl $ ssub env1 (tforall bd1) p (tforall bd2) env2
       (a, tyA, tyB) <- unbind2M bd1 bd2
       prem  $ ssub (euvar a env1) tyA p tyB (euvar a env2)
-      concl $ ssub env1 (tforall bd1) p (tforall bd2) env2
   ]
   where format [env1, ty1, polar, ty2, env2] = env1 ++ " |- " ++ ty1 ++ " " ++ polar ++ " " ++ ty2 ++ " ⊣ " ++ env2
         format args = "ssub(" ++ unwords args ++ ")"
