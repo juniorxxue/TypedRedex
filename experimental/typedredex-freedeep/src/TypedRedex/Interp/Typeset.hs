@@ -8,6 +8,7 @@ module TypedRedex.Interp.Typeset
   ) where
 
 import Data.List (intercalate)
+import qualified Data.Set as S
 import TypedRedex.Core.IxFree (IxFree(..))
 import TypedRedex.Core.Term
 import TypedRedex.Core.RuleF
@@ -25,11 +26,11 @@ typeset jc = unlines
   ]
 
 -- | Typeset a single rule
-typesetRule :: Rule ts -> String
-typesetRule (Rule name body) =
+typesetRule :: Rule name ts -> String
+typesetRule (Rule ruleLabel body) =
   let (premises, conclusion, constraints) = extractRule body
   in unlines
-       [ "[" ++ name ++ "]"
+       [ "[" ++ ruleLabel ++ "]"
        , ""
        , formatInferenceRule premises conclusion constraints
        ]
@@ -59,42 +60,8 @@ extractRule body =
       FreshF ->
         let varId = exNextVar ex
             ex' = ex { exNextVar = varId + 1 }
-            dummyTerm = Term mempty (Var varId)
+            dummyTerm = Term (S.singleton varId) (Var varId)
         in go (k dummyTerm) ex'
-
-      Fresh2F ->
-        let v0 = exNextVar ex
-            ex' = ex { exNextVar = v0 + 2 }
-            t0 = Term mempty (Var v0)
-            t1 = Term mempty (Var (v0 + 1))
-        in go (k (t0, t1)) ex'
-
-      Fresh3F ->
-        let v0 = exNextVar ex
-            ex' = ex { exNextVar = v0 + 3 }
-            t0 = Term mempty (Var v0)
-            t1 = Term mempty (Var (v0 + 1))
-            t2 = Term mempty (Var (v0 + 2))
-        in go (k (t0, t1, t2)) ex'
-
-      Fresh4F ->
-        let v0 = exNextVar ex
-            ex' = ex { exNextVar = v0 + 4 }
-            t0 = Term mempty (Var v0)
-            t1 = Term mempty (Var (v0 + 1))
-            t2 = Term mempty (Var (v0 + 2))
-            t3 = Term mempty (Var (v0 + 3))
-        in go (k (t0, t1, t2, t3)) ex'
-
-      Fresh5F ->
-        let v0 = exNextVar ex
-            ex' = ex { exNextVar = v0 + 5 }
-            t0 = Term mempty (Var v0)
-            t1 = Term mempty (Var (v0 + 1))
-            t2 = Term mempty (Var (v0 + 2))
-            t3 = Term mempty (Var (v0 + 3))
-            t4 = Term mempty (Var (v0 + 4))
-        in go (k (t0, t1, t2, t3, t4)) ex'
 
       ConclF jc ->
         let concl = jcName jc ++ "(" ++ typesetTermList (jcArgs jc) ++ ")"
@@ -116,8 +83,8 @@ extractRule body =
         let neq = displayTerm t1 ++ " ≠ " ++ displayTerm t2
         in go (k ()) ex { exConstraints = exConstraints ex ++ [neq] }
 
-formatNegRule :: Rule ts -> String
-formatNegRule (Rule name _) = name ++ "..."
+formatNegRule :: Rule name ts -> String
+formatNegRule (Rule ruleLabel _) = ruleLabel ++ "..."
 
 displayTerm :: Repr a => Term vs a -> String
 displayTerm (Term _ val) = displayLogic val

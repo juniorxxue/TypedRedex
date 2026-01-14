@@ -28,5 +28,5 @@ eval _q = []  -- TODO: execute and extract results
   -- in map (extractResult q) substs
 
 -- | Translate a rule to a Goal (placeholder)
-translate :: Rule ts -> Goal
+translate :: Rule name ts -> Goal
 translate (Rule _name _body) = undefined  -- TODO: fold over RuleM

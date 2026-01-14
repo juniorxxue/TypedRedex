@@ -10,7 +10,6 @@ executable example-poly
   other-modules:
     Syntax
     Rules
-    Typeset
   hs-source-dirs:   .
   build-depends:
     base >=4.12 && <5,

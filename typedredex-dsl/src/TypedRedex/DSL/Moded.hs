@@ -91,6 +91,7 @@ module TypedRedex.DSL.Moded
   , liftRel
   , liftRelDeferred
   , unbind2M
+  , freshTyNomM
     -- * QualifiedDo operators
   , return, (>>=), (>>)
     -- * Type-level machinery
@@ -116,7 +117,7 @@ import TypedRedex.DSL.Fresh (LTerm)
 import TypedRedex.DSL.Define (Applied(..), LTermList(..))
 import TypedRedex.DSL.Relation (call, (<=>))
 import TypedRedex.Nominal.Bind (Bind, Permute(..), mkBindL)
-import TypedRedex.Nominal.Prelude (FreshName(..), unbind2)
+import TypedRedex.Nominal.Prelude (FreshName(..), unbind2, TyNom, freshTyNom)
 import TypedRedex.Logic.Redex (RedexFresh)
 import Data.Typeable (Typeable)
 
@@ -580,6 +581,44 @@ unbind2M (T vs1 bd1) (T vs2 bd2) = RuleM $ \env -> do
   where
     unbind2Fmt [b1, b2] = "unbind2(" ++ b1 ++ ", " ++ b2 ++ ")"
     unbind2Fmt args = "unbind2(" ++ unwords args ++ ")"
+
+-- | Generate a fresh type variable name (TyNom) as a grounded output.
+--
+-- Participates in mode-based scheduling: the fresh name generation is deferred
+-- and has no input dependencies, so it can be scheduled immediately.
+--
+-- @
+-- rule "split" $ do
+--     (a, env) <- fresh
+--     b <- freshTyNomM  -- generates fresh type variable name
+--     c <- freshTyNomM
+--     prem  $ lookupBoundVar env a tyL tyU
+--     concl $ splitEnv env a (ebound tyL' b tyU' (ebound tyL'' c tyU'' env)) b c
+-- @
+freshTyNomM ::
+  forall rel ts n steps c.
+  (Redex rel, RedexFresh rel)
+  => RuleM rel ts ('St n steps c)
+                  ('St (n + 1) (Snoc steps ('PremStep ('Goal "freshTyNom" '[] '[n]))) c)
+                  (T '[n] TyNom rel)
+freshTyNomM = RuleM $ \env -> do
+  let n = reNextVar env
+      reqVars = S.empty
+      prodVars = S.singleton n
+  -- Allocate 1 fresh logic variable for the output
+  fresh_ FreshVar $ \tyNomVar -> do
+    let tyNomL = Free tyNomVar
+        -- The goal: generate a fresh TyNom and unify with the logic variable
+        goal = freshTyNom Prelude.>>= \name -> tyNomL <=> Ground (project name)
+    markPremise "freshTyNom" [] freshTyNomFmt
+    Prelude.pure
+      ( T (S.singleton n) tyNomL
+      , env { reNextVar = n + 1
+            , reDeferred = PremA (PremAction reqVars prodVars goal) : reDeferred env
+            }
+      )
+  where
+    freshTyNomFmt _ = "freshTyNom()"
 
 --------------------------------------------------------------------------------
 -- Moded Judgments

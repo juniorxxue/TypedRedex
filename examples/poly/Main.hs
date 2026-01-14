@@ -18,10 +18,10 @@ import TypedRedex.Interp.Tracing (TracingRedex, runTracingRedex, Derivation, pre
 import TypedRedex.Interp.Tracing.Deterministic (TracingRedexDet, TraceOutcome(..), runTracingRedexDet)
 import TypedRedex.Nominal (bindT)
 import TypedRedex.Nominal.Prelude (Nom(..), TyNom(..))
+import TypedRedex.Interp.Typesetting (typeset2, typeset3, typeset4, typeset5, typeset6)
 
 import Syntax
 import Rules
-import Typeset
 import Syntax (eempty)
 
 --------------------------------------------------------------------------------
@@ -212,6 +212,20 @@ main = do
     trace0Det $ fresh $ \env' ->
       goal $ ssub eempty (tarr tint tint) pos (tarr ttop ttop) (T S.empty env')
 
+  -- -- Test 14: forall a. a -> (a -> a) -> a -> a <: [1] ~> [\x. x + 1] ~> [true] ~> []
+  -- -- Test 14': forall a. a -> (a -> a) -> a -> a <: [1] ~> [\x. x] ~> [true] ~> []
+  -- runTestDet "Test 14: sub eempty (forall a. a -> (a -> a) -> a -> a) ([1] ~> [\\x. x + 1] ~> [true] ~> [])" $
+  --   trace0Det $ fresh2 $ \env' resultTy ->
+  --     let a = inject (TyNom 0)
+  --         x = inject (Nom 1)
+  --         -- forall a. a -> (a -> a) -> a -> a
+  --         polyTy = tforall (bindT a (tarr (tvar a) (tarr (tarr (tvar a) (tvar a)) (tarr (tvar a) (tvar a)))))
+  --         -- [1] ~> [\x. x + 1] ~> [true] ~> []
+  --         ctx = ctm (lit (inject (1 :: Int)))
+  --                   (ctm (lam (bindT x (plus (var x) (lit (inject (1 :: Int))))))
+  --                        (ctm true cempty))
+  --     in goal $ sub eempty polyTy ctx (T S.empty env') (T S.empty resultTy)
+
   -- putStrLn ""
   -- putStrLn "=== Extracted Inference Rules for Poly ===\n"
 
@@ -225,3 +239,19 @@ main = do
   -- tryTypeset "updateLower"    $ typeset4 updateLower
   -- tryTypeset "inst"           $ typeset5 inst
   -- tryTypeset "instP"          $ typeset6 instP
+
+
+-- twice : forall a. a -> a -> a
+-- twice succ (\x. x)
+
+-- f : Bot -> Int
+-- twice succ (\x. x) f
+
+-- triple succ (\x. x) f
+
+-- Int -> Int <: a
+-- a => succ => 
+
+-- forall a. a -> a -> a <: [succ] -> [\x. x] -> []
+
+-- Bot -> Int <: a <: Top |- a => \x. x => a

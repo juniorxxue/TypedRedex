@@ -2,6 +2,7 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Simple example: Natural numbers with addition
 module Main where
@@ -43,18 +44,20 @@ suc = lift1 (\n -> Ground (RS n))
 -- Judgment: add(X, Y, Z) — X + Y = Z
 --------------------------------------------------------------------------------
 
-add :: Judgment3 "add" '[I, I, O] Nat Nat Nat
-add = judgment3 @"add" @'[I, I, O]
+add :: Judgment "add" '[I, I, O] '[Nat, Nat, Nat]
+add = judgment
   [ -- add(Z, Y, Y)
     rule "add-zero" $ R.do
-      y <- R.fresh @Nat
-      R.concl $ add zro y y
+      y <- R.freshVar @Nat
+      R.concl $ add # (zro, y, y)
 
   , -- add(S(X), Y, S(Z)) :- add(X, Y, Z)
     rule "add-succ" $ R.do
-      (x, y, z) <- R.fresh3 @Nat @Nat @Nat
-      R.concl $ add (suc x) y (suc z)
-      R.prem  $ add x y z
+      x <- R.freshVar @Nat
+      y <- R.freshVar @Nat
+      z <- R.freshVar @Nat
+      R.concl $ add # (suc x, y, suc z)
+      R.prem  $ add # (x, y, z)
   ]
 
 --------------------------------------------------------------------------------
@@ -67,6 +70,6 @@ main = do
   putStrLn ""
 
   -- Typeset the add judgment
-  putStrLn $ typeset (add zro zro zro)
+  putStrLn $ typeset (add # (zro, zro, zro))
 
   putStrLn "=== Done ==="

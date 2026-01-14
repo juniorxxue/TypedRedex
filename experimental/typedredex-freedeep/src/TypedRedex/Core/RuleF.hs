@@ -71,16 +71,17 @@ instance OutputVars ms vss ts => OutputVars ('O ': ms) (vs ': vss) (t ': ts) whe
 --------------------------------------------------------------------------------
 
 -- | A complete rule (existentially hides final state)
-data Rule (ts :: [Type]) where
-  Rule :: { ruleName :: String
+data Rule (name :: Symbol) (ts :: [Type]) where
+  Rule :: CheckSchedule name steps
+       => { ruleName :: String
           , ruleBody :: RuleM ts ('St 0 '[] 'False) ('St n steps 'True) ()
-          } -> Rule ts
+          } -> Rule name ts
 
 -- | A judgment: named collection of rules
 data Judgment (name :: Symbol) (modes :: [Mode]) (ts :: [Type]) = Judgment
   { judgmentName  :: String
   , judgmentModes :: ModeList modes
-  , judgmentRules :: [Rule ts]
+  , judgmentRules :: [Rule name ts]
   }
 
 -- | A judgment call: judgment applied to arguments
@@ -90,7 +91,7 @@ data JudgmentCall (name :: Symbol) (modes :: [Mode]) (vss :: [[Nat]]) (ts :: [Ty
   , jcArgs     :: TermList vss ts
   , jcReqVars  :: Set Int
   , jcProdVars :: Set Int
-  , jcRules    :: [Rule ts]
+  , jcRules    :: [Rule name ts]
   }
 
 --------------------------------------------------------------------------------
@@ -109,7 +110,7 @@ type RuleM ts s t a = IxFree (RuleF ts) s t a
 -- No `rel` parameter — this is pure data.
 data RuleF (ts :: [Type]) (s :: St) (t :: St) (a :: Type) where
 
-  -- | Fresh variable
+  -- | Fresh variable (single)
   FreshF :: (Repr a, Typeable a)
          => RuleF ts ('St n steps c) ('St (n + 1) steps c) (Term '[n] a)
 
@@ -126,7 +127,7 @@ data RuleF (ts :: [Type]) (s :: St) (t :: St) (a :: Type) where
                     ('St n (Snoc steps ('PremStep ('Goal name (ReqVars modes vss) (ProdVars modes vss)))) c) ()
 
   -- | Negation as failure
-  NegF :: Rule ts'
+  NegF :: Rule name ts'
        -> RuleF ts ('St n steps c)
                    ('St n (Snoc steps ('NegStep '[])) c) ()
        -- TODO: Track required vars in NegStep
@@ -142,21 +143,3 @@ data RuleF (ts :: [Type]) (s :: St) (t :: St) (a :: Type) where
        => Term vs1 a -> Term vs2 a
        -> RuleF ts ('St n steps c)
                    ('St n (Snoc steps ('PremStep ('Goal "=/=" (Union vs1 vs2) '[]))) c) ()
-
-  -- | Multi-fresh (avoids type-level arithmetic normalization issues)
-  Fresh2F :: (Repr a, Typeable a, Repr b, Typeable b)
-          => RuleF ts ('St n steps c) ('St (n + 2) steps c)
-               (Term '[n] a, Term '[n + 1] b)
-
-  Fresh3F :: (Repr a, Typeable a, Repr b, Typeable b, Repr c, Typeable c)
-          => RuleF ts ('St n steps cc) ('St (n + 3) steps cc)
-               (Term '[n] a, Term '[n + 1] b, Term '[n + 2] c)
-
-  Fresh4F :: (Repr a, Typeable a, Repr b, Typeable b, Repr c, Typeable c, Repr d, Typeable d)
-          => RuleF ts ('St n steps cc) ('St (n + 4) steps cc)
-               (Term '[n] a, Term '[n + 1] b, Term '[n + 2] c, Term '[n + 3] d)
-
-  Fresh5F :: (Repr a, Typeable a, Repr b, Typeable b, Repr c, Typeable c,
-              Repr d, Typeable d, Repr e, Typeable e)
-          => RuleF ts ('St n steps cc) ('St (n + 5) steps cc)
-               (Term '[n] a, Term '[n + 1] b, Term '[n + 2] c, Term '[n + 3] d, Term '[n + 4] e)

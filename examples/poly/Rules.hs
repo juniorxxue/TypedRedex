@@ -24,10 +24,10 @@ import TypedRedex.DSL.Moded
   , Union
   , defJudge2, defJudge3, defJudge4, defJudge5, defJudge6
   , fresh, prem, concl
-  , liftRel
   , return, (>>=), (>>)
   , (=/=)
   , unbind2M
+  , freshTyNomM
   )
 
 import Syntax
@@ -269,13 +269,64 @@ updateLower = defJudge4 format $ \rule ->
     format [env, a, ty, env'] = env ++ "[" ++ a ++ " lower ∨= " ++ ty ++ "] = " ++ env'
     format args = "updateLower(" ++ unwords args ++ ")"
 
-splitEnv :: PolyRel rel => MJudgment5 rel "splitEnv" (In Env) (In TyNom) (Out Env) (Out TyNom) (Out TyNom)
-splitEnv = defJudge5 format $ \_ -> []
-  where format args = "splitEnv(" ++ unwords args ++ ")"
 
-unsplitEnv :: PolyRel rel => MJudgment5 rel "unsplitEnv" (In Env) (In TyNom) (In TyNom) (In TyNom) (Out Env)
-unsplitEnv = defJudge5 format $ \_ -> []
-  where format args = "unsplitEnv(" ++ unwords args ++ ")"
+splittable :: PolyRel rel => MJudgment6 rel "splittable" (In Ty) (In Ty) (Out Ty) (Out Ty) (Out Ty) (Out Ty)
+splittable = defJudge6 format $ \rule ->
+    [ rule "arr" $ do
+        (tyA, tyB, tyC, tyD) <- fresh
+        concl $ splittable (tarr tyA tyB) (tarr tyC tyD) tyC tyA tyB tyD
+
+    -- , rule "top" $ do
+    --     () <- fresh
+    --     concl $ splittable tyA ttop tbot
+    ]
+    where
+      format [tyL, tyU, tyC, tyA, tyB, tyD] =
+        tyL ++ " <: " ++ tyU ++ " splittable into " ++ tyC ++ ", " ++ tyA ++ " -> " ++ tyB ++ ", " ++ tyD
+      format args = "splittable(" ++ unwords args ++ ")"
+
+-- splitEnv says we have a variable (alpha) in the environment, whose bounds are "splitable" (function forms)
+-- then we produce a new environment by splitting alpha into beta and gamma, where beta and gamma's bounds are the components of alpha's bounds
+-- alpha ~~~ beta -> gamma
+-- example:
+-- old env: int -> int <: a <: bot -> top
+-- new env: bot <: b <: int, int <: c <: top
+splitEnv :: PolyRel rel => MJudgment5 rel "splitEnv" (In Env) (In TyNom) (Out Env) (Out TyNom) (Out TyNom)
+splitEnv = defJudge5 format $ \rule ->
+  [ rule "split" $ do
+      (a, env) <- fresh
+      (tyL, tyU) <- fresh
+      (tyUA, tyLA, tyLB, tyUB) <- fresh
+      b <- freshTyNomM
+      c <- freshTyNomM
+      prem  $ lookupBoundVar env a tyL tyU
+      prem  $ splittable tyL tyU tyUA tyLA tyLB tyUB
+      -- a had: tyL <: a <: tyU where tyL = tyLA -> tyLB, tyU = tyUA -> tyUB
+      -- b gets: tyUA <: b <: tyLA (domain, contravariant)
+      -- c gets: tyLB <: c <: tyUB (codomain, covariant)
+      concl $ splitEnv env a (ebound tyUA b tyLA (ebound tyLB c tyUB env)) b c
+  ]
+  where
+    format [env, a, env', b, c] = env ++ "[" ++ a ++ " ~~> " ++ b ++ " -> " ++ c ++ "] = " ++ env'
+    format args = "splitEnv(" ++ unwords args ++ ")"
+
+-- a reverse of splitEnv
+unsplitEnv :: PolyRel rel => MJudgment5 rel "unsplitEnv" (In Env) (In TyNom) (In TyNom) (Out TyNom) (Out Env)
+unsplitEnv = defJudge5 format $ \rule ->
+  [ rule "unsplit" $ do
+      (b, c, env) <- fresh
+      (tyUA, tyLA, tyLB, tyUB) <- fresh
+      a <- freshTyNomM
+      prem  $ lookupBoundVar env b tyUA tyLA
+      prem  $ lookupBoundVar env c tyLB tyUB
+      -- b had: tyUA <: b <: tyLA (domain, contravariant)
+      -- c had: tyLB <: c <: tyUB (codomain, covariant)
+      -- Reconstruct a: (tyLA -> tyLB) <: a <: (tyUA -> tyUB)
+      concl $ unsplitEnv env b c a (ebound (tarr tyLA tyLB) a (tarr tyUA tyUB) env)
+  ]
+  where
+    format [env, b, c, a, env'] = env ++ "[" ++ b ++ " -> " ++ c ++ " ~~> " ++ a ++ "] = " ++ env'
+    format args = "unsplitEnv(" ++ unwords args ++ ")"
 
 -- A <: a <: B
 -- C (a may appear in C)
@@ -445,6 +496,7 @@ infer = defJudge5 format $ \rule ->
   , rule "ann" $ do
       (tm, ty, env1, env2) <- fresh
       prem $ infer env1 (ctype ty) tm ty env2
+      -----------------------------------------------
       concl $ infer env1 cempty (ann tm ty) ty env2
 
   , rule "lam1" $ do
@@ -501,6 +553,25 @@ infer = defJudge5 format $ \rule ->
       ctx =/= cempty
       prem  $ sub env1 tyA ctx env2 tyB
       concl $ infer env1 ctx g tyB env2
+
+  , rule "plus" $ do
+        (tm1, tm2, env1, _env2, _env3) <- fresh
+        prem  $ infer env1 cempty tm1 tint _env2
+        prem  $ infer env1 cempty tm2 tint _env3
+        concl $ infer env1 cempty (plus tm1 tm2) tint env1
+
+  , rule "true" $ do
+        env <- fresh
+        concl $ infer env cempty true tbool env
+
+  , rule "false" $ do
+        env <- fresh
+        concl $ infer env cempty false tbool env
+
+
+  , rule "false" $ do
+        env <- fresh
+        concl $ infer env cempty false tint env
   ]
   where
     format [env1, ctx, tm, ty, env2] = env1 ++ " |- " ++ ctx ++ " => " ++ tm ++ " => " ++ ty ++ " ⊣ " ++ env2

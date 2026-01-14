@@ -28,6 +28,7 @@ import qualified Data.Set as S
 
 data Ty
   = TInt
+  | TBool
   | TTop
   | TBot
   | TVar TyNom
@@ -37,7 +38,10 @@ data Ty
 
 data Tm
   = Literal Int
+  | BTrue
+  | BFalse
   | Var Nom
+  | Plus Tm Tm
   | Abs (Bind Nom Tm)
   | App Tm Tm
   | Ann Tm Ty
@@ -70,6 +74,7 @@ data Context
 tyDisplay :: Display Ty
 tyDisplay = display
   [ #TInt    ~= "int"
+  , #TBool   ~= "bool"
   , #TTop    ~= "top"
   , #TBot    ~= "bot"
   , #TVar    ~> \a -> (a :: D)
@@ -101,7 +106,10 @@ contextDisplay = display
 tmDisplay :: Display Tm
 tmDisplay = display
   [ #Literal ~> \n -> (n :: D)                          -- literal number
+  , #BTrue   ~= "true"                               -- boolean true
+  , #BFalse  ~= "false"                              -- boolean false
   , #Var     ~> \x -> (x :: D)                          -- variable
+  , #Plus   ~> \(e1, e2) -> parens (e1 <+> " + " <+> e2) -- (e₁ + e₂)
   , #Abs     ~> \bnd -> "λ" <+> bnd                     -- λx.e
   , #App     ~> \(e1, e2) -> parens (e1 <+> " " <+> e2) -- (e₁ e₂)
   , #Ann     ~> \(e, ty) -> parens (e <+> " : " <+> ty) -- (e : A)
@@ -157,6 +165,7 @@ derivePermute ''Env [''TyNom, ''Nom]
 
 deriveLogicType ''Ty
   [ 'TInt    TH.~> "tint"
+  , 'TBool   TH.~> "tbool"
   , 'TTop    TH.~> "ttop"
   , 'TBot    TH.~> "tbot"
   , 'TVar    TH.~> "tvar"
@@ -166,8 +175,11 @@ deriveLogicType ''Ty
 
 deriveLogicType ''Tm
   [ 'Literal TH.~> "lit"
+  , 'BTrue   TH.~> "true"
+  , 'BFalse  TH.~> "false"
   , 'Var     TH.~> "var"
   , 'Abs     TH.~> "lam"
+  , 'Plus    TH.~> "plus"
   , 'App     TH.~> "app"
   , 'Ann     TH.~> "ann"
   , 'TAbs    TH.~> "tlam"
