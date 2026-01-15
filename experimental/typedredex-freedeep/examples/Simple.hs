@@ -10,35 +10,7 @@ module Main where
 import qualified TypedRedex.DSL as R
 import TypedRedex.DSL
 import TypedRedex.Interp.Typeset
-
---------------------------------------------------------------------------------
--- Syntax: Natural numbers
---------------------------------------------------------------------------------
-
--- | Natural numbers
-data Nat = Z | S Nat
-  deriving (Eq, Show)
-
-instance Repr Nat where
-  -- Reified representation
-  data Reified Nat = RZ | RS (Logic Nat)
-
-  project Z     = RZ
-  project (S n) = RS (Ground (project n))
-
-  reify RZ         = Just Z
-  reify (RS (Ground r)) = S <$> reify r
-  reify _          = Nothing
-
-  quote RZ     = ("Z", [])
-  quote (RS n) = ("S", [Field n])
-
--- Smart constructors
-zro :: Term '[] Nat
-zro = ground Z
-
-suc :: Term vs Nat -> Term vs Nat
-suc = lift1 (\n -> Ground (RS n))
+import Support.Nat
 
 --------------------------------------------------------------------------------
 -- Judgment: add(X, Y, Z) — X + Y = Z

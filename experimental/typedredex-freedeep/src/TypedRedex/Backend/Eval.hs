@@ -1,32 +1,302 @@
 -- | Eval interpreter: execute queries via miniKanren
 --
--- Placeholder: Translation defined, full execution not implemented.
+-- Translate rule ASTs into a Goal AST, then execute via the miniKanren backend.
 module TypedRedex.Backend.Eval
-  ( -- * Query execution (placeholder)
+  ( -- * Query execution
     eval
   , Query(..)
-  -- * Translation (placeholder)
+  , SomeJudgmentCall(..)
+  , query
+  , QueryM
+  , qfresh
+    -- * Translation
   , translate
+  , translateRuleClosed
   ) where
 
-import TypedRedex.Core.RuleF (Rule(..))
-import TypedRedex.Backend.Goal (Goal(..))
+import Control.Monad.State.Strict (State, evalState, get, put)
+import Data.Kind (Type)
+import Data.Maybe (mapMaybe)
+import Data.Set (Set)
+import qualified Data.Set as S
+import Data.Typeable (Typeable)
 
--- | A query to execute
+import TypedRedex.Backend.Goal
+  ( Goal(..)
+  , VarId(..)
+  , Subst(..)
+  , emptySubst
+  , exec
+  , applySubstLogic
+  , logicVar
+  )
+import TypedRedex.Core.IxFree (IxFree(..))
+import TypedRedex.Core.RuleF hiding (Goal)
+
+-- | A query to execute.
+-- | Existential wrapper for judgment calls.
+data SomeJudgmentCall where
+  SomeJudgmentCall :: JudgmentCall name modes vss ts -> SomeJudgmentCall
+
+-- | A query to execute.
 data Query a = Query
-  { queryJudgment :: String
-  , queryGoal     :: Goal
-  -- TODO: track output variables for result extraction
+  { queryGoal     :: Goal
+  , queryNextVar  :: Int
+  , queryExtract  :: Subst -> Maybe a
+  , queryCall     :: SomeJudgmentCall
   }
 
--- | Evaluate a query (placeholder)
---
--- Returns list of results. Currently returns empty list.
+-- | Evaluate a query.
 eval :: Query a -> [a]
-eval _q = []  -- TODO: execute and extract results
-  -- let substs = exec (queryGoal q) emptySubst
-  -- in map (extractResult q) substs
+eval q =
+  let startSubst = emptySubst { substNextVar = queryNextVar q }
+  in mapMaybe (queryExtract q) (exec (queryGoal q) startSubst)
 
--- | Translate a rule to a Goal (placeholder)
-translate :: Rule name ts -> Goal
-translate (Rule _name _body) = undefined  -- TODO: fold over RuleM
+--------------------------------------------------------------------------------
+-- Query builder
+--------------------------------------------------------------------------------
+
+-- | Query-building monad with fresh logic variables.
+newtype QueryM a = QueryM (State Int a)
+  deriving (Functor, Applicative, Monad)
+
+-- | Allocate a fresh query variable.
+qfresh :: forall a. (Repr a, Typeable a) => QueryM (Term '[] a)
+qfresh = QueryM $ do
+  i <- get
+  put (i + 1)
+  pure (Term (S.singleton i) (Var i))
+
+-- | Build a query from a judgment call and output spec.
+query :: forall out name modes vss ts.
+         (Extract out, CollectVars out)
+      => QueryM (JudgmentCall name modes vss ts, out)
+      -> Query (Out out)
+query qm =
+  let (result, nextVar) = runQueryState qm
+      (jc, outSpec) = result
+      varsInCall = varsTermList (jcArgs jc)
+      varsInOut  = collectVars outSpec
+      maxVar     = maxVarId (S.union varsInCall varsInOut)
+      nextVar'   = max nextVar (maxVar + 1)
+      goal       = translate jc
+      extractFn  = \s -> extractOut s outSpec
+  in Query
+      { queryGoal = goal
+      , queryNextVar = nextVar'
+      , queryExtract = extractFn
+      , queryCall = SomeJudgmentCall jc
+      }
+  where
+    runQueryState :: QueryM a -> (a, Int)
+    runQueryState (QueryM st) = evalState ((,) <$> st <*> get) 0
+
+--------------------------------------------------------------------------------
+-- Output extraction
+--------------------------------------------------------------------------------
+
+class Extract a where
+  type Out a :: Type
+  extractOut :: Subst -> a -> Maybe (Out a)
+
+instance (Repr a, Typeable a) => Extract (Term vs a) where
+  type Out (Term vs a) = a
+  extractOut s t = evalTerm s t
+
+instance (Extract a, Extract b) => Extract (a, b) where
+  type Out (a, b) = (Out a, Out b)
+  extractOut s (a, b) = (,) <$> extractOut s a <*> extractOut s b
+
+instance (Extract a, Extract b, Extract c) => Extract (a, b, c) where
+  type Out (a, b, c) = (Out a, Out b, Out c)
+  extractOut s (a, b, c) = (,,) <$> extractOut s a <*> extractOut s b <*> extractOut s c
+
+instance (Extract a, Extract b, Extract c, Extract d) => Extract (a, b, c, d) where
+  type Out (a, b, c, d) = (Out a, Out b, Out c, Out d)
+  extractOut s (a, b, c, d) =
+    (,,,) <$> extractOut s a <*> extractOut s b <*> extractOut s c <*> extractOut s d
+
+instance (Extract a, Extract b, Extract c, Extract d, Extract e) => Extract (a, b, c, d, e) where
+  type Out (a, b, c, d, e) = (Out a, Out b, Out c, Out d, Out e)
+  extractOut s (a, b, c, d, e) =
+    (,,,,) <$> extractOut s a <*> extractOut s b <*> extractOut s c <*> extractOut s d <*> extractOut s e
+
+evalTerm :: (Repr a, Typeable a) => Subst -> Term vs a -> Maybe a
+evalTerm s (Term _ l) =
+  case applySubstLogic s l of
+    Var _      -> Nothing
+    Ground r -> reify r
+
+--------------------------------------------------------------------------------
+-- Variable collection helpers
+--------------------------------------------------------------------------------
+
+class CollectVars a where
+  collectVars :: a -> Set Int
+
+instance CollectVars (Term vs a) where
+  collectVars = termVars
+
+instance (CollectVars a, CollectVars b) => CollectVars (a, b) where
+  collectVars (a, b) = S.union (collectVars a) (collectVars b)
+
+instance (CollectVars a, CollectVars b, CollectVars c) => CollectVars (a, b, c) where
+  collectVars (a, b, c) = S.unions [collectVars a, collectVars b, collectVars c]
+
+instance (CollectVars a, CollectVars b, CollectVars c, CollectVars d) => CollectVars (a, b, c, d) where
+  collectVars (a, b, c, d) = S.unions [collectVars a, collectVars b, collectVars c, collectVars d]
+
+instance (CollectVars a, CollectVars b, CollectVars c, CollectVars d, CollectVars e) => CollectVars (a, b, c, d, e) where
+  collectVars (a, b, c, d, e) =
+    S.unions [collectVars a, collectVars b, collectVars c, collectVars d, collectVars e]
+
+varsTermList :: TermList vss ts -> Set Int
+varsTermList TNil = S.empty
+varsTermList (t :> ts) = S.union (termVars t) (varsTermList ts)
+
+maxVarId :: Set Int -> Int
+maxVarId s
+  | S.null s = -1
+  | otherwise = S.foldl' max (-1) s
+
+--------------------------------------------------------------------------------
+-- Translation to Goal
+--------------------------------------------------------------------------------
+
+-- | Existential wrapper for term lists with any variable-set indices.
+data SomeTermList ts where
+  SomeTermList :: TermList vss ts -> SomeTermList ts
+
+-- | Translate a judgment call to a Goal.
+translate :: JudgmentCall name modes vss ts -> Goal
+translate jc =
+  disjGoals [translateRule (Just (SomeTermList (jcArgs jc))) rule | rule <- jcRules jc]
+
+translateRule :: Maybe (SomeTermList ts) -> Rule name ts -> Goal
+translateRule caller (Rule _name body) =
+  buildGoal caller body emptyState
+
+-- | Translate a rule without external caller arguments (used for negation).
+translateRuleClosed :: Rule name ts -> Goal
+translateRuleClosed = translateRule Nothing
+
+data DeferredAction
+  = PremA PremAction
+  | NegA Goal
+
+data PremAction = PremAction
+  { paReq  :: Set Int
+  , paProd :: Set Int
+  , paGoal :: Goal
+  }
+
+data InterpState = InterpState
+  { isAvailVars :: Set Int
+  , isDeferred  :: [DeferredAction]
+  , isHeadGoal  :: Maybe Goal
+  }
+
+emptyState :: InterpState
+emptyState = InterpState S.empty [] Nothing
+
+buildGoal :: forall ts s t a.
+             Maybe (SomeTermList ts)
+          -> IxFree (RuleF ts) s t a
+          -> InterpState
+          -> Goal
+buildGoal _ (Pure _) st = finalize st
+buildGoal caller (Bind op k) st = case op of
+
+  FreshF ->
+    Fresh $ \v ->
+      let term = Term (S.singleton (unVarId v)) (logicVar v)
+      in buildGoal caller (k term) st
+
+  ConclF jc ->
+    let (caller', headGoal) = resolveHead caller jc
+        st' = st { isAvailVars = jcReqVars jc, isHeadGoal = Just headGoal }
+    in buildGoal caller' (k ()) st'
+
+  PremF jc ->
+    let action = PremA $ PremAction (jcReqVars jc) (jcProdVars jc) (translate jc)
+        st' = st { isDeferred = action : isDeferred st }
+    in buildGoal caller (k ()) st'
+
+  NegF innerRule ->
+    let action = NegA (translateRule Nothing innerRule)
+        st' = st { isDeferred = action : isDeferred st }
+    in buildGoal caller (k ()) st'
+
+  EqF t1 t2 ->
+    let vars = S.union (termVars t1) (termVars t2)
+        action = PremA $ PremAction vars S.empty (Unify (termVal t1) (termVal t2))
+        st' = st { isDeferred = action : isDeferred st }
+    in buildGoal caller (k ()) st'
+
+  NEqF t1 t2 ->
+    let vars = S.union (termVars t1) (termVars t2)
+        action = PremA $ PremAction vars S.empty (Disunify (termVal t1) (termVal t2))
+        st' = st { isDeferred = action : isDeferred st }
+    in buildGoal caller (k ()) st'
+
+resolveHead :: Maybe (SomeTermList ts)
+            -> JudgmentCall name modes vss ts
+            -> (Maybe (SomeTermList ts), Goal)
+resolveHead caller jc =
+  case caller of
+    Nothing ->
+      (Just (SomeTermList (jcArgs jc)), Success)
+    Just (SomeTermList args) ->
+      (caller, unifyTermLists (jcArgs jc) args)
+
+unifyTermLists :: TermList vss1 ts -> TermList vss2 ts -> Goal
+unifyTermLists TNil TNil = Success
+unifyTermLists (x :> xs) (y :> ys) =
+  Conj (Unify (termVal x) (termVal y)) (unifyTermLists xs ys)
+
+finalize :: InterpState -> Goal
+finalize st =
+  case isHeadGoal st of
+    Nothing -> Failure
+    Just headGoal ->
+      let deferred = reverse (isDeferred st)
+          (prems, negs) = partitionDeferred deferred
+          premGoal = schedulePremises (isAvailVars st) prems
+          negGoal = conjGoals (map (Neg . extractNeg) negs)
+      in conjGoals [headGoal, premGoal, negGoal]
+  where
+    extractNeg (NegA g) = g
+    extractNeg _ = Success
+
+partitionDeferred :: [DeferredAction] -> ([PremAction], [DeferredAction])
+partitionDeferred = foldr go ([], [])
+  where
+    go (PremA p) (ps, ns) = (p:ps, ns)
+    go n@(NegA _) (ps, ns) = (ps, n:ns)
+
+schedulePremises :: Set Int -> [PremAction] -> Goal
+schedulePremises _ [] = Success
+schedulePremises avail prems =
+  case selectReady avail prems of
+    Nothing -> Failure
+    Just (ready, rest) ->
+      Conj (paGoal ready) (schedulePremises (S.union avail (paProd ready)) rest)
+
+selectReady :: Set Int -> [PremAction] -> Maybe (PremAction, [PremAction])
+selectReady _ [] = Nothing
+selectReady avail (p:ps)
+  | paReq p `S.isSubsetOf` avail = Just (p, ps)
+  | otherwise = case selectReady avail ps of
+      Nothing -> Nothing
+      Just (ready, rest) -> Just (ready, p : rest)
+
+conjGoals :: [Goal] -> Goal
+conjGoals = foldr Conj Success
+
+disjGoals :: [Goal] -> Goal
+disjGoals [] = Failure
+disjGoals [g] = g
+disjGoals (g:gs) = Disj g (disjGoals gs)
+
+unVarId :: VarId a -> Int
+unVarId (VarId i) = i

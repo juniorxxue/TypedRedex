@@ -62,6 +62,13 @@ class Typeable a => Repr a where
   -- | Quote for display: constructor name and children
   quote :: Reified a -> (String, [Field])
 
+  -- | Map over logic children inside a reified value.
+  --
+  -- Needed for applying substitutions during evaluation.
+  mapReified :: (forall t. (Repr t, Typeable t) => Logic t -> Logic t)
+             -> Reified a
+             -> Reified a
+
 --------------------------------------------------------------------------------
 -- Smart constructors
 --------------------------------------------------------------------------------

@@ -18,6 +18,7 @@ library
         TypedRedex.Core.Schedule
         TypedRedex.Core.RuleF
         TypedRedex.Interp.Typeset
+        TypedRedex.Interp.Trace
         TypedRedex.Backend.Goal
         TypedRedex.Backend.Eval
     build-depends:
@@ -48,6 +49,29 @@ library
 executable example-simple
     import:           warnings
     main-is:          Simple.hs
+    other-modules:
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex-freedeep
+    hs-source-dirs:   examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+        TypeApplications
+        QualifiedDo
+
+executable example-tests
+    import:           warnings
+    main-is:          Tests.hs
+    other-modules:
+        Example.Stlc
+        Example.Pcf
+        Example.Poly
+        Support.Nat
     build-depends:
         base >= 4.17 && < 5,
         typedredex-freedeep
