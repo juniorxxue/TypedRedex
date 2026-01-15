@@ -1,8 +1,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE QualifiedDo #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Simple example: Natural numbers with addition
@@ -24,14 +22,14 @@ add = judgment $ do
   rules
     [ -- add(Z, Y, Y)
       rule "add-zero" $ R.do
-        y <- R.freshVar @Nat
+        y <- R.fresh
         R.concl $ add # (zro, y, y)
 
     , -- add(S(X), Y, S(Z)) :- add(X, Y, Z)
       rule "add-succ" $ R.do
-        x <- R.freshVar @Nat
-        y <- R.freshVar @Nat
-        z <- R.freshVar @Nat
+        x <- R.fresh
+        y <- R.fresh
+        z <- R.fresh
         R.concl $ add # (suc x, y, suc z)
         R.prem  $ add # (x, y, z)
     ]

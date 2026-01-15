@@ -23,13 +23,10 @@ import Data.Kind (Type)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Typeable (Typeable)
-import GHC.TypeLits (Nat)
-
--- | A term with type-level variable tracking
+-- | A term with runtime variable tracking.
 --
--- @vs@ tracks which fresh variables appear in this term (for scheduling)
--- @a@ is the Haskell type this term represents
-data Term (vs :: [Nat]) (a :: Type) = Term
+-- @a@ is the Haskell type this term represents.
+data Term (a :: Type) = Term
   { termVars :: Set Int    -- ^ Runtime variable IDs (for mode checking)
   , termVal  :: Logic a    -- ^ The symbolic value
   }
@@ -74,24 +71,24 @@ class Typeable a => Repr a where
 --------------------------------------------------------------------------------
 
 -- | Embed a ground Haskell value as a Term
-ground :: Repr a => a -> Term '[] a
+ground :: Repr a => a -> Term a
 ground x = Term S.empty (Ground (project x))
 
 -- | Create a variable term (used internally by fresh)
-var :: Int -> Term '[n] a
+var :: Int -> Term a
 var i = Term (S.singleton i) (Var i)
 
 -- | Lift a unary constructor
-lift1 :: (Logic a -> Logic b) -> Term vs a -> Term vs b
+lift1 :: (Logic a -> Logic b) -> Term a -> Term b
 lift1 f (Term vars val) = Term vars (f val)
 
 -- | Lift a binary constructor
-lift2 :: (Logic a -> Logic b -> Logic c) -> Term vs1 a -> Term vs2 b -> Term vs3 c
+lift2 :: (Logic a -> Logic b -> Logic c) -> Term a -> Term b -> Term c
 lift2 f (Term v1 a) (Term v2 b) = Term (S.union v1 v2) (f a b)
 
 -- | Lift a ternary constructor
 lift3 :: (Logic a -> Logic b -> Logic c -> Logic d)
-      -> Term vs1 a -> Term vs2 b -> Term vs3 c -> Term vs4 d
+      -> Term a -> Term b -> Term c -> Term d
 lift3 f (Term v1 a) (Term v2 b) (Term v3 c) = Term (S.unions [v1, v2, v3]) (f a b c)
 
 --------------------------------------------------------------------------------

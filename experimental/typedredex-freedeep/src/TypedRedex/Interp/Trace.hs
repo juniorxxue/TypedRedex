@@ -24,7 +24,7 @@ import TypedRedex.Backend.Goal
   , applySubstLogic
   )
 import TypedRedex.Core.IxFree (IxFree(..))
-import TypedRedex.Core.RuleF hiding (Goal)
+import TypedRedex.Core.RuleF
 import TypedRedex.Pretty
 
 --------------------------------------------------------------------------------
@@ -121,7 +121,7 @@ trace q =
          ]
 
 traceJudgmentCall
-  :: JudgmentCall name modes vss ts
+  :: JudgmentCall name modes ts
   -> Subst
   -> [(Subst, Derivation)]
 traceJudgmentCall jc s =
@@ -137,7 +137,7 @@ data Constraint where
   NegC :: String -> Constraint
 
 data PremKind where
-  PremCall       :: JudgmentCall name modes vss ts -> PremKind
+  PremCall       :: JudgmentCall name modes ts -> PremKind
   PremConstraint :: Constraint -> Goal -> PremKind
 
 data PremAction = PremAction
@@ -159,12 +159,12 @@ emptyCollect :: CollectState
 emptyCollect = CollectState S.empty [] [] Nothing
 
 data SomeTermList ts where
-  SomeTermList :: TermList vss ts -> SomeTermList ts
+  SomeTermList :: TermList ts -> SomeTermList ts
 
 collectRule
-  :: forall ts s t a.
+  :: forall ts a.
      Maybe (SomeTermList ts)
-  -> IxFree (RuleF ts) s t a
+  -> RuleM ts a
   -> CollectState
   -> State Subst CollectState
 collectRule _ (Pure _) st = pure st
@@ -202,7 +202,7 @@ collectRule caller (Bind op k) st = case op of
         st' = st { csPrems = action : csPrems st }
     in collectRule caller (k ()) st'
   where
-    freshTerm :: forall n a'. (Repr a', Typeable a') => State Subst (Term '[n] a')
+    freshTerm :: forall a'. (Repr a', Typeable a') => State Subst (Term a')
     freshTerm = do
       s <- get
       let i = substNextVar s
@@ -211,7 +211,7 @@ collectRule caller (Bind op k) st = case op of
 
 resolveHead
   :: Maybe (SomeTermList ts)
-  -> JudgmentCall name modes vss ts
+  -> JudgmentCall name modes ts
   -> (Maybe (SomeTermList ts), Goal)
 resolveHead caller jc =
   case caller of
@@ -220,7 +220,7 @@ resolveHead caller jc =
     Just (SomeTermList args) ->
       (caller, unifyTermLists (jcArgs jc) args)
 
-unifyTermLists :: TermList vss1 ts -> TermList vss2 ts -> Goal
+unifyTermLists :: TermList ts -> TermList ts -> Goal
 unifyTermLists TNil TNil = Success
 unifyTermLists (x :> xs) (y :> ys) =
   Conj (Unify (termVal x) (termVal y)) (unifyTermLists xs ys)
@@ -230,7 +230,7 @@ unifyTermLists (x :> xs) (y :> ys) =
 --------------------------------------------------------------------------------
 
 traceRule
-  :: JudgmentCall name modes vss ts
+  :: JudgmentCall name modes ts
   -> Rule name ts
   -> Subst
   -> [(Subst, Derivation)]
@@ -302,7 +302,7 @@ applySubstConstraint _ (NegC name) = NegC name
 applySubstPrettyTerm :: Subst -> PrettyTerm -> PrettyTerm
 applySubstPrettyTerm s (PrettyTerm l) = PrettyTerm (applySubstLogic s l)
 
-buildConclusion :: JudgmentCall name modes vss ts -> Subst -> DerivConclusion
+buildConclusion :: JudgmentCall name modes ts -> Subst -> DerivConclusion
 buildConclusion jc s =
   DerivConclusion
     { dcName = jcName jc

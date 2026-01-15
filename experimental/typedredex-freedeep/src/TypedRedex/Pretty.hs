@@ -180,7 +180,7 @@ prettyLogic :: forall a. Pretty a => Logic a -> PrettyM Doc
 prettyLogic (Var i) = prettyVar @a i
 prettyLogic (Ground r) = prettyReified r
 
-prettyTerm :: forall a vs. Pretty a => Term vs a -> PrettyM Doc
+prettyTerm :: forall a. Pretty a => Term a -> PrettyM Doc
 prettyTerm (Term _ l) = prettyLogic l
 
 prettyGround :: forall a. Pretty a => a -> Doc

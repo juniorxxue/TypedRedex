@@ -1,7 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE QualifiedDo #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Example.Poly
@@ -141,37 +139,37 @@ instance Repr Ctx where
 -- Smart constructors
 --------------------------------------------------------------------------------
 
-tint :: Term '[] Ty
+tint :: Term Ty
 tint = ground TyInt
 
-tvar :: Term vs Nat -> Term vs Ty
+tvar :: Term Nat -> Term Ty
 tvar = lift1 (\a -> Ground (RTVar a))
 
-tarr :: Term vs1 Ty -> Term vs2 Ty -> Term (Union vs1 vs2) Ty
+tarr :: Term Ty -> Term Ty -> Term Ty
 tarr = lift2 (\a b -> Ground (RTArr a b))
 
-tforall :: Term vs1 Nat -> Term vs2 Ty -> Term (Union vs1 vs2) Ty
+tforall :: Term Nat -> Term Ty -> Term Ty
 tforall = lift2 (\a body -> Ground (RTForall a body))
 
-var :: Term vs Nat -> Term vs Tm
+var :: Term Nat -> Term Tm
 var = lift1 (\x -> Ground (RVar x))
 
-lam :: Term vs1 Nat -> Term vs2 Ty -> Term vs3 Tm -> Term (Union vs1 (Union vs2 vs3)) Tm
+lam :: Term Nat -> Term Ty -> Term Tm -> Term Tm
 lam = lift3 (\x ty body -> Ground (RLam x ty body))
 
-app :: Term vs1 Tm -> Term vs2 Tm -> Term (Union vs1 vs2) Tm
+app :: Term Tm -> Term Tm -> Term Tm
 app = lift2 (\t1 t2 -> Ground (RApp t1 t2))
 
-tlam :: Term vs1 Nat -> Term vs2 Tm -> Term (Union vs1 vs2) Tm
+tlam :: Term Nat -> Term Tm -> Term Tm
 tlam = lift2 (\a body -> Ground (RTLam a body))
 
-tapp :: Term vs1 Tm -> Term vs2 Ty -> Term (Union vs1 vs2) Tm
+tapp :: Term Tm -> Term Ty -> Term Tm
 tapp = lift2 (\t ty -> Ground (RTApp t ty))
 
-cempty :: Term '[] Ctx
+cempty :: Term Ctx
 cempty = ground CEmpty
 
-cbind :: Term vs1 Nat -> Term vs2 Ty -> Term vs3 Ctx -> Term (Union vs1 (Union vs2 vs3)) Ctx
+cbind :: Term Nat -> Term Ty -> Term Ctx -> Term Ctx
 cbind = lift3 (\x ty ctx -> Ground (RBind x ty ctx))
 
 --------------------------------------------------------------------------------
@@ -181,17 +179,17 @@ cbind = lift3 (\x ty ctx -> Ground (RBind x ty ctx))
 lookupCtx :: Judgment "lookup" '[I, I, O] '[Ctx, Nat, Ty]
 lookupCtx = judgment
   [ rule "lookup-here" $ R.do
-      x <- R.freshVar @Nat
-      ty <- R.freshVar @Ty
-      ctx <- R.freshVar @Ctx
+      x <- R.fresh
+      ty <- R.fresh
+      ctx <- R.fresh
       R.concl $ lookupCtx # (cbind x ty ctx, x, ty)
 
   , rule "lookup-there" $ R.do
-      x <- R.freshVar @Nat
-      y <- R.freshVar @Nat
-      ty <- R.freshVar @Ty
-      tyOut <- R.freshVar @Ty
-      ctx <- R.freshVar @Ctx
+      x <- R.fresh
+      y <- R.fresh
+      ty <- R.fresh
+      tyOut <- R.fresh
+      ctx <- R.fresh
       R.concl $ lookupCtx # (cbind y ty ctx, x, tyOut)
       R.prem  $ lookupCtx # (ctx, x, tyOut)
       x =/= y
@@ -200,45 +198,45 @@ lookupCtx = judgment
 tySubst :: Judgment "tySubst" '[I, I, I, O] '[Ty, Nat, Ty, Ty]
 tySubst = judgment
   [ rule "subst-int" $ R.do
-      a <- R.freshVar @Nat
-      ty <- R.freshVar @Ty
+      a <- R.fresh
+      ty <- R.fresh
       R.concl $ tySubst # (tint, a, ty, tint)
 
   , rule "subst-var-hit" $ R.do
-      a <- R.freshVar @Nat
-      ty <- R.freshVar @Ty
+      a <- R.fresh
+      ty <- R.fresh
       R.concl $ tySubst # (tvar a, a, ty, ty)
 
   , rule "subst-var-miss" $ R.do
-      a <- R.freshVar @Nat
-      b <- R.freshVar @Nat
-      ty <- R.freshVar @Ty
+      a <- R.fresh
+      b <- R.fresh
+      ty <- R.fresh
       R.concl $ tySubst # (tvar b, a, ty, tvar b)
       a =/= b
 
   , rule "subst-arr" $ R.do
-      t1 <- R.freshVar @Ty
-      t2 <- R.freshVar @Ty
-      a <- R.freshVar @Nat
-      ty <- R.freshVar @Ty
-      r1 <- R.freshVar @Ty
-      r2 <- R.freshVar @Ty
+      t1 <- R.fresh
+      t2 <- R.fresh
+      a <- R.fresh
+      ty <- R.fresh
+      r1 <- R.fresh
+      r2 <- R.fresh
       R.concl $ tySubst # (tarr t1 t2, a, ty, tarr r1 r2)
       R.prem  $ tySubst # (t1, a, ty, r1)
       R.prem  $ tySubst # (t2, a, ty, r2)
 
   , rule "subst-forall-shadow" $ R.do
-      a <- R.freshVar @Nat
-      body <- R.freshVar @Ty
-      ty <- R.freshVar @Ty
+      a <- R.fresh
+      body <- R.fresh
+      ty <- R.fresh
       R.concl $ tySubst # (tforall a body, a, ty, tforall a body)
 
   , rule "subst-forall" $ R.do
-      a <- R.freshVar @Nat
-      b <- R.freshVar @Nat
-      body <- R.freshVar @Ty
-      ty <- R.freshVar @Ty
-      body' <- R.freshVar @Ty
+      a <- R.fresh
+      b <- R.fresh
+      body <- R.fresh
+      ty <- R.fresh
+      body' <- R.fresh
       R.concl $ tySubst # (tforall b body, a, ty, tforall b body')
       R.prem  $ tySubst # (body, a, ty, body')
       a =/= b
@@ -247,46 +245,46 @@ tySubst = judgment
 infer :: Judgment "infer" '[I, I, O] '[Ctx, Tm, Ty]
 infer = judgment
   [ rule "infer-var" $ R.do
-      ctx <- R.freshVar @Ctx
-      x <- R.freshVar @Nat
-      ty <- R.freshVar @Ty
+      ctx <- R.fresh
+      x <- R.fresh
+      ty <- R.fresh
       R.concl $ infer # (ctx, var x, ty)
       R.prem  $ lookupCtx # (ctx, x, ty)
 
   , rule "infer-lam" $ R.do
-      ctx <- R.freshVar @Ctx
-      x <- R.freshVar @Nat
-      argTy <- R.freshVar @Ty
-      body <- R.freshVar @Tm
-      bodyTy <- R.freshVar @Ty
+      ctx <- R.fresh
+      x <- R.fresh
+      argTy <- R.fresh
+      body <- R.fresh
+      bodyTy <- R.fresh
       R.concl $ infer # (ctx, lam x argTy body, tarr argTy bodyTy)
       R.prem  $ infer # (cbind x argTy ctx, body, bodyTy)
 
   , rule "infer-app" $ R.do
-      ctx <- R.freshVar @Ctx
-      fun <- R.freshVar @Tm
-      arg <- R.freshVar @Tm
-      argTy <- R.freshVar @Ty
-      resTy <- R.freshVar @Ty
+      ctx <- R.fresh
+      fun <- R.fresh
+      arg <- R.fresh
+      argTy <- R.fresh
+      resTy <- R.fresh
       R.concl $ infer # (ctx, app fun arg, resTy)
       R.prem  $ infer # (ctx, fun, tarr argTy resTy)
       R.prem  $ infer # (ctx, arg, argTy)
 
   , rule "infer-tlam" $ R.do
-      ctx <- R.freshVar @Ctx
-      a <- R.freshVar @Nat
-      body <- R.freshVar @Tm
-      bodyTy <- R.freshVar @Ty
+      ctx <- R.fresh
+      a <- R.fresh
+      body <- R.fresh
+      bodyTy <- R.fresh
       R.concl $ infer # (ctx, tlam a body, tforall a bodyTy)
       R.prem  $ infer # (ctx, body, bodyTy)
 
   , rule "infer-tapp" $ R.do
-      ctx <- R.freshVar @Ctx
-      tm <- R.freshVar @Tm
-      a <- R.freshVar @Nat
-      bodyTy <- R.freshVar @Ty
-      argTy <- R.freshVar @Ty
-      resTy <- R.freshVar @Ty
+      ctx <- R.fresh
+      tm <- R.fresh
+      a <- R.fresh
+      bodyTy <- R.fresh
+      argTy <- R.fresh
+      resTy <- R.fresh
       R.concl $ infer # (ctx, tapp tm argTy, resTy)
       R.prem  $ infer # (ctx, tm, tforall a bodyTy)
       R.prem  $ tySubst # (bodyTy, a, argTy, resTy)
@@ -296,19 +294,19 @@ infer = judgment
 -- Sample terms
 --------------------------------------------------------------------------------
 
-polyId :: Term '[] Tm
+polyId :: Term Tm
 polyId =
   let a = zro
       x = suc zro
   in tlam a (lam x (tvar a) (var x))
 
-polyIdTy :: Term '[] Ty
+polyIdTy :: Term Ty
 polyIdTy =
   let a = zro
   in tforall a (tarr (tvar a) (tvar a))
 
-polyIdApp :: Term '[] Tm
+polyIdApp :: Term Tm
 polyIdApp = tapp polyId tint
 
-polyIdAppTy :: Term '[] Ty
+polyIdAppTy :: Term Ty
 polyIdAppTy = tarr tint tint

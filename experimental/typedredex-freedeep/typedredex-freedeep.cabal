@@ -25,11 +25,9 @@ library
     build-depends:
         base >= 4.17 && < 5,
         containers,
-        mtl,
-        ghc-typelits-natnormalise
+        mtl
     hs-source-dirs:   src
     default-language: GHC2021
-    ghc-options: -fplugin GHC.TypeLits.Normalise
     default-extensions:
         DataKinds
         TypeFamilies
@@ -62,7 +60,6 @@ executable example-simple
         TypeFamilies
         GADTs
         TypeOperators
-        TypeApplications
         QualifiedDo
 
 executable example-tests
@@ -83,5 +80,4 @@ executable example-tests
         TypeFamilies
         GADTs
         TypeOperators
-        TypeApplications
         QualifiedDo

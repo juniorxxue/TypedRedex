@@ -1,6 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeFamilies #-}
-
 module Support.Nat
   ( Nat(..)
   , zro
@@ -39,8 +36,8 @@ instance Pretty Nat where
     pure (text "S(" <+> d <+> text ")")
 
 -- | Smart constructors.
-zro :: Term '[] Nat
+zro :: Term Nat
 zro = ground Z
 
-suc :: Term vs Nat -> Term vs Nat
+suc :: Term Nat -> Term Nat
 suc = lift1 (\n -> Ground (RS n))

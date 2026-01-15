@@ -1,7 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE QualifiedDo #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Example.Stlc
@@ -115,28 +113,28 @@ instance Repr Ctx where
 -- Smart constructors
 --------------------------------------------------------------------------------
 
-tunit :: Term '[] Ty
+tunit :: Term Ty
 tunit = ground TyUnit
 
-tarr :: Term vs1 Ty -> Term vs2 Ty -> Term (Union vs1 vs2) Ty
+tarr :: Term Ty -> Term Ty -> Term Ty
 tarr = lift2 (\a b -> Ground (RTArr a b))
 
-var :: Term vs Nat -> Term vs Tm
+var :: Term Nat -> Term Tm
 var = lift1 (\n -> Ground (RVar n))
 
-lam :: Term vs1 Ty -> Term vs2 Tm -> Term (Union vs1 vs2) Tm
+lam :: Term Ty -> Term Tm -> Term Tm
 lam = lift2 (\ty body -> Ground (RLam ty body))
 
-app :: Term vs1 Tm -> Term vs2 Tm -> Term (Union vs1 vs2) Tm
+app :: Term Tm -> Term Tm -> Term Tm
 app = lift2 (\t1 t2 -> Ground (RApp t1 t2))
 
-unit :: Term '[] Tm
+unit :: Term Tm
 unit = ground TmUnit
 
-ctxEmpty :: Term '[] Ctx
+ctxEmpty :: Term Ctx
 ctxEmpty = ground CEmpty
 
-ctxCons :: Term vs1 Ty -> Term vs2 Ctx -> Term (Union vs1 vs2) Ctx
+ctxCons :: Term Ty -> Term Ctx -> Term Ctx
 ctxCons = lift2 (\ty ctx -> Ground (RCons ty ctx))
 
 --------------------------------------------------------------------------------
@@ -146,15 +144,15 @@ ctxCons = lift2 (\ty ctx -> Ground (RCons ty ctx))
 lookupCtx :: Judgment "lookup" '[I, I, O] '[Ctx, Nat, Ty]
 lookupCtx = judgment
   [ rule "lookup-here" $ R.do
-      ty <- R.freshVar @Ty
-      ctx <- R.freshVar @Ctx
+      ty <- R.fresh
+      ctx <- R.fresh
       R.concl $ lookupCtx # (ctxCons ty ctx, zro, ty)
 
   , rule "lookup-there" $ R.do
-      ty <- R.freshVar @Ty
-      ctx <- R.freshVar @Ctx
-      n <- R.freshVar @Nat
-      tyOut <- R.freshVar @Ty
+      ty <- R.fresh
+      ctx <- R.fresh
+      n <- R.fresh
+      tyOut <- R.fresh
       R.concl $ lookupCtx # (ctxCons ty ctx, suc n, tyOut)
       R.prem  $ lookupCtx # (ctx, n, tyOut)
   ]
@@ -162,30 +160,30 @@ lookupCtx = judgment
 infer :: Judgment "infer" '[I, I, O] '[Ctx, Tm, Ty]
 infer = judgment
   [ rule "infer-var" $ R.do
-      ctx <- R.freshVar @Ctx
-      x <- R.freshVar @Nat
-      ty <- R.freshVar @Ty
+      ctx <- R.fresh
+      x <- R.fresh
+      ty <- R.fresh
       R.concl $ infer # (ctx, var x, ty)
       R.prem  $ lookupCtx # (ctx, x, ty)
 
   , rule "infer-unit" $ R.do
-      ctx <- R.freshVar @Ctx
+      ctx <- R.fresh
       R.concl $ infer # (ctx, unit, tunit)
 
   , rule "infer-lam" $ R.do
-      ctx <- R.freshVar @Ctx
-      argTy <- R.freshVar @Ty
-      body <- R.freshVar @Tm
-      bodyTy <- R.freshVar @Ty
+      ctx <- R.fresh
+      argTy <- R.fresh
+      body <- R.fresh
+      bodyTy <- R.fresh
       R.concl $ infer # (ctx, lam argTy body, tarr argTy bodyTy)
       R.prem  $ infer # (ctxCons argTy ctx, body, bodyTy)
 
   , rule "infer-app" $ R.do
-      ctx <- R.freshVar @Ctx
-      fun <- R.freshVar @Tm
-      arg <- R.freshVar @Tm
-      argTy <- R.freshVar @Ty
-      resTy <- R.freshVar @Ty
+      ctx <- R.fresh
+      fun <- R.fresh
+      arg <- R.fresh
+      argTy <- R.fresh
+      resTy <- R.fresh
       R.concl $ infer # (ctx, app fun arg, resTy)
       R.prem  $ infer # (ctx, fun, tarr argTy resTy)
       R.prem  $ infer # (ctx, arg, argTy)
@@ -195,8 +193,8 @@ infer = judgment
 -- Sample terms
 --------------------------------------------------------------------------------
 
-idUnit :: Term '[] Tm
+idUnit :: Term Tm
 idUnit = lam tunit (var zro)
 
-appIdUnit :: Term '[] Tm
+appIdUnit :: Term Tm
 appIdUnit = app idUnit unit

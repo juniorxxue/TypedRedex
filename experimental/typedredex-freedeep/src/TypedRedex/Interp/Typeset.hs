@@ -18,7 +18,7 @@ import TypedRedex.Pretty
 --------------------------------------------------------------------------------
 
 -- | Typeset all rules for a judgment call
-typeset :: JudgmentCall name modes vss ts -> String
+typeset :: JudgmentCall name modes ts -> String
 typeset jc = unlines
   [ "Judgment: " ++ jcName jc
   , replicate 40 '-'
@@ -48,11 +48,11 @@ typesetRule (Rule ruleLabel body) =
 --------------------------------------------------------------------------------
 
 data Premise where
-  Premise :: JudgmentCall name modes vss ts -> Premise
+  Premise :: JudgmentCall name modes ts -> Premise
 
 data Constraint where
-  EqC  :: Pretty a => Term vs1 a -> Term vs2 a -> Constraint
-  NeqC :: Pretty a => Term vs1 a -> Term vs2 a -> Constraint
+  EqC  :: Pretty a => Term a -> Term a -> Constraint
+  NeqC :: Pretty a => Term a -> Term a -> Constraint
   NegC :: String -> Constraint
 
 data Extracted = Extracted
@@ -65,12 +65,12 @@ data Extracted = Extracted
 emptyExtracted :: Extracted
 emptyExtracted = Extracted [] Nothing [] 0
 
-extractRule :: RuleM ts s t a -> ([Premise], Premise, [Constraint])
+extractRule :: RuleM ts a -> ([Premise], Premise, [Constraint])
 extractRule body =
   let ex = go body emptyExtracted
   in (exPremises ex, maybe (Premise (error "missing conclusion")) id (exConclusion ex), exConstraints ex)
   where
-    go :: RuleM ts s' t' a -> Extracted -> Extracted
+    go :: RuleM ts a -> Extracted -> Extracted
     go (Pure _) ex = ex
     go (Bind op k) ex = case op of
       FreshF ->
@@ -102,7 +102,7 @@ formatNegRule (Rule ruleLabel _) = ruleLabel ++ "..."
 -- Term list display
 --------------------------------------------------------------------------------
 
-typesetTermList :: PrettyList ts => TermList vss ts -> String
+typesetTermList :: PrettyList ts => TermList ts -> String
 typesetTermList tl =
   let (docs, _) = runPrettyWith emptyPrettyCtx (renderTermList tl)
   in renderDoc (commaSep docs)
@@ -153,5 +153,5 @@ renderConstraint (NeqC t1 t2) = do
 renderConstraint (NegC name) =
   pure (Doc "not(" <> Doc name <> Doc ")")
 
-renderTermList :: PrettyList ts => TermList vss ts -> PrettyM [Doc]
+renderTermList :: PrettyList ts => TermList ts -> PrettyM [Doc]
 renderTermList tl = mapM prettyTermDoc (prettyTermList tl)

@@ -1,7 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE QualifiedDo #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Example.Pcf
@@ -74,28 +72,28 @@ instance Repr Tm where
 -- Smart constructors
 --------------------------------------------------------------------------------
 
-zero :: Term '[] Tm
+zero :: Term Tm
 zero = ground Zero
 
-succTm :: Term vs Tm -> Term vs Tm
+succTm :: Term Tm -> Term Tm
 succTm = lift1 (\t -> Ground (RSucc t))
 
-predTm :: Term vs Tm -> Term vs Tm
+predTm :: Term Tm -> Term Tm
 predTm = lift1 (\t -> Ground (RPred t))
 
-if0 :: Term vs1 Tm -> Term vs2 Tm -> Term vs3 Tm -> Term (Union vs1 (Union vs2 vs3)) Tm
+if0 :: Term Tm -> Term Tm -> Term Tm -> Term Tm
 if0 = lift3 (\t1 t2 t3 -> Ground (RIf0 t1 t2 t3))
 
-plus :: Term vs1 Tm -> Term vs2 Tm -> Term (Union vs1 vs2) Tm
+plus :: Term Tm -> Term Tm -> Term Tm
 plus = lift2 (\t1 t2 -> Ground (RPlus t1 t2))
 
-one :: Term '[] Tm
+one :: Term Tm
 one = succTm zero
 
-two :: Term '[] Tm
+two :: Term Tm
 two = succTm one
 
-three :: Term '[] Tm
+three :: Term Tm
 three = succTm two
 
 --------------------------------------------------------------------------------
@@ -105,13 +103,13 @@ three = succTm two
 add :: Judgment "add" '[I, I, O] '[Tm, Tm, Tm]
 add = judgment
   [ rule "add-zero" $ R.do
-      y <- R.freshVar @Tm
+      y <- R.fresh
       R.concl $ add # (zero, y, y)
 
   , rule "add-succ" $ R.do
-      x <- R.freshVar @Tm
-      y <- R.freshVar @Tm
-      z <- R.freshVar @Tm
+      x <- R.fresh
+      y <- R.fresh
+      z <- R.fresh
       R.concl $ add # (succTm x, y, succTm z)
       R.prem  $ add # (x, y, z)
   ]
@@ -122,8 +120,8 @@ evalP = judgment
       R.concl $ evalP # (zero, zero)
 
   , rule "eval-succ" $ R.do
-      t <- R.freshVar @Tm
-      v <- R.freshVar @Tm
+      t <- R.fresh
+      v <- R.fresh
       R.concl $ evalP # (succTm t, succTm v)
       R.prem  $ evalP # (t, v)
 
@@ -131,36 +129,36 @@ evalP = judgment
       R.concl $ evalP # (predTm zero, zero)
 
   , rule "eval-pred-succ" $ R.do
-      t <- R.freshVar @Tm
-      v <- R.freshVar @Tm
+      t <- R.fresh
+      v <- R.fresh
       R.concl $ evalP # (predTm (succTm t), v)
       R.prem  $ evalP # (t, v)
 
   , rule "eval-if0-zero" $ R.do
-      t <- R.freshVar @Tm
-      t1 <- R.freshVar @Tm
-      t2 <- R.freshVar @Tm
-      v <- R.freshVar @Tm
+      t <- R.fresh
+      t1 <- R.fresh
+      t2 <- R.fresh
+      v <- R.fresh
       R.concl $ evalP # (if0 t t1 t2, v)
       R.prem  $ evalP # (t, zero)
       R.prem  $ evalP # (t1, v)
 
   , rule "eval-if0-succ" $ R.do
-      t <- R.freshVar @Tm
-      n <- R.freshVar @Tm
-      t1 <- R.freshVar @Tm
-      t2 <- R.freshVar @Tm
-      v <- R.freshVar @Tm
+      t <- R.fresh
+      n <- R.fresh
+      t1 <- R.fresh
+      t2 <- R.fresh
+      v <- R.fresh
       R.concl $ evalP # (if0 t t1 t2, v)
       R.prem  $ evalP # (t, succTm n)
       R.prem  $ evalP # (t2, v)
 
   , rule "eval-plus" $ R.do
-      t1 <- R.freshVar @Tm
-      t2 <- R.freshVar @Tm
-      v1 <- R.freshVar @Tm
-      v2 <- R.freshVar @Tm
-      v <- R.freshVar @Tm
+      t1 <- R.fresh
+      t2 <- R.fresh
+      v1 <- R.fresh
+      v2 <- R.fresh
+      v <- R.fresh
       R.concl $ evalP # (plus t1 t2, v)
       R.prem  $ evalP # (t1, v1)
       R.prem  $ evalP # (t2, v2)

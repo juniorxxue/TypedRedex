@@ -31,12 +31,12 @@ import TypedRedex.Backend.Goal
   , logicVar
   )
 import TypedRedex.Core.IxFree (IxFree(..))
-import TypedRedex.Core.RuleF hiding (Goal)
+import TypedRedex.Core.RuleF
 
 -- | A query to execute.
 -- | Existential wrapper for judgment calls.
 data SomeJudgmentCall where
-  SomeJudgmentCall :: JudgmentCall name modes vss ts -> SomeJudgmentCall
+  SomeJudgmentCall :: JudgmentCall name modes ts -> SomeJudgmentCall
 
 -- | A query to execute.
 data Query a = Query
@@ -61,16 +61,16 @@ newtype QueryM a = QueryM (State Int a)
   deriving (Functor, Applicative, Monad)
 
 -- | Allocate a fresh query variable.
-qfresh :: forall a. (Repr a, Typeable a) => QueryM (Term '[] a)
+qfresh :: forall a. (Repr a, Typeable a) => QueryM (Term a)
 qfresh = QueryM $ do
   i <- get
   put (i + 1)
   pure (Term (S.singleton i) (Var i))
 
 -- | Build a query from a judgment call and output spec.
-query :: forall out name modes vss ts.
+query :: forall out name modes ts.
          (Extract out, CollectVars out)
-      => QueryM (JudgmentCall name modes vss ts, out)
+      => QueryM (JudgmentCall name modes ts, out)
       -> Query (Out out)
 query qm =
   let (result, nextVar) = runQueryState qm
@@ -99,8 +99,8 @@ class Extract a where
   type Out a :: Type
   extractOut :: Subst -> a -> Maybe (Out a)
 
-instance (Repr a, Typeable a) => Extract (Term vs a) where
-  type Out (Term vs a) = a
+instance (Repr a, Typeable a) => Extract (Term a) where
+  type Out (Term a) = a
   extractOut s t = evalTerm s t
 
 instance (Extract a, Extract b) => Extract (a, b) where
@@ -121,7 +121,7 @@ instance (Extract a, Extract b, Extract c, Extract d, Extract e) => Extract (a, 
   extractOut s (a, b, c, d, e) =
     (,,,,) <$> extractOut s a <*> extractOut s b <*> extractOut s c <*> extractOut s d <*> extractOut s e
 
-evalTerm :: (Repr a, Typeable a) => Subst -> Term vs a -> Maybe a
+evalTerm :: (Repr a, Typeable a) => Subst -> Term a -> Maybe a
 evalTerm s (Term _ l) =
   case applySubstLogic s l of
     Var _      -> Nothing
@@ -134,7 +134,7 @@ evalTerm s (Term _ l) =
 class CollectVars a where
   collectVars :: a -> Set Int
 
-instance CollectVars (Term vs a) where
+instance CollectVars (Term a) where
   collectVars = termVars
 
 instance (CollectVars a, CollectVars b) => CollectVars (a, b) where
@@ -150,7 +150,7 @@ instance (CollectVars a, CollectVars b, CollectVars c, CollectVars d, CollectVar
   collectVars (a, b, c, d, e) =
     S.unions [collectVars a, collectVars b, collectVars c, collectVars d, collectVars e]
 
-varsTermList :: TermList vss ts -> Set Int
+varsTermList :: TermList ts -> Set Int
 varsTermList TNil = S.empty
 varsTermList (t :> ts) = S.union (termVars t) (varsTermList ts)
 
@@ -165,10 +165,10 @@ maxVarId s
 
 -- | Existential wrapper for term lists with any variable-set indices.
 data SomeTermList ts where
-  SomeTermList :: TermList vss ts -> SomeTermList ts
+  SomeTermList :: TermList ts -> SomeTermList ts
 
 -- | Translate a judgment call to a Goal.
-translate :: JudgmentCall name modes vss ts -> Goal
+translate :: JudgmentCall name modes ts -> Goal
 translate jc =
   disjGoals [translateRule (Just (SomeTermList (jcArgs jc))) rule | rule <- jcRules jc]
 
@@ -199,9 +199,9 @@ data InterpState = InterpState
 emptyState :: InterpState
 emptyState = InterpState S.empty [] Nothing
 
-buildGoal :: forall ts s t a.
+buildGoal :: forall ts a.
              Maybe (SomeTermList ts)
-          -> IxFree (RuleF ts) s t a
+          -> RuleM ts a
           -> InterpState
           -> Goal
 buildGoal _ (Pure _) st = finalize st
@@ -240,7 +240,7 @@ buildGoal caller (Bind op k) st = case op of
     in buildGoal caller (k ()) st'
 
 resolveHead :: Maybe (SomeTermList ts)
-            -> JudgmentCall name modes vss ts
+            -> JudgmentCall name modes ts
             -> (Maybe (SomeTermList ts), Goal)
 resolveHead caller jc =
   case caller of
@@ -249,7 +249,7 @@ resolveHead caller jc =
     Just (SomeTermList args) ->
       (caller, unifyTermLists (jcArgs jc) args)
 
-unifyTermLists :: TermList vss1 ts -> TermList vss2 ts -> Goal
+unifyTermLists :: TermList ts -> TermList ts -> Goal
 unifyTermLists TNil TNil = Success
 unifyTermLists (x :> xs) (y :> ys) =
   Conj (Unify (termVal x) (termVal y)) (unifyTermLists xs ys)
