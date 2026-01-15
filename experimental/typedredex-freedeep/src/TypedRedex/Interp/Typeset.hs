@@ -10,8 +10,8 @@ module TypedRedex.Interp.Typeset
 import Data.List (intercalate)
 import qualified Data.Set as S
 import TypedRedex.Core.IxFree (IxFree(..))
-import TypedRedex.Core.Term
 import TypedRedex.Core.RuleF
+import TypedRedex.Pretty
 
 --------------------------------------------------------------------------------
 -- Main interface
@@ -29,30 +29,46 @@ typeset jc = unlines
 typesetRule :: Rule name ts -> String
 typesetRule (Rule ruleLabel body) =
   let (premises, conclusion, constraints) = extractRule body
+      ((premDocs, conclDoc, constraintDocs), _) =
+        runPrettyWith emptyPrettyCtx (renderExtracted premises conclusion constraints)
+      premLine = if null premDocs then "" else intercalate "    " (map renderDoc premDocs)
+      conclLine = renderDoc conclDoc
+      constraintLine =
+        case constraintDocs of
+          [] -> ""
+          cs -> "  [" ++ intercalate ", " (map renderDoc cs) ++ "]"
   in unlines
        [ "[" ++ ruleLabel ++ "]"
        , ""
-       , formatInferenceRule premises conclusion constraints
+       , formatInferenceRule premLine conclLine constraintLine
        ]
 
 --------------------------------------------------------------------------------
 -- Rule extraction
 --------------------------------------------------------------------------------
 
+data Premise where
+  Premise :: JudgmentCall name modes vss ts -> Premise
+
+data Constraint where
+  EqC  :: Pretty a => Term vs1 a -> Term vs2 a -> Constraint
+  NeqC :: Pretty a => Term vs1 a -> Term vs2 a -> Constraint
+  NegC :: String -> Constraint
+
 data Extracted = Extracted
-  { exPremises    :: [String]
-  , exConclusion  :: Maybe String
-  , exConstraints :: [String]
+  { exPremises    :: [Premise]
+  , exConclusion  :: Maybe Premise
+  , exConstraints :: [Constraint]
   , exNextVar     :: Int
   }
 
 emptyExtracted :: Extracted
 emptyExtracted = Extracted [] Nothing [] 0
 
-extractRule :: RuleM ts s t a -> ([String], String, [String])
+extractRule :: RuleM ts s t a -> ([Premise], Premise, [Constraint])
 extractRule body =
   let ex = go body emptyExtracted
-  in (exPremises ex, maybe "?" id (exConclusion ex), exConstraints ex)
+  in (exPremises ex, maybe (Premise (error "missing conclusion")) id (exConclusion ex), exConstraints ex)
   where
     go :: RuleM ts s' t' a -> Extracted -> Extracted
     go (Pure _) ex = ex
@@ -64,56 +80,78 @@ extractRule body =
         in go (k dummyTerm) ex'
 
       ConclF jc ->
-        let concl = jcName jc ++ "(" ++ typesetTermList (jcArgs jc) ++ ")"
-        in go (k ()) ex { exConclusion = Just concl }
+        go (k ()) ex { exConclusion = Just (Premise jc) }
 
       PremF jc ->
-        let prem = jcName jc ++ "(" ++ typesetTermList (jcArgs jc) ++ ")"
-        in go (k ()) ex { exPremises = exPremises ex ++ [prem] }
+        go (k ()) ex { exPremises = exPremises ex ++ [Premise jc] }
 
       NegF innerRule ->
-        let neg = "¬(" ++ formatNegRule innerRule ++ ")"
+        let neg = NegC (formatNegRule innerRule)
         in go (k ()) ex { exConstraints = exConstraints ex ++ [neg] }
 
       EqF t1 t2 ->
-        let eq = displayTerm t1 ++ " = " ++ displayTerm t2
-        in go (k ()) ex { exConstraints = exConstraints ex ++ [eq] }
+        go (k ()) ex { exConstraints = exConstraints ex ++ [EqC t1 t2] }
 
       NEqF t1 t2 ->
-        let neq = displayTerm t1 ++ " ≠ " ++ displayTerm t2
-        in go (k ()) ex { exConstraints = exConstraints ex ++ [neq] }
+        go (k ()) ex { exConstraints = exConstraints ex ++ [NeqC t1 t2] }
 
 formatNegRule :: Rule name ts -> String
 formatNegRule (Rule ruleLabel _) = ruleLabel ++ "..."
-
-displayTerm :: Repr a => Term vs a -> String
-displayTerm (Term _ val) = displayLogic val
 
 --------------------------------------------------------------------------------
 -- Term list display
 --------------------------------------------------------------------------------
 
-typesetTermList :: TermList vss ts -> String
-typesetTermList = intercalate ", " . go
-  where
-    go :: TermList vss ts -> [String]
-    go TNil = []
-    go (t :> ts) = displayTerm t : go ts
+typesetTermList :: PrettyList ts => TermList vss ts -> String
+typesetTermList tl =
+  let (docs, _) = runPrettyWith emptyPrettyCtx (renderTermList tl)
+  in renderDoc (commaSep docs)
 
 --------------------------------------------------------------------------------
 -- Formatting
 --------------------------------------------------------------------------------
 
-formatInferenceRule :: [String] -> String -> [String] -> String
-formatInferenceRule premises conclusion constraints =
-  let premLine = if null premises then "" else intercalate "    " premises
-      width = max (length conclusion) (length premLine)
-      bar = replicate width '─'
-      constraintLine = if null constraints
-                       then ""
-                       else "  [" ++ intercalate ", " constraints ++ "]"
+formatInferenceRule :: String -> String -> String -> String
+formatInferenceRule premLine conclusion constraintLine =
+  let width = max (length conclusion) (length premLine)
+      bar = replicate width '-'
   in unlines $ filter (not . null)
        [ premLine
        , bar ++ constraintLine
        , conclusion
        ]
+
+--------------------------------------------------------------------------------
+-- Rendering
+--------------------------------------------------------------------------------
+
+renderExtracted
+  :: [Premise]
+  -> Premise
+  -> [Constraint]
+  -> PrettyM ([Doc], Doc, [Doc])
+renderExtracted premises conclusion constraints = do
+  conclDoc <- renderPremise conclusion
+  premDocs <- mapM renderPremise premises
+  constraintDocs <- mapM renderConstraint constraints
+  pure (premDocs, conclDoc, constraintDocs)
+
+renderPremise :: Premise -> PrettyM Doc
+renderPremise (Premise jc) = do
+  args <- mapM prettyTermDoc (jcPretty jc)
+  pure (formatJudgment (jcName jc) (jcFormat jc) args)
+
+renderConstraint :: Constraint -> PrettyM Doc
+renderConstraint (EqC t1 t2) = do
+  d1 <- prettyTerm t1
+  d2 <- prettyTerm t2
+  pure (d1 <+> Doc " = " <+> d2)
+renderConstraint (NeqC t1 t2) = do
+  d1 <- prettyTerm t1
+  d2 <- prettyTerm t2
+  pure (d1 <+> Doc " =/= " <+> d2)
+renderConstraint (NegC name) =
+  pure (Doc "not(" <> Doc name <> Doc ")")
+
+renderTermList :: PrettyList ts => TermList vss ts -> PrettyM [Doc]
+renderTermList tl = mapM prettyTermDoc (prettyTermList tl)

@@ -48,16 +48,20 @@ module TypedRedex.DSL
   , (===), (=/=)
     -- * Judgments
   , rule
+  , rules
   , judgment
   , judgmentWith
+  , format
   , (#)
   , RuleBuilder
+  , JudgmentBuilder
     -- * Re-exports
   , module TypedRedex.Core.Term
   , module TypedRedex.Core.RuleF
   ) where
 
 import Prelude hiding (return, (>>=), (>>))
+import Control.Monad.State.Strict (State, get, put, runState)
 import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import GHC.TypeLits (Symbol, KnownSymbol, symbolVal, type (+), Nat)
@@ -68,6 +72,7 @@ import TypedRedex.Core.IxFree (liftF)
 import qualified TypedRedex.Core.IxFree as Ix
 import TypedRedex.Core.Term
 import TypedRedex.Core.RuleF
+import TypedRedex.Pretty (Doc, FmtFn(..), FmtArgs)
 
 --------------------------------------------------------------------------------
 -- QualifiedDo
@@ -222,20 +227,72 @@ rule
   -> Rule name ts
 rule = Rule
 
+--------------------------------------------------------------------------------
+-- Judgment builder
+--------------------------------------------------------------------------------
+
+data JBState name modes ts = JBState
+  { jbRules  :: [Rule name ts]
+  , jbFormat :: Maybe ([Doc] -> Doc)
+  }
+
+newtype JudgmentBuilder name modes ts a = JudgmentBuilder (State (JBState name modes ts) a)
+  deriving (Functor, Applicative, Monad)
+
+runJudgmentBuilder :: JudgmentBuilder name modes ts a -> (Maybe ([Doc] -> Doc), [Rule name ts])
+runJudgmentBuilder (JudgmentBuilder st) =
+  let initState = JBState [] Nothing
+      ((), endState) = runState (void st) initState
+  in (jbFormat endState, jbRules endState)
+  where
+    void :: Functor f => f a -> f ()
+    void = fmap (const ())
+
+addRule :: Rule name ts -> JudgmentBuilder name modes ts ()
+addRule r = JudgmentBuilder $ do
+  s <- get
+  put s { jbRules = jbRules s ++ [r] }
+
+rules :: [Rule name ts] -> JudgmentBuilder name modes ts ()
+rules = mapM_ addRule
+
+-- | Specify a custom formatter for judgment conclusions.
+-- Omit this to use the default prefix formatter.
+format :: forall name modes ts f.
+          FmtFn (FmtArgs ts) f
+       => f
+       -> JudgmentBuilder name modes ts ()
+format f = JudgmentBuilder $ do
+  s <- get
+  put s { jbFormat = Just (toFmt @(FmtArgs ts) f) }
+
+
+class JudgmentSpec spec (name :: Symbol) (ts :: [Type]) | spec -> name ts where
+  buildJudgmentSpec :: spec -> (Maybe ([Doc] -> Doc), [Rule name ts])
+
+instance JudgmentSpec [Rule name ts] name ts where
+  buildJudgmentSpec rs = (Nothing, rs)
+
+instance JudgmentSpec (JudgmentBuilder name modes ts a) name ts where
+  buildJudgmentSpec = runJudgmentBuilder
+
 -- | Define a judgment with the given rules.
 --
 -- Prefer using a type signature to fix the judgment name/modes, so you
 -- don't need to repeat them with type applications.
 judgment
-  :: forall name modes ts.
-     (KnownSymbol name, SingModeList modes)
-  => [Rule name ts]
+  :: forall name modes ts spec.
+     (KnownSymbol name, SingModeList modes, JudgmentSpec spec name ts)
+  => spec
   -> Judgment name modes ts
-judgment rules = Judgment
-  { judgmentName  = symbolVal (Proxy @name)
-  , judgmentModes = singModeList @modes
-  , judgmentRules = rules
-  }
+judgment spec =
+  let (fmt, rules') = buildJudgmentSpec spec
+  in Judgment
+      { judgmentName  = symbolVal (Proxy @name)
+      , judgmentModes = singModeList @modes
+      , judgmentRules = rules'
+      , judgmentFormat = fmt
+      }
 
 -- | Backwards-compatible helper for building judgments with a @rule@ callback.
 judgmentWith
@@ -243,7 +300,7 @@ judgmentWith
      (KnownSymbol name, SingModeList modes)
   => (RuleBuilder name ts -> [Rule name ts])
   -> Judgment name modes ts
-judgmentWith mkRules = judgment (mkRules rule)
+judgmentWith mkRules = judgment (mkRules Rule)
 
 --------------------------------------------------------------------------------
 -- Applying judgments
@@ -281,6 +338,7 @@ infixl 1 #
      ( ToTermList args vss ts
      , InputVars modes vss ts
      , OutputVars modes vss ts
+     , PrettyList ts
      )
   => Judgment name modes ts
   -> args
@@ -297,4 +355,6 @@ infixl 1 #
        , jcReqVars = req
        , jcProdVars = prod
        , jcRules = judgmentRules j
+       , jcFormat = judgmentFormat j
+       , jcPretty = prettyTermList tl
        }

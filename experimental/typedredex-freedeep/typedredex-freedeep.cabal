@@ -17,6 +17,7 @@ library
         TypedRedex.Core.IxFree
         TypedRedex.Core.Schedule
         TypedRedex.Core.RuleF
+        TypedRedex.Pretty
         TypedRedex.Interp.Typeset
         TypedRedex.Interp.Trace
         TypedRedex.Backend.Goal

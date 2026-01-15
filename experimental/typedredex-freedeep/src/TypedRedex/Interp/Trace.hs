@@ -25,40 +25,51 @@ import TypedRedex.Backend.Goal
   )
 import TypedRedex.Core.IxFree (IxFree(..))
 import TypedRedex.Core.RuleF hiding (Goal)
+import TypedRedex.Pretty
 
 --------------------------------------------------------------------------------
 -- Derivation Trees
 --------------------------------------------------------------------------------
 
+data DerivConclusion = DerivConclusion
+  { dcName   :: String
+  , dcFormat :: Maybe ([Doc] -> Doc)
+  , dcArgs   :: [PrettyTerm]
+  }
+
 data Derivation = Derivation
   { derivRule        :: String
-  , derivConclusion  :: String
+  , derivConclusion  :: DerivConclusion
   , derivPremises    :: [Derivation]
-  , derivConstraints :: [String]
-  } deriving (Eq, Show)
+  , derivConstraints :: [Constraint]
+  }
 
 prettyDerivation :: Derivation -> String
-prettyDerivation d = unlines (renderDeriv d)
+prettyDerivation d =
+  let (lines', _) = runPrettyWith emptyPrettyCtx (renderDeriv d)
+  in unlines lines'
   where
-    renderDeriv :: Derivation -> [String]
-    renderDeriv (Derivation rule concl prems constraints) =
-      let concLine = concl
+    renderDeriv :: Derivation -> PrettyM [String]
+    renderDeriv (Derivation rule concl prems constraints) = do
+      conclDoc <- renderConclusion concl
+      constraintDocs <- mapM renderConstraint constraints
+      let concLine = renderDoc conclDoc
           constraintText =
-            case constraints of
+            case constraintDocs of
               [] -> ""
-              cs -> " [" ++ intercalate ", " cs ++ "]"
-      in case prems of
-           [] ->
-             let line = replicate (length concLine) '-' ++ " [" ++ rule ++ "]" ++ constraintText
-             in [line, concLine]
-           _ ->
-             let premBlocks = map renderDeriv prems
-                 combined = foldr1 sideBySide premBlocks
-                 width = maximum (length concLine : map length combined)
-                 line = replicate width '-' ++ " [" ++ rule ++ "]" ++ constraintText
-                 concPad = (width - length concLine) `div` 2
-                 concLine' = replicate concPad ' ' ++ concLine
-             in combined ++ [line, concLine']
+              cs -> " [" ++ intercalate ", " (map renderDoc cs) ++ "]"
+      case prems of
+        [] -> do
+          let line = replicate (length concLine) '-' ++ " [" ++ rule ++ "]" ++ constraintText
+          pure [line, concLine]
+        _ -> do
+          premBlocks <- mapM renderDeriv prems
+          let combined = foldr1 sideBySide premBlocks
+              width = maximum (length concLine : map length combined)
+              line = replicate width '-' ++ " [" ++ rule ++ "]" ++ constraintText
+              concPad = (width - length concLine) `div` 2
+              concLine' = replicate concPad ' ' ++ concLine
+          pure (combined ++ [line, concLine'])
 
     sideBySide :: [String] -> [String] -> [String]
     sideBySide left right =
@@ -74,6 +85,26 @@ prettyDerivation d = unlines (renderDeriv d)
 
     padRight :: Int -> String -> String
     padRight n s = s ++ replicate (n - length s) ' '
+
+renderConclusion :: DerivConclusion -> PrettyM Doc
+renderConclusion (DerivConclusion name fmt args) = do
+  docs <- mapM renderPrettyTerm args
+  pure (formatJudgment name fmt docs)
+
+renderPrettyTerm :: PrettyTerm -> PrettyM Doc
+renderPrettyTerm = prettyTermDoc
+
+renderConstraint :: Constraint -> PrettyM Doc
+renderConstraint (EqC t1 t2) = do
+  d1 <- prettyLogic t1
+  d2 <- prettyLogic t2
+  pure (d1 <+> Doc " = " <+> d2)
+renderConstraint (NeqC t1 t2) = do
+  d1 <- prettyLogic t1
+  d2 <- prettyLogic t2
+  pure (d1 <+> Doc " =/= " <+> d2)
+renderConstraint (NegC name) =
+  pure (Doc "not(" <> Doc name <> Doc ")")
 
 --------------------------------------------------------------------------------
 -- Trace Execution
@@ -101,8 +132,8 @@ traceJudgmentCall jc s =
 --------------------------------------------------------------------------------
 
 data Constraint where
-  EqC  :: (Repr a, Typeable a) => Logic a -> Logic a -> Constraint
-  NeqC :: (Repr a, Typeable a) => Logic a -> Logic a -> Constraint
+  EqC  :: Pretty a => Logic a -> Logic a -> Constraint
+  NeqC :: Pretty a => Logic a -> Logic a -> Constraint
   NegC :: String -> Constraint
 
 data PremKind where
@@ -212,8 +243,8 @@ traceRule jc (Rule ruleLabel body) s0 =
          | sHead <- exec headGoal s1
          , (sPrem, premDerivs, premConstraints) <- runPremises (csAvailVars collect) (reverse (csPrems collect)) sHead
          , (sFinal, negConstraints) <- runNegations (reverse (csNegs collect)) sPrem
-         , let concl = renderConclusion jc sFinal
-               constraints = premConstraints ++ negConstraints
+         , let concl = buildConclusion jc sFinal
+               constraints = map (applySubstConstraint sFinal) (premConstraints ++ negConstraints)
                deriv = Derivation ruleLabel concl premDerivs constraints
          ]
 
@@ -221,7 +252,7 @@ runPremises
   :: Set Int
   -> [PremAction]
   -> Subst
-  -> [(Subst, [Derivation], [String])]
+  -> [(Subst, [Derivation], [Constraint])]
 runPremises _ [] s = [(s, [], [])]
 runPremises avail prems s =
   case selectReady avail prems of
@@ -234,15 +265,15 @@ runPremises avail prems s =
           , (s'', ds, cs) <- runPremises (S.union avail (paProd prem)) rest s'
           ]
         PremConstraint constraint goal ->
-          [ (s'', ds, renderConstraint s' constraint : cs)
+          [ (s'', ds, constraint : cs)
           | s' <- exec goal s
           , (s'', ds, cs) <- runPremises (S.union avail (paProd prem)) rest s'
           ]
 
-runNegations :: [NegAction] -> Subst -> [(Subst, [String])]
+runNegations :: [NegAction] -> Subst -> [(Subst, [Constraint])]
 runNegations [] s = [(s, [])]
 runNegations (NegAction goal label : rest) s =
-  [ (s'', renderConstraint s' (NegC label) : cs)
+  [ (s'', NegC label : cs)
   | s' <- exec (Neg goal) s
   , (s'', cs) <- runNegations rest s'
   ]
@@ -259,27 +290,22 @@ selectReady avail (p:ps)
 -- Rendering helpers
 --------------------------------------------------------------------------------
 
-renderConclusion :: JudgmentCall name modes vss ts -> Subst -> String
-renderConclusion jc s =
-  let args = renderTermList s (jcArgs jc)
-  in case args of
-       [] -> jcName jc
-       _  -> jcName jc ++ "(" ++ intercalate ", " args ++ ")"
+--------------------------------------------------------------------------------
+-- Substitution helpers
+--------------------------------------------------------------------------------
 
-renderTermList :: Subst -> TermList vss ts -> [String]
-renderTermList _ TNil = []
-renderTermList s (t :> ts) = renderTerm s t : renderTermList s ts
+applySubstConstraint :: Subst -> Constraint -> Constraint
+applySubstConstraint s (EqC t1 t2) = EqC (applySubstLogic s t1) (applySubstLogic s t2)
+applySubstConstraint s (NeqC t1 t2) = NeqC (applySubstLogic s t1) (applySubstLogic s t2)
+applySubstConstraint _ (NegC name) = NegC name
 
-renderTerm :: (Repr a, Typeable a) => Subst -> Term vs a -> String
-renderTerm s (Term _ l) = displayLogic (applySubstLogic s l)
+applySubstPrettyTerm :: Subst -> PrettyTerm -> PrettyTerm
+applySubstPrettyTerm s (PrettyTerm l) = PrettyTerm (applySubstLogic s l)
 
-renderConstraint :: Subst -> Constraint -> String
-renderConstraint s (EqC t1 t2) =
-  renderLogic s t1 ++ " = " ++ renderLogic s t2
-renderConstraint s (NeqC t1 t2) =
-  renderLogic s t1 ++ " =/= " ++ renderLogic s t2
-renderConstraint _ (NegC name) =
-  "not(" ++ name ++ ")"
-
-renderLogic :: Repr a => Subst -> Logic a -> String
-renderLogic s l = displayLogic (applySubstLogic s l)
+buildConclusion :: JudgmentCall name modes vss ts -> Subst -> DerivConclusion
+buildConclusion jc s =
+  DerivConclusion
+    { dcName = jcName jc
+    , dcFormat = jcFormat jc
+    , dcArgs = map (applySubstPrettyTerm s) (jcPretty jc)
+    }

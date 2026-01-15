@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Simple example: Natural numbers with addition
 module Main where
@@ -10,6 +11,7 @@ module Main where
 import qualified TypedRedex.DSL as R
 import TypedRedex.DSL
 import TypedRedex.Interp.Typeset
+import TypedRedex.Pretty ((<+>))
 import Support.Nat
 
 --------------------------------------------------------------------------------
@@ -17,20 +19,22 @@ import Support.Nat
 --------------------------------------------------------------------------------
 
 add :: Judgment "add" '[I, I, O] '[Nat, Nat, Nat]
-add = judgment
-  [ -- add(Z, Y, Y)
-    rule "add-zero" $ R.do
-      y <- R.freshVar @Nat
-      R.concl $ add # (zro, y, y)
+add = judgment $ do
+  format $ \x y z -> x <+> " + " <+> y <+> " = " <+> z
+  rules
+    [ -- add(Z, Y, Y)
+      rule "add-zero" $ R.do
+        y <- R.freshVar @Nat
+        R.concl $ add # (zro, y, y)
 
-  , -- add(S(X), Y, S(Z)) :- add(X, Y, Z)
-    rule "add-succ" $ R.do
-      x <- R.freshVar @Nat
-      y <- R.freshVar @Nat
-      z <- R.freshVar @Nat
-      R.concl $ add # (suc x, y, suc z)
-      R.prem  $ add # (x, y, z)
-  ]
+    , -- add(S(X), Y, S(Z)) :- add(X, Y, Z)
+      rule "add-succ" $ R.do
+        x <- R.freshVar @Nat
+        y <- R.freshVar @Nat
+        z <- R.freshVar @Nat
+        R.concl $ add # (suc x, y, suc z)
+        R.prem  $ add # (x, y, z)
+    ]
 
 --------------------------------------------------------------------------------
 -- Main

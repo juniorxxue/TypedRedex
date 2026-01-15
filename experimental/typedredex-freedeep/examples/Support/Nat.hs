@@ -8,6 +8,7 @@ module Support.Nat
   ) where
 
 import TypedRedex.Core.Term
+import TypedRedex.Pretty
 
 -- | Natural numbers.
 data Nat = Z | S Nat
@@ -28,6 +29,14 @@ instance Repr Nat where
 
   mapReified _ RZ = RZ
   mapReified f (RS n) = RS (f n)
+
+instance Pretty Nat where
+  varNames = cycleNames ["n", "m", "k"]
+
+  prettyReified RZ = pure (text "0")
+  prettyReified (RS n) = do
+    d <- prettyLogic n
+    pure (text "S(" <+> d <+> text ")")
 
 -- | Smart constructors.
 zro :: Term '[] Nat

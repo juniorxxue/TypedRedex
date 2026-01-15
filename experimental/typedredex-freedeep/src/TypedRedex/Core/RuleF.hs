@@ -10,6 +10,7 @@ module TypedRedex.Core.RuleF
   , JudgmentCall(..)
   -- * Argument lists
   , TermList(..)
+  , PrettyList(..)
   -- * Variable extraction
   , InputVars(..)
   , OutputVars(..)
@@ -27,6 +28,7 @@ import GHC.TypeLits (Nat, Symbol, type (+))
 import TypedRedex.Core.IxFree (IxFree)
 import TypedRedex.Core.Schedule
 import TypedRedex.Core.Term
+import TypedRedex.Pretty (Doc, Pretty(..), PrettyTerm(..))
 
 --------------------------------------------------------------------------------
 -- Argument lists
@@ -37,6 +39,20 @@ data TermList (vss :: [[Nat]]) (ts :: [Type]) where
   TNil :: TermList '[] '[]
   (:>) :: (Repr a, Typeable a) => Term vs a -> TermList vss ts -> TermList (vs ': vss) (a ': ts)
 infixr 5 :>
+
+--------------------------------------------------------------------------------
+-- Pretty lists
+--------------------------------------------------------------------------------
+
+class PrettyList (ts :: [Type]) where
+  prettyTermList :: TermList vss ts -> [PrettyTerm]
+
+instance PrettyList '[] where
+  prettyTermList TNil = []
+
+instance (Pretty a, PrettyList ts) => PrettyList (a ': ts) where
+  prettyTermList (t :> ts) =
+    PrettyTerm (termVal t) : prettyTermList ts
 
 --------------------------------------------------------------------------------
 -- Variable extraction
@@ -82,6 +98,7 @@ data Judgment (name :: Symbol) (modes :: [Mode]) (ts :: [Type]) = Judgment
   { judgmentName  :: String
   , judgmentModes :: ModeList modes
   , judgmentRules :: [Rule name ts]
+  , judgmentFormat :: Maybe ([Doc] -> Doc)
   }
 
 -- | A judgment call: judgment applied to arguments
@@ -92,6 +109,8 @@ data JudgmentCall (name :: Symbol) (modes :: [Mode]) (vss :: [[Nat]]) (ts :: [Ty
   , jcReqVars  :: Set Int
   , jcProdVars :: Set Int
   , jcRules    :: [Rule name ts]
+  , jcFormat   :: Maybe ([Doc] -> Doc)
+  , jcPretty   :: [PrettyTerm]
   }
 
 --------------------------------------------------------------------------------
