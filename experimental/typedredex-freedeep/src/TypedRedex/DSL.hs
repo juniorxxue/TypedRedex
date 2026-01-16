@@ -25,13 +25,13 @@
 -- add = judgment
 --   [ rule "add-zero" $ R.do
 --       y <- R.fresh
---       R.concl $ add # (zro, y, y)
+--       R.concl $ add zro y y
 --   , rule "add-succ" $ R.do
 --       x <- R.fresh
 --       y <- R.fresh
 --       z <- R.fresh
---       R.concl $ add # (suc x, y, suc z)
---       R.prem  $ add # (x, y, z)
+--       R.concl $ add (suc x) y (suc z)
+--       R.prem  $ add x y z
 --   ]
 -- @
 --
@@ -47,10 +47,10 @@ module TypedRedex.DSL
     -- * Judgments
   , rule
   , rules
+  , Judgment
   , judgment
   , judgmentWith
   , format
-  , (#)
   , RuleBuilder
   , JudgmentBuilder
     -- * Re-exports
@@ -213,88 +213,71 @@ instance JudgmentSpec (JudgmentBuilder name modes ts a) name ts where
 -- don't need to repeat them with type applications.
 judgment
   :: forall name modes ts spec.
-     (KnownSymbol name, SingModeList modes, JudgmentSpec spec name ts)
+     (KnownSymbol name, SingModeList modes, JudgmentSpec spec name ts, BuildArgs ts, PrettyList ts)
   => spec
   -> Judgment name modes ts
 judgment spec =
   let (fmt, rules') = buildJudgmentSpec spec
-  in Judgment
-      { judgmentName  = symbolVal (Proxy @name)
-      , judgmentModes = singModeList @modes
-      , judgmentRules = rules'
-      , judgmentFormat = fmt
-      }
+      jd = JudgmentDef
+        { judgmentName  = symbolVal (Proxy @name)
+        , judgmentModes = singModeList @modes
+        , judgmentRules = rules'
+        , judgmentFormat = fmt
+        }
+  in applyJudgment jd
 
 -- | Backwards-compatible helper for building judgments with a @rule@ callback.
 judgmentWith
   :: forall name modes ts.
-     (KnownSymbol name, SingModeList modes)
+     (KnownSymbol name, SingModeList modes, BuildArgs ts, PrettyList ts)
   => (RuleBuilder name ts -> [Rule name ts])
   -> Judgment name modes ts
-judgmentWith mkRules = judgment (mkRules Rule)
+judgmentWith mkRules = judgment @name @modes @ts (mkRules Rule)
 
 --------------------------------------------------------------------------------
 -- Applying judgments
 --------------------------------------------------------------------------------
 
-type family TupleOf (ts :: [Type]) :: Type where
-  TupleOf '[] = ()
-  TupleOf '[a] = Term a
-  TupleOf '[a, b] = (Term a, Term b)
-  TupleOf '[a, b, c] = (Term a, Term b, Term c)
-  TupleOf '[a, b, c, d] = (Term a, Term b, Term c, Term d)
-  TupleOf '[a, b, c, d, e] = (Term a, Term b, Term c, Term d, Term e)
+type family CurriedArgs (ts :: [Type]) (r :: Type) :: Type where
+  CurriedArgs '[] r = r
+  CurriedArgs (a ': ts) r = Term a -> CurriedArgs ts r
 
-class TupleArgs (ts :: [Type]) where
-  toTermList :: TupleOf ts -> TermList ts
+-- | A judgment is a curried function from terms to a judgment call.
+type Judgment name modes ts = CurriedArgs ts (JudgmentCall name modes ts)
 
-instance TupleArgs '[] where
-  toTermList () = TNil
+class BuildArgs (ts :: [Type]) where
+  buildArgs :: (TermList ts -> r) -> CurriedArgs ts r
 
-instance (Repr a, Typeable a) => TupleArgs '[a] where
-  toTermList t = t :> TNil
+instance BuildArgs '[] where
+  buildArgs k = k TNil
 
-instance (Repr a, Typeable a, Repr b, Typeable b)
-  => TupleArgs '[a, b] where
-  toTermList (a, b) = a :> b :> TNil
+instance (Repr a, Typeable a, BuildArgs ts) => BuildArgs (a ': ts) where
+  buildArgs k = \a -> buildArgs (\tl -> k (a :> tl))
 
-instance (Repr a, Typeable a, Repr b, Typeable b, Repr c, Typeable c)
-  => TupleArgs '[a, b, c] where
-  toTermList (a, b, c) = a :> b :> c :> TNil
-
-instance (Repr a, Typeable a, Repr b, Typeable b, Repr c, Typeable c, Repr d, Typeable d)
-  => TupleArgs '[a, b, c, d] where
-  toTermList (a, b, c, d) = a :> b :> c :> d :> TNil
-
-instance ( Repr a, Typeable a, Repr b, Typeable b, Repr c, Typeable c
-         , Repr d, Typeable d, Repr e, Typeable e
-         )
-  => TupleArgs '[a, b, c, d, e] where
-  toTermList (a, b, c, d, e) = a :> b :> c :> d :> e :> TNil
-
-infixl 1 #
-
--- | Apply a judgment to arguments, creating a judgment call.
-(#)
+mkJudgmentCall
   :: forall name modes ts.
-     ( TupleArgs ts
-     , PrettyList ts
-     )
-  => Judgment name modes ts
-  -> TupleOf ts
+     PrettyList ts
+  => JudgmentDef name modes ts
+  -> TermList ts
   -> JudgmentCall name modes ts
-(#) j args =
-  let tl = toTermList args
-      ms = judgmentModes j
+mkJudgmentCall jd tl =
+  let ms = judgmentModes jd
       req = inputVars ms tl
       prod = outputVars ms tl
   in JudgmentCall
-       { jcName = judgmentName j
+       { jcName = judgmentName jd
        , jcModes = ms
        , jcArgs = tl
        , jcReqVars = req
        , jcProdVars = prod
-       , jcRules = judgmentRules j
-       , jcFormat = judgmentFormat j
+       , jcRules = judgmentRules jd
+       , jcFormat = judgmentFormat jd
        , jcPretty = prettyTermList tl
        }
+
+applyJudgment
+  :: forall name modes ts.
+     (BuildArgs ts, PrettyList ts)
+  => JudgmentDef name modes ts
+  -> Judgment name modes ts
+applyJudgment jd = buildArgs (mkJudgmentCall jd)

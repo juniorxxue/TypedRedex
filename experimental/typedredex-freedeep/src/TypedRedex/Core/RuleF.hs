@@ -6,7 +6,7 @@ module TypedRedex.Core.RuleF
     RuleF(..)
   , RuleM
   , Rule(..)
-  , Judgment(..)
+  , JudgmentDef(..)
   , JudgmentCall(..)
   -- * Argument lists
   , TermList(..)
@@ -70,7 +70,7 @@ outputVars (O :* ms) (t :> ts) = S.union (termVars t) (outputVars ms ts)
 outputVars _ _ = error "outputVars: mode/argument length mismatch"
 
 --------------------------------------------------------------------------------
--- Judgment types
+-- Judgment definitions
 --------------------------------------------------------------------------------
 
 -- | A complete rule (existentially hides final state)
@@ -79,8 +79,8 @@ data Rule (name :: Symbol) (ts :: [Type]) = Rule
   , ruleBody :: RuleM ts ()
   }
 
--- | A judgment: named collection of rules
-data Judgment (name :: Symbol) (modes :: [Mode]) (ts :: [Type]) = Judgment
+-- | A judgment definition: named collection of rules
+data JudgmentDef (name :: Symbol) (modes :: [Mode]) (ts :: [Type]) = JudgmentDef
   { judgmentName  :: String
   , judgmentModes :: ModeList modes
   , judgmentRules :: [Rule name ts]

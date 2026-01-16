@@ -182,7 +182,7 @@ lookupCtx = judgment
       x <- R.fresh
       ty <- R.fresh
       ctx <- R.fresh
-      R.concl $ lookupCtx # (cbind x ty ctx, x, ty)
+      R.concl $ lookupCtx (cbind x ty ctx) x ty
 
   , rule "lookup-there" $ R.do
       x <- R.fresh
@@ -190,8 +190,8 @@ lookupCtx = judgment
       ty <- R.fresh
       tyOut <- R.fresh
       ctx <- R.fresh
-      R.concl $ lookupCtx # (cbind y ty ctx, x, tyOut)
-      R.prem  $ lookupCtx # (ctx, x, tyOut)
+      R.concl $ lookupCtx (cbind y ty ctx) x tyOut
+      R.prem  $ lookupCtx ctx x tyOut
       x =/= y
   ]
 
@@ -200,18 +200,18 @@ tySubst = judgment
   [ rule "subst-int" $ R.do
       a <- R.fresh
       ty <- R.fresh
-      R.concl $ tySubst # (tint, a, ty, tint)
+      R.concl $ tySubst tint a ty tint
 
   , rule "subst-var-hit" $ R.do
       a <- R.fresh
       ty <- R.fresh
-      R.concl $ tySubst # (tvar a, a, ty, ty)
+      R.concl $ tySubst (tvar a) a ty ty
 
   , rule "subst-var-miss" $ R.do
       a <- R.fresh
       b <- R.fresh
       ty <- R.fresh
-      R.concl $ tySubst # (tvar b, a, ty, tvar b)
+      R.concl $ tySubst (tvar b) a ty (tvar b)
       a =/= b
 
   , rule "subst-arr" $ R.do
@@ -221,15 +221,15 @@ tySubst = judgment
       ty <- R.fresh
       r1 <- R.fresh
       r2 <- R.fresh
-      R.concl $ tySubst # (tarr t1 t2, a, ty, tarr r1 r2)
-      R.prem  $ tySubst # (t1, a, ty, r1)
-      R.prem  $ tySubst # (t2, a, ty, r2)
+      R.concl $ tySubst (tarr t1 t2) a ty (tarr r1 r2)
+      R.prem  $ tySubst t1 a ty r1
+      R.prem  $ tySubst t2 a ty r2
 
   , rule "subst-forall-shadow" $ R.do
       a <- R.fresh
       body <- R.fresh
       ty <- R.fresh
-      R.concl $ tySubst # (tforall a body, a, ty, tforall a body)
+      R.concl $ tySubst (tforall a body) a ty (tforall a body)
 
   , rule "subst-forall" $ R.do
       a <- R.fresh
@@ -237,8 +237,8 @@ tySubst = judgment
       body <- R.fresh
       ty <- R.fresh
       body' <- R.fresh
-      R.concl $ tySubst # (tforall b body, a, ty, tforall b body')
-      R.prem  $ tySubst # (body, a, ty, body')
+      R.concl $ tySubst (tforall b body) a ty (tforall b body')
+      R.prem  $ tySubst body a ty body'
       a =/= b
   ]
 
@@ -248,8 +248,8 @@ infer = judgment
       ctx <- R.fresh
       x <- R.fresh
       ty <- R.fresh
-      R.concl $ infer # (ctx, var x, ty)
-      R.prem  $ lookupCtx # (ctx, x, ty)
+      R.concl $ infer ctx (var x) ty
+      R.prem  $ lookupCtx ctx x ty
 
   , rule "infer-lam" $ R.do
       ctx <- R.fresh
@@ -257,8 +257,8 @@ infer = judgment
       argTy <- R.fresh
       body <- R.fresh
       bodyTy <- R.fresh
-      R.concl $ infer # (ctx, lam x argTy body, tarr argTy bodyTy)
-      R.prem  $ infer # (cbind x argTy ctx, body, bodyTy)
+      R.concl $ infer ctx (lam x argTy body) (tarr argTy bodyTy)
+      R.prem  $ infer (cbind x argTy ctx) body bodyTy
 
   , rule "infer-app" $ R.do
       ctx <- R.fresh
@@ -266,17 +266,17 @@ infer = judgment
       arg <- R.fresh
       argTy <- R.fresh
       resTy <- R.fresh
-      R.concl $ infer # (ctx, app fun arg, resTy)
-      R.prem  $ infer # (ctx, fun, tarr argTy resTy)
-      R.prem  $ infer # (ctx, arg, argTy)
+      R.concl $ infer ctx (app fun arg) resTy
+      R.prem  $ infer ctx fun (tarr argTy resTy)
+      R.prem  $ infer ctx arg argTy
 
   , rule "infer-tlam" $ R.do
       ctx <- R.fresh
       a <- R.fresh
       body <- R.fresh
       bodyTy <- R.fresh
-      R.concl $ infer # (ctx, tlam a body, tforall a bodyTy)
-      R.prem  $ infer # (ctx, body, bodyTy)
+      R.concl $ infer ctx (tlam a body) (tforall a bodyTy)
+      R.prem  $ infer ctx body bodyTy
 
   , rule "infer-tapp" $ R.do
       ctx <- R.fresh
@@ -285,9 +285,9 @@ infer = judgment
       bodyTy <- R.fresh
       argTy <- R.fresh
       resTy <- R.fresh
-      R.concl $ infer # (ctx, tapp tm argTy, resTy)
-      R.prem  $ infer # (ctx, tm, tforall a bodyTy)
-      R.prem  $ tySubst # (bodyTy, a, argTy, resTy)
+      R.concl $ infer ctx (tapp tm argTy) resTy
+      R.prem  $ infer ctx tm (tforall a bodyTy)
+      R.prem  $ tySubst bodyTy a argTy resTy
   ]
 
 --------------------------------------------------------------------------------

@@ -146,15 +146,15 @@ lookupCtx = judgment
   [ rule "lookup-here" $ R.do
       ty <- R.fresh
       ctx <- R.fresh
-      R.concl $ lookupCtx # (ctxCons ty ctx, zro, ty)
+      R.concl $ lookupCtx (ctxCons ty ctx) zro ty
 
   , rule "lookup-there" $ R.do
       ty <- R.fresh
       ctx <- R.fresh
       n <- R.fresh
       tyOut <- R.fresh
-      R.concl $ lookupCtx # (ctxCons ty ctx, suc n, tyOut)
-      R.prem  $ lookupCtx # (ctx, n, tyOut)
+      R.concl $ lookupCtx (ctxCons ty ctx) (suc n) tyOut
+      R.prem  $ lookupCtx ctx n tyOut
   ]
 
 infer :: Judgment "infer" '[I, I, O] '[Ctx, Tm, Ty]
@@ -163,20 +163,20 @@ infer = judgment
       ctx <- R.fresh
       x <- R.fresh
       ty <- R.fresh
-      R.concl $ infer # (ctx, var x, ty)
-      R.prem  $ lookupCtx # (ctx, x, ty)
+      R.concl $ infer ctx (var x) ty
+      R.prem  $ lookupCtx ctx x ty
 
   , rule "infer-unit" $ R.do
       ctx <- R.fresh
-      R.concl $ infer # (ctx, unit, tunit)
+      R.concl $ infer ctx unit tunit
 
   , rule "infer-lam" $ R.do
       ctx <- R.fresh
       argTy <- R.fresh
       body <- R.fresh
       bodyTy <- R.fresh
-      R.concl $ infer # (ctx, lam argTy body, tarr argTy bodyTy)
-      R.prem  $ infer # (ctxCons argTy ctx, body, bodyTy)
+      R.concl $ infer ctx (lam argTy body) (tarr argTy bodyTy)
+      R.prem  $ infer (ctxCons argTy ctx) body bodyTy
 
   , rule "infer-app" $ R.do
       ctx <- R.fresh
@@ -184,9 +184,9 @@ infer = judgment
       arg <- R.fresh
       argTy <- R.fresh
       resTy <- R.fresh
-      R.concl $ infer # (ctx, app fun arg, resTy)
-      R.prem  $ infer # (ctx, fun, tarr argTy resTy)
-      R.prem  $ infer # (ctx, arg, argTy)
+      R.concl $ infer ctx (app fun arg) resTy
+      R.prem  $ infer ctx fun (tarr argTy resTy)
+      R.prem  $ infer ctx arg argTy
   ]
 
 --------------------------------------------------------------------------------

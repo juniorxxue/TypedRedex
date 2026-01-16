@@ -23,15 +23,15 @@ add = judgment $ do
     [ -- add(Z, Y, Y)
       rule "add-zero" $ R.do
         y <- R.fresh
-        R.concl $ add # (zro, y, y)
+        R.concl $ add zro y y
 
     , -- add(S(X), Y, S(Z)) :- add(X, Y, Z)
       rule "add-succ" $ R.do
         x <- R.fresh
         y <- R.fresh
         z <- R.fresh
-        R.concl $ add # (suc x, y, suc z)
-        R.prem  $ add # (x, y, z)
+        R.concl $ add (suc x) y (suc z)
+        R.prem  $ add x y z
     ]
 
 --------------------------------------------------------------------------------
@@ -44,6 +44,6 @@ main = do
   putStrLn ""
 
   -- Typeset the add judgment
-  putStrLn $ typeset (add # (zro, zro, zro))
+  putStrLn $ typeset (add zro zro zro)
 
   putStrLn "=== Done ==="
