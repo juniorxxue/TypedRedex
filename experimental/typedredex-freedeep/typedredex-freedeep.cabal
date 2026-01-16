@@ -69,6 +69,25 @@ executable example-tests
         Example.Stlc
         Example.Pcf
         Example.Poly
+        Example.ModeErrors
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex-freedeep
+    hs-source-dirs:   examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+        QualifiedDo
+
+executable example-mode-errors
+    import:           warnings
+    main-is:          ModeErrorsMain.hs
+    other-modules:
+        Example.ModeErrors
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
