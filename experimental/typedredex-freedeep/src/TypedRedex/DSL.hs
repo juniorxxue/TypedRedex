@@ -1,5 +1,6 @@
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -39,6 +40,7 @@ module TypedRedex.DSL
     return, (>>=), (>>)
     -- * Fresh variables
   , fresh
+  , Fresh
     -- * Rule operations
   , concl, prem, neg
   , (===), (=/=)
@@ -62,6 +64,7 @@ import Data.Proxy (Proxy(..))
 import Data.Typeable (Typeable)
 import GHC.TypeLits (Symbol, KnownSymbol, symbolVal)
 import Data.Kind (Type)
+import GHC.Generics (Generic, Rep, U1(..), (:*:)(..), M1(..), K1(..), to)
 
 import TypedRedex.Core.IxFree (liftF)
 import qualified TypedRedex.Core.IxFree as Ix
@@ -86,9 +89,35 @@ return = Ix.return
 -- Fresh variables
 --------------------------------------------------------------------------------
 
--- | Allocate a fresh logic variable.
-fresh :: (Repr a, Typeable a) => RuleM ts (Term a)
-fresh = liftF FreshF
+-- | Allocate fresh logic variables.
+--
+-- Supports tuples and other product types via Generics.
+class Fresh t where
+  fresh :: RuleM ts t
+
+instance {-# OVERLAPPING #-} (Repr a, Typeable a) => Fresh (Term a) where
+  fresh = liftF FreshF
+
+instance {-# OVERLAPPABLE #-} (Generic t, GFresh (Rep t)) => Fresh t where
+  fresh = gFresh >>= (return . to)
+
+class GFresh f where
+  gFresh :: RuleM ts (f p)
+
+instance GFresh U1 where
+  gFresh = return U1
+
+instance (GFresh a, GFresh b) => GFresh (a :*: b) where
+  gFresh =
+    gFresh >>= \a ->
+      gFresh >>= \b ->
+        return (a :*: b)
+
+instance GFresh a => GFresh (M1 i c a) where
+  gFresh = gFresh >>= \a -> return (M1 a)
+
+instance Fresh a => GFresh (K1 i a) where
+  gFresh = fresh >>= \a -> return (K1 a)
 
 --------------------------------------------------------------------------------
 -- Rule operations
@@ -208,43 +237,51 @@ judgmentWith mkRules = judgment (mkRules Rule)
 -- Applying judgments
 --------------------------------------------------------------------------------
 
-class ToTermList args ts | args -> ts where
-  toTermList :: args -> TermList ts
+type family TupleOf (ts :: [Type]) :: Type where
+  TupleOf '[] = ()
+  TupleOf '[a] = Term a
+  TupleOf '[a, b] = (Term a, Term b)
+  TupleOf '[a, b, c] = (Term a, Term b, Term c)
+  TupleOf '[a, b, c, d] = (Term a, Term b, Term c, Term d)
+  TupleOf '[a, b, c, d, e] = (Term a, Term b, Term c, Term d, Term e)
 
-instance ToTermList (TermList ts) ts where
-  toTermList = id
+class TupleArgs (ts :: [Type]) where
+  toTermList :: TupleOf ts -> TermList ts
 
-instance (Repr a, Typeable a) => ToTermList (Term a) '[a] where
+instance TupleArgs '[] where
+  toTermList () = TNil
+
+instance (Repr a, Typeable a) => TupleArgs '[a] where
   toTermList t = t :> TNil
 
 instance (Repr a, Typeable a, Repr b, Typeable b)
-  => ToTermList (Term a, Term b) '[a, b] where
+  => TupleArgs '[a, b] where
   toTermList (a, b) = a :> b :> TNil
 
 instance (Repr a, Typeable a, Repr b, Typeable b, Repr c, Typeable c)
-  => ToTermList (Term a, Term b, Term c) '[a, b, c] where
+  => TupleArgs '[a, b, c] where
   toTermList (a, b, c) = a :> b :> c :> TNil
 
 instance (Repr a, Typeable a, Repr b, Typeable b, Repr c, Typeable c, Repr d, Typeable d)
-  => ToTermList (Term a, Term b, Term c, Term d) '[a, b, c, d] where
+  => TupleArgs '[a, b, c, d] where
   toTermList (a, b, c, d) = a :> b :> c :> d :> TNil
 
 instance ( Repr a, Typeable a, Repr b, Typeable b, Repr c, Typeable c
          , Repr d, Typeable d, Repr e, Typeable e
          )
-  => ToTermList (Term a, Term b, Term c, Term d, Term e) '[a, b, c, d, e] where
+  => TupleArgs '[a, b, c, d, e] where
   toTermList (a, b, c, d, e) = a :> b :> c :> d :> e :> TNil
 
 infixl 1 #
 
 -- | Apply a judgment to arguments, creating a judgment call.
 (#)
-  :: forall name modes ts args.
-     ( ToTermList args ts
+  :: forall name modes ts.
+     ( TupleArgs ts
      , PrettyList ts
      )
   => Judgment name modes ts
-  -> args
+  -> TupleOf ts
   -> JudgmentCall name modes ts
 (#) j args =
   let tl = toTermList args
