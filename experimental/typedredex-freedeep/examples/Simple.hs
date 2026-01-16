@@ -27,9 +27,7 @@ add = judgment $ do
 
     , -- add(S(X), Y, S(Z)) :- add(X, Y, Z)
       rule "add-succ" $ R.do
-        x <- R.fresh
-        y <- R.fresh
-        z <- R.fresh
+        (x, y, z) <- R.fresh
         R.concl $ add (suc x) y (suc z)
         R.prem  $ add x y z
     ]

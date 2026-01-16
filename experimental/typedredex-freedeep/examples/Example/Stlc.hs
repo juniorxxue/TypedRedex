@@ -144,15 +144,11 @@ ctxCons = lift2 (\ty ctx -> Ground (RCons ty ctx))
 lookupCtx :: Judgment "lookup" '[I, I, O] '[Ctx, Nat, Ty]
 lookupCtx = judgment
   [ rule "lookup-here" $ R.do
-      ty <- R.fresh
-      ctx <- R.fresh
+      (ty, ctx) <- R.fresh
       R.concl $ lookupCtx (ctxCons ty ctx) zro ty
 
   , rule "lookup-there" $ R.do
-      ty <- R.fresh
-      ctx <- R.fresh
-      n <- R.fresh
-      tyOut <- R.fresh
+      (ty, ctx, n, tyOut) <- R.fresh
       R.concl $ lookupCtx (ctxCons ty ctx) (suc n) tyOut
       R.prem  $ lookupCtx ctx n tyOut
   ]
@@ -160,9 +156,7 @@ lookupCtx = judgment
 infer :: Judgment "infer" '[I, I, O] '[Ctx, Tm, Ty]
 infer = judgment
   [ rule "infer-var" $ R.do
-      ctx <- R.fresh
-      x <- R.fresh
-      ty <- R.fresh
+      (ctx, x, ty) <- R.fresh
       R.concl $ infer ctx (var x) ty
       R.prem  $ lookupCtx ctx x ty
 
@@ -171,19 +165,12 @@ infer = judgment
       R.concl $ infer ctx unit tunit
 
   , rule "infer-lam" $ R.do
-      ctx <- R.fresh
-      argTy <- R.fresh
-      body <- R.fresh
-      bodyTy <- R.fresh
+      (ctx, argTy, body, bodyTy) <- R.fresh
       R.concl $ infer ctx (lam argTy body) (tarr argTy bodyTy)
       R.prem  $ infer (ctxCons argTy ctx) body bodyTy
 
   , rule "infer-app" $ R.do
-      ctx <- R.fresh
-      fun <- R.fresh
-      arg <- R.fresh
-      argTy <- R.fresh
-      resTy <- R.fresh
+      (ctx, fun, arg, argTy, resTy) <- R.fresh
       R.concl $ infer ctx (app fun arg) resTy
       R.prem  $ infer ctx fun (tarr argTy resTy)
       R.prem  $ infer ctx arg argTy

@@ -107,9 +107,7 @@ add = judgment
       R.concl $ add zero y y
 
   , rule "add-succ" $ R.do
-      x <- R.fresh
-      y <- R.fresh
-      z <- R.fresh
+      (x, y, z) <- R.fresh
       R.concl $ add (succTm x) y (succTm z)
       R.prem  $ add x y z
   ]
@@ -120,8 +118,7 @@ evalP = judgment
       R.concl $ evalP zero zero
 
   , rule "eval-succ" $ R.do
-      t <- R.fresh
-      v <- R.fresh
+      (t, v) <- R.fresh
       R.concl $ evalP (succTm t) (succTm v)
       R.prem  $ evalP t v
 
@@ -129,36 +126,24 @@ evalP = judgment
       R.concl $ evalP (predTm zero) zero
 
   , rule "eval-pred-succ" $ R.do
-      t <- R.fresh
-      v <- R.fresh
+      (t, v) <- R.fresh
       R.concl $ evalP (predTm (succTm t)) v
       R.prem  $ evalP t v
 
   , rule "eval-if0-zero" $ R.do
-      t <- R.fresh
-      t1 <- R.fresh
-      t2 <- R.fresh
-      v <- R.fresh
+      (t, t1, t2, v) <- R.fresh
       R.concl $ evalP (if0 t t1 t2) v
       R.prem  $ evalP t zero
       R.prem  $ evalP t1 v
 
   , rule "eval-if0-succ" $ R.do
-      t <- R.fresh
-      n <- R.fresh
-      t1 <- R.fresh
-      t2 <- R.fresh
-      v <- R.fresh
+      (t, n, t1, t2, v) <- R.fresh
       R.concl $ evalP (if0 t t1 t2) v
       R.prem  $ evalP t (succTm n)
       R.prem  $ evalP t2 v
 
   , rule "eval-plus" $ R.do
-      t1 <- R.fresh
-      t2 <- R.fresh
-      v1 <- R.fresh
-      v2 <- R.fresh
-      v <- R.fresh
+      (t1, t2, v1, v2, v) <- R.fresh
       R.concl $ evalP (plus t1 t2) v
       R.prem  $ evalP t1 v1
       R.prem  $ evalP t2 v2
