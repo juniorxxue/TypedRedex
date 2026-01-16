@@ -21,7 +21,9 @@ library
         TypedRedex.Interp.Typeset
         TypedRedex.Interp.Trace
         TypedRedex.Backend.Goal
+        TypedRedex.Backend.Engine
         TypedRedex.Backend.Eval
+        TypedRedex.Backend.Query
     build-depends:
         base >= 4.17 && < 5,
         containers,

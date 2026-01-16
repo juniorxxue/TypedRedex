@@ -11,11 +11,19 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Typeable (Typeable)
 
-import TypedRedex.Backend.Eval
-  ( Query(..)
-  , SomeJudgmentCall(..)
+import TypedRedex.Backend.Engine
+  ( SomeJudgmentCall(..)
+  , Constraint(..)
+  , PremKind(..)
+  , PremAction(..)
+  , NegAction(..)
+  , renderEq
+  , renderJudgmentCall
+  , renderNeq
+  , schedulePremisesChecked
   , translateRuleClosed
   )
+import TypedRedex.Backend.Query (Query(..))
 import TypedRedex.Backend.Goal
   ( Goal(..)
   , Subst(..)
@@ -131,23 +139,6 @@ traceJudgmentCall jc s =
 -- Rule collection
 --------------------------------------------------------------------------------
 
-data Constraint where
-  EqC  :: Pretty a => Logic a -> Logic a -> Constraint
-  NeqC :: Pretty a => Logic a -> Logic a -> Constraint
-  NegC :: String -> Constraint
-
-data PremKind where
-  PremCall       :: JudgmentCall name modes ts -> PremKind
-  PremConstraint :: Constraint -> Goal -> PremKind
-
-data PremAction = PremAction
-  { paReq  :: Set Int
-  , paProd :: Set Int
-  , paKind :: PremKind
-  }
-
-data NegAction = NegAction Goal String
-
 data CollectState = CollectState
   { csAvailVars :: Set Int
   , csPrems     :: [PremAction]
@@ -179,7 +170,7 @@ collectRule caller (Bind op k) st = case op of
     in collectRule caller' (k ()) st'
 
   PremF jc ->
-    let action = PremAction (jcReqVars jc) (jcProdVars jc) (PremCall jc)
+    let action = PremAction (jcReqVars jc) (jcProdVars jc) (PremCall jc) (renderJudgmentCall jc)
         st' = st { csPrems = action : csPrems st }
     in collectRule caller (k ()) st'
 
@@ -191,14 +182,14 @@ collectRule caller (Bind op k) st = case op of
   EqF t1 t2 ->
     let vars = S.union (termVars t1) (termVars t2)
         constraint = EqC (termVal t1) (termVal t2)
-        action = PremAction vars S.empty (PremConstraint constraint (Unify (termVal t1) (termVal t2)))
+        action = PremAction vars S.empty (PremConstraint constraint (Unify (termVal t1) (termVal t2))) (renderEq t1 t2)
         st' = st { csPrems = action : csPrems st }
     in collectRule caller (k ()) st'
 
   NEqF t1 t2 ->
     let vars = S.union (termVars t1) (termVars t2)
         constraint = NeqC (termVal t1) (termVal t2)
-        action = PremAction vars S.empty (PremConstraint constraint (Disunify (termVal t1) (termVal t2)))
+        action = PremAction vars S.empty (PremConstraint constraint (Disunify (termVal t1) (termVal t2))) (renderNeq t1 t2)
         st' = st { csPrems = action : csPrems st }
     in collectRule caller (k ()) st'
   where
@@ -239,36 +230,35 @@ traceRule jc (Rule ruleLabel body) s0 =
   in case csHeadGoal collect of
        Nothing -> []
        Just headGoal ->
-         [ (sFinal, deriv)
-         | sHead <- exec headGoal s1
-         , (sPrem, premDerivs, premConstraints) <- runPremises (csAvailVars collect) (reverse (csPrems collect)) sHead
-         , (sFinal, negConstraints) <- runNegations (reverse (csNegs collect)) sPrem
-         , let concl = buildConclusion jc sFinal
-               constraints = map (applySubstConstraint sFinal) (premConstraints ++ negConstraints)
-               deriv = Derivation ruleLabel concl premDerivs constraints
-         ]
+         case schedulePremisesChecked ruleLabel (Just (SomeJudgmentCall jc)) (csAvailVars collect) (reverse (csPrems collect)) of
+           Left err -> error err
+           Right orderedPrems ->
+             [ (sFinal, deriv)
+             | sHead <- exec headGoal s1
+             , (sPrem, premDerivs, premConstraints) <- runPremises orderedPrems sHead
+             , (sFinal, negConstraints) <- runNegations (reverse (csNegs collect)) sPrem
+             , let concl = buildConclusion jc sFinal
+                   constraints = map (applySubstConstraint sFinal) (premConstraints ++ negConstraints)
+                   deriv = Derivation ruleLabel concl premDerivs constraints
+             ]
 
 runPremises
-  :: Set Int
-  -> [PremAction]
+  :: [PremAction]
   -> Subst
   -> [(Subst, [Derivation], [Constraint])]
-runPremises _ [] s = [(s, [], [])]
-runPremises avail prems s =
-  case selectReady avail prems of
-    Nothing -> []
-    Just (prem, rest) ->
-      case paKind prem of
-        PremCall jc ->
-          [ (s'', deriv : ds, cs)
-          | (s', deriv) <- traceJudgmentCall jc s
-          , (s'', ds, cs) <- runPremises (S.union avail (paProd prem)) rest s'
-          ]
-        PremConstraint constraint goal ->
-          [ (s'', ds, constraint : cs)
-          | s' <- exec goal s
-          , (s'', ds, cs) <- runPremises (S.union avail (paProd prem)) rest s'
-          ]
+runPremises [] s = [(s, [], [])]
+runPremises (prem:rest) s =
+  case paKind prem of
+    PremCall jc ->
+      [ (s'', deriv : ds, cs)
+      | (s', deriv) <- traceJudgmentCall jc s
+      , (s'', ds, cs) <- runPremises rest s'
+      ]
+    PremConstraint constraint goal ->
+      [ (s'', ds, constraint : cs)
+      | s' <- exec goal s
+      , (s'', ds, cs) <- runPremises rest s'
+      ]
 
 runNegations :: [NegAction] -> Subst -> [(Subst, [Constraint])]
 runNegations [] s = [(s, [])]
@@ -277,14 +267,6 @@ runNegations (NegAction goal label : rest) s =
   | s' <- exec (Neg goal) s
   , (s'', cs) <- runNegations rest s'
   ]
-
-selectReady :: Set Int -> [PremAction] -> Maybe (PremAction, [PremAction])
-selectReady _ [] = Nothing
-selectReady avail (p:ps)
-  | paReq p `S.isSubsetOf` avail = Just (p, ps)
-  | otherwise = case selectReady avail ps of
-      Nothing -> Nothing
-      Just (ready, rest) -> Just (ready, p : rest)
 
 --------------------------------------------------------------------------------
 -- Rendering helpers
