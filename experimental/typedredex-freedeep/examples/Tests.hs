@@ -3,7 +3,7 @@
 module Main (main) where
 
 import TypedRedex.Backend.Eval (eval, query, qfresh)
-import TypedRedex.Interp.Trace (prettyDerivation, trace)
+import TypedRedex.Interp.Trace (TraceResult(..), prettyDerivation, trace)
 import qualified Example.Stlc as Stlc
 import qualified Example.Pcf as Pcf
 import qualified Example.Poly as Poly
@@ -78,7 +78,9 @@ main = do
   assertBool "trace nonempty" (not (null traces))
   case traces of
     [] -> pure ()
-    (_, deriv):_ ->
+    TraceOk _ deriv : _ ->
+      assertBool "trace pretty" (not (null (prettyDerivation deriv)))
+    TraceFail _ deriv : _ ->
       assertBool "trace pretty" (not (null (prettyDerivation deriv)))
 
   putStrLn "=== All tests passed ==="

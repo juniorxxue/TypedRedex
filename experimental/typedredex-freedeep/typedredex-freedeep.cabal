@@ -102,3 +102,23 @@ executable example-mode-errors
         GADTs
         TypeOperators
         QualifiedDo
+
+executable example-trace-partial
+    import:           warnings
+    main-is:          TracePartialMain.hs
+    other-modules:
+        Example.TracePartial
+        Example.Stlc
+        Example.StlcPlus
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex-freedeep
+    hs-source-dirs:   examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+        QualifiedDo
