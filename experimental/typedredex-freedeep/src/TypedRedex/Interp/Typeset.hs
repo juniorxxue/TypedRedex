@@ -12,6 +12,7 @@ import qualified Data.Set as S
 import TypedRedex.Core.IxFree (IxFree(..))
 import TypedRedex.Core.RuleF
 import TypedRedex.Pretty
+import TypedRedex.Nominal (NominalAtom, FreshName(..))
 
 --------------------------------------------------------------------------------
 -- Main interface
@@ -53,6 +54,7 @@ data Premise where
 data Constraint where
   EqC  :: Pretty a => Term a -> Term a -> Constraint
   NeqC :: Pretty a => Term a -> Term a -> Constraint
+  HashC :: (Pretty name, Pretty term) => Term name -> Term term -> Constraint
   NegC :: String -> Constraint
 
 data Extracted = Extracted
@@ -79,6 +81,13 @@ extractRule body =
             dummyTerm = Term (S.singleton varId) (Var varId)
         in go (k dummyTerm) ex'
 
+      FreshNameF ->
+        let varId = exNextVar ex
+            ex' = ex { exNextVar = varId + 1 }
+            name = freshName varId
+            dummyTerm = Term S.empty (Ground (project name))
+        in go (k dummyTerm) ex'
+
       ConclF jc ->
         go (k ()) ex { exConclusion = Just (Premise jc) }
 
@@ -94,6 +103,9 @@ extractRule body =
 
       NEqF t1 t2 ->
         go (k ()) ex { exConstraints = exConstraints ex ++ [NeqC t1 t2] }
+
+      HashF name term ->
+        go (k ()) ex { exConstraints = exConstraints ex ++ [HashC name term] }
 
 formatNegRule :: Rule name ts -> String
 formatNegRule (Rule ruleLabel _) = ruleLabel ++ "..."
@@ -150,6 +162,10 @@ renderConstraint (NeqC t1 t2) = do
   d1 <- prettyTerm t1
   d2 <- prettyTerm t2
   pure (d1 <+> Doc " =/= " <+> d2)
+renderConstraint (HashC name term) = do
+  d1 <- prettyTerm name
+  d2 <- prettyTerm term
+  pure (d1 <+> Doc " # " <+> d2)
 renderConstraint (NegC name) =
   pure (Doc "not(" <> Doc name <> Doc ")")
 

@@ -23,6 +23,7 @@ import TypedRedex.Backend.Engine
   , NegAction(..)
   , renderEq
   , renderJudgmentCall
+  , renderHash
   , renderNeq
   , schedulePremisesChecked
   , translateRuleClosed
@@ -39,6 +40,7 @@ import qualified TypedRedex.Backend.Goal as G
 import TypedRedex.Core.IxFree (IxFree(..))
 import TypedRedex.Core.RuleF
 import TypedRedex.Pretty
+import TypedRedex.Nominal (NominalAtom, FreshName(..))
 
 --------------------------------------------------------------------------------
 -- Derivation Trees
@@ -146,6 +148,10 @@ renderConstraint (NeqC t1 t2) = do
   d1 <- prettyLogic t1
   d2 <- prettyLogic t2
   pure (d1 <+> Doc " =/= " <+> d2)
+renderConstraint (HashC name term) = do
+  d1 <- prettyLogic name
+  d2 <- prettyLogic term
+  pure (d1 <+> Doc " # " <+> d2)
 renderConstraint (NegC name) =
   pure (Doc "not(" <> Doc name <> Doc ")")
 
@@ -232,12 +238,18 @@ collectRule _ (Pure _) st = pure st
 collectRule caller (Bind op k) st = case op of
   FreshF -> do
     term <- freshTerm
+    let Term vars _ = term
+        st' = st { csAvailVars = S.union (csAvailVars st) vars }
+    collectRule caller (k term) st'
+
+  FreshNameF -> do
+    term <- freshNameTerm
     collectRule caller (k term) st
 
   ConclF jc ->
     let (caller', headGoal) = resolveHead caller jc
         st' = st
-          { csAvailVars = jcReqVars jc
+          { csAvailVars = S.union (csAvailVars st) (jcReqVars jc)
           , csHeadGoal = Just headGoal
           , csHeadCall = Just (SomeJudgmentCall jc)
           }
@@ -266,6 +278,13 @@ collectRule caller (Bind op k) st = case op of
         action = PremAction vars S.empty (PremConstraint constraint (G.Disunify (termVal t1) (termVal t2))) (renderNeq t1 t2)
         st' = st { csPrems = action : csPrems st }
     in collectRule caller (k ()) st'
+
+  HashF name term ->
+    let vars = S.union (termVars name) (termVars term)
+        constraint = HashC (termVal name) (termVal term)
+        action = PremAction vars S.empty (PremConstraint constraint (G.Hash (termVal name) (termVal term))) (renderHash name term)
+        st' = st { csPrems = action : csPrems st }
+    in collectRule caller (k ()) st'
   where
     freshTerm :: forall a'. (Repr a', Typeable a') => State Subst (Term a')
     freshTerm = do
@@ -273,6 +292,14 @@ collectRule caller (Bind op k) st = case op of
       let i = substNextVar s
       put s { substNextVar = i + 1 }
       pure (Term (S.singleton i) (Var i))
+
+    freshNameTerm :: forall a'. (NominalAtom a', FreshName a', Repr a', Typeable a') => State Subst (Term a')
+    freshNameTerm = do
+      s <- get
+      let i = substNextName s
+          name = freshName i
+      put s { substNextName = i + 1 }
+      pure (Term S.empty (Ground (project name)))
 
 resolveHead
   :: Maybe (SomeTermList ts)
@@ -431,6 +458,7 @@ skipPremises = map (PremSkipped . paDesc)
 applySubstConstraint :: Subst -> Constraint -> Constraint
 applySubstConstraint s (EqC t1 t2) = EqC (applySubstLogic s t1) (applySubstLogic s t2)
 applySubstConstraint s (NeqC t1 t2) = NeqC (applySubstLogic s t1) (applySubstLogic s t2)
+applySubstConstraint s (HashC name term) = HashC (applySubstLogic s name) (applySubstLogic s term)
 applySubstConstraint _ (NegC name) = NegC name
 
 applySubstPrettyTerm :: Subst -> PrettyTerm -> PrettyTerm

@@ -24,6 +24,9 @@ library
         TypedRedex.Backend.Engine
         TypedRedex.Backend.Eval
         TypedRedex.Backend.Query
+        TypedRedex.Nominal
+        TypedRedex.Nominal.Bind
+        TypedRedex.Nominal.Prelude
     build-depends:
         base >= 4.17 && < 5,
         containers,
@@ -110,6 +113,24 @@ executable example-trace-partial
         Example.TracePartial
         Example.Stlc
         Example.StlcPlus
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex-freedeep
+    hs-source-dirs:   examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+        QualifiedDo
+
+executable example-systemf-nominal
+    import:           warnings
+    main-is:          SystemFNominalMain.hs
+    other-modules:
+        Example.SystemFNominal
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,

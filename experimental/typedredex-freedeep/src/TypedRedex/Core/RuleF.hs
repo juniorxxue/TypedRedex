@@ -29,6 +29,7 @@ import TypedRedex.Core.IxFree (IxFree)
 import TypedRedex.Core.Schedule
 import TypedRedex.Core.Term
 import TypedRedex.Pretty (Doc, Pretty(..), PrettyTerm(..))
+import TypedRedex.Nominal (NominalAtom, Hash, FreshName)
 
 --------------------------------------------------------------------------------
 -- Argument lists
@@ -119,6 +120,10 @@ data RuleF (ts :: [Type]) s t (a :: Type) where
   FreshF :: (Repr a, Typeable a)
          => RuleF ts s s (Term a)
 
+  -- | Fresh nominal atom (ground name)
+  FreshNameF :: (NominalAtom name, FreshName name, Repr name, Typeable name)
+             => RuleF ts s s (Term name)
+
   -- | Conclusion
   ConclF :: JudgmentCall name modes ts
          -> RuleF ts s s ()
@@ -138,5 +143,10 @@ data RuleF (ts :: [Type]) s t (a :: Type) where
 
   -- | Disequality constraint
   NEqF :: (Repr a, Typeable a)
-       => Term a -> Term a
-       -> RuleF ts s s ()
+      => Term a -> Term a
+      -> RuleF ts s s ()
+
+  -- | Freshness (hash) constraint: name # term
+  HashF :: (NominalAtom name, Hash name term, Repr name, Repr term, Typeable name, Typeable term)
+        => Term name -> Term term
+        -> RuleF ts s s ()

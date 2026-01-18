@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 -- | Core term representation for logic programming
 --
 -- Pure symbolic terms without interpreter dependencies.
@@ -22,7 +24,7 @@ module TypedRedex.Core.Term
 import Data.Kind (Type)
 import Data.Set (Set)
 import qualified Data.Set as S
-import Data.Typeable (Typeable)
+import Data.Typeable (Typeable, cast)
 -- | A term with runtime variable tracking.
 --
 -- @a@ is the Haskell type this term represents.
@@ -65,6 +67,31 @@ class Typeable a => Repr a where
   mapReified :: (forall t. (Repr t, Typeable t) => Logic t -> Logic t)
              -> Reified a
              -> Reified a
+
+  -- | Unify two reified values using a caller-supplied unifier for logic terms.
+  --
+  -- Override this to implement custom unification (e.g., alpha-equivalence).
+  unifyReified
+    :: (forall t. (Repr t, Typeable t) => Logic t -> Logic t -> s -> Maybe s)
+    -> Reified a
+    -> Reified a
+    -> s
+    -> Maybe s
+  unifyReified unif r1 r2 s =
+    case (quote r1, quote r2) of
+      ((n1, fs1), (n2, fs2))
+        | n1 /= n2 -> Nothing
+        | length fs1 /= length fs2 -> Nothing
+        | otherwise -> unifyFields fs1 fs2 s
+    where
+      unifyFields [] [] s' = Just s'
+      unifyFields (Field t1 : xs) (Field t2 : ys) s' =
+        case cast t2 of
+          Nothing -> Nothing
+          Just t2' -> do
+            s'' <- unif t1 t2' s'
+            unifyFields xs ys s''
+      unifyFields _ _ _ = Nothing
 
 --------------------------------------------------------------------------------
 -- Smart constructors

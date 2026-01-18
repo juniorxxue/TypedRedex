@@ -38,9 +38,11 @@ module TypedRedex.DSL
     return, (>>=), (>>)
     -- * Fresh variables
   , fresh
+  , freshName
   , Fresh
     -- * Rule operations
   , concl, prem, neg
+  , hash
   , (===), (=/=)
     -- * Judgments
   , rule
@@ -69,6 +71,7 @@ import qualified TypedRedex.Core.IxFree as Ix
 import TypedRedex.Core.Term
 import TypedRedex.Core.RuleF
 import TypedRedex.Pretty (Doc, FmtFn(..), FmtArgs)
+import TypedRedex.Nominal (NominalAtom, Hash, FreshName)
 
 --------------------------------------------------------------------------------
 -- QualifiedDo
@@ -118,6 +121,15 @@ instance Fresh a => GFresh (K1 i a) where
   gFresh = fresh >>= \a -> return (K1 a)
 
 --------------------------------------------------------------------------------
+-- Nominal atoms
+--------------------------------------------------------------------------------
+
+-- | Allocate a fresh nominal atom (ground name).
+freshName :: (NominalAtom name, FreshName name, Repr name, Typeable name)
+          => RuleM ts (Term name)
+freshName = liftF FreshNameF
+
+--------------------------------------------------------------------------------
 -- Rule operations
 --------------------------------------------------------------------------------
 
@@ -141,6 +153,11 @@ infix 4 ===, =/=
       => Term a -> Term a
       -> RuleM ts ()
 (=/=) t1 t2 = liftF (NEqF t1 t2)
+
+-- | Freshness constraint: name # term (name does not occur in term).
+hash :: (NominalAtom name, Hash name term, Repr name, Repr term, Typeable name, Typeable term)
+     => Term name -> Term term -> RuleM ts ()
+hash name term = liftF (HashF name term)
 
 --------------------------------------------------------------------------------
 -- Constructing judgments

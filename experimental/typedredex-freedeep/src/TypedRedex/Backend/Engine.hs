@@ -12,6 +12,7 @@ module TypedRedex.Backend.Engine
   , renderJudgmentCall
   , renderEq
   , renderNeq
+  , renderHash
   ) where
 
 import Data.List (intercalate)
@@ -38,6 +39,7 @@ data SomeJudgmentCall where
 data Constraint where
   EqC  :: Pretty a => Logic a -> Logic a -> Constraint
   NeqC :: Pretty a => Logic a -> Logic a -> Constraint
+  HashC :: (Pretty name, Pretty term) => Logic name -> Logic term -> Constraint
   NegC :: String -> Constraint
 
 data PremKind where
@@ -102,12 +104,18 @@ buildGoal caller (Bind op k) st = case op of
   FreshF ->
     Fresh $ \v ->
       let term = Term (S.singleton (unVarId v)) (logicVar v)
+          st' = st { isAvailVars = S.insert (unVarId v) (isAvailVars st) }
+      in buildGoal caller (k term) st'
+
+  FreshNameF ->
+    FreshName $ \name ->
+      let term = Term S.empty name
       in buildGoal caller (k term) st
 
   ConclF jc ->
     let (caller', headGoal) = resolveHead caller jc
         st' = st
-          { isAvailVars = jcReqVars jc
+          { isAvailVars = S.union (isAvailVars st) (jcReqVars jc)
           , isHeadGoal = Just headGoal
           , isHeadCall = Just (SomeJudgmentCall jc)
           }
@@ -134,6 +142,13 @@ buildGoal caller (Bind op k) st = case op of
     let vars = S.union (termVars t1) (termVars t2)
         constraint = NeqC (termVal t1) (termVal t2)
         action = PremA $ PremAction vars S.empty (PremConstraint constraint (Disunify (termVal t1) (termVal t2))) (renderNeq t1 t2)
+        st' = st { isDeferred = action : isDeferred st }
+    in buildGoal caller (k ()) st'
+
+  HashF name term ->
+    let vars = S.union (termVars name) (termVars term)
+        constraint = HashC (termVal name) (termVal term)
+        action = PremA $ PremAction vars S.empty (PremConstraint constraint (Hash (termVal name) (termVal term))) (renderHash name term)
         st' = st { isDeferred = action : isDeferred st }
     in buildGoal caller (k ()) st'
 
@@ -254,6 +269,9 @@ renderEq t1 t2 = renderTerm t1 ++ " === " ++ renderTerm t2
 
 renderNeq :: Repr a => Term a -> Term a -> String
 renderNeq t1 t2 = renderTerm t1 ++ " =/= " ++ renderTerm t2
+
+renderHash :: (Repr name, Repr term) => Term name -> Term term -> String
+renderHash name term = renderTerm name ++ " # " ++ renderTerm term
 
 renderVarSet :: Set Int -> String
 renderVarSet s =
