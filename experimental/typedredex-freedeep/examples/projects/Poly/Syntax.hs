@@ -1,8 +1,6 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Example.Poly
+module Poly.Syntax
   ( Ty(..)
   , Tm(..)
   , Ctx(..)
@@ -17,17 +15,9 @@ module Example.Poly
   , tapp
   , cempty
   , cbind
-  , lookupCtx
-  , tySubst
-  , infer
-  , polyId
-  , polyIdTy
-  , polyIdApp
-  , polyIdAppTy
   ) where
 
-import TypedRedex.DSL hiding (var)
-import qualified TypedRedex.DSL as R
+import TypedRedex.Core.Term hiding (var)
 import Support.Nat
 
 --------------------------------------------------------------------------------
@@ -171,103 +161,3 @@ cempty = ground CEmpty
 
 cbind :: Term Nat -> Term Ty -> Term Ctx -> Term Ctx
 cbind = lift3 (\x ty ctx -> Ground (RBind x ty ctx))
-
---------------------------------------------------------------------------------
--- Judgments
---------------------------------------------------------------------------------
-
-lookupCtx :: Judgment "lookup" '[I, I, O] '[Ctx, Nat, Ty]
-lookupCtx = judgment
-  [ rule "lookup-here" $ R.do
-      (x, ty, ctx) <- R.fresh
-      R.concl $ lookupCtx (cbind x ty ctx) x ty
-
-  , rule "lookup-there" $ R.do
-      (x, y, ty, tyOut, ctx) <- R.fresh
-      R.concl $ lookupCtx (cbind y ty ctx) x tyOut
-      R.prem  $ lookupCtx ctx x tyOut
-      x =/= y
-  ]
-
-tySubst :: Judgment "tySubst" '[I, I, I, O] '[Ty, Nat, Ty, Ty]
-tySubst = judgment
-  [ rule "subst-int" $ R.do
-      (a, ty) <- R.fresh
-      R.concl $ tySubst tint a ty tint
-
-  , rule "subst-var-hit" $ R.do
-      (a, ty) <- R.fresh
-      R.concl $ tySubst (tvar a) a ty ty
-
-  , rule "subst-var-miss" $ R.do
-      (a, b, ty) <- R.fresh
-      R.concl $ tySubst (tvar b) a ty (tvar b)
-      a =/= b
-
-  , rule "subst-arr" $ R.do
-      (t1, t2, a, ty, r1, r2) <- R.fresh
-      R.concl $ tySubst (tarr t1 t2) a ty (tarr r1 r2)
-      R.prem  $ tySubst t1 a ty r1
-      R.prem  $ tySubst t2 a ty r2
-
-  , rule "subst-forall-shadow" $ R.do
-      (a, body, ty) <- R.fresh
-      R.concl $ tySubst (tforall a body) a ty (tforall a body)
-
-  , rule "subst-forall" $ R.do
-      (a, b, body, ty, body') <- R.fresh
-      R.concl $ tySubst (tforall b body) a ty (tforall b body')
-      R.prem  $ tySubst body a ty body'
-      a =/= b
-  ]
-
-infer :: Judgment "infer" '[I, I, O] '[Ctx, Tm, Ty]
-infer = judgment
-  [ rule "infer-var" $ R.do
-      (ctx, x, ty) <- R.fresh
-      R.concl $ infer ctx (var x) ty
-      R.prem  $ lookupCtx ctx x ty
-
-  , rule "infer-lam" $ R.do
-      (ctx, x, argTy, body, bodyTy) <- R.fresh
-      R.concl $ infer ctx (lam x argTy body) (tarr argTy bodyTy)
-      R.prem  $ infer (cbind x argTy ctx) body bodyTy
-
-  , rule "infer-app" $ R.do
-      (ctx, fun, arg, argTy, resTy) <- R.fresh
-      R.concl $ infer ctx (app fun arg) resTy
-      R.prem  $ infer ctx fun (tarr argTy resTy)
-      R.prem  $ infer ctx arg argTy
-
-  , rule "infer-tlam" $ R.do
-      (ctx, a, body, bodyTy) <- R.fresh
-      R.concl $ infer ctx (tlam a body) (tforall a bodyTy)
-      R.prem  $ infer ctx body bodyTy
-
-  , rule "infer-tapp" $ R.do
-      (ctx, tm, a, bodyTy, argTy, resTy) <- R.fresh
-      R.concl $ infer ctx (tapp tm argTy) resTy
-      R.prem  $ infer ctx tm (tforall a bodyTy)
-      R.prem  $ tySubst bodyTy a argTy resTy
-  ]
-
---------------------------------------------------------------------------------
--- Sample terms
---------------------------------------------------------------------------------
-
-polyId :: Term Tm
-polyId =
-  let a = zro
-      x = suc zro
-  in tlam a (lam x (tvar a) (var x))
-
-polyIdTy :: Term Ty
-polyIdTy =
-  let a = zro
-  in tforall a (tarr (tvar a) (tvar a))
-
-polyIdApp :: Term Tm
-polyIdApp = tapp polyId tint
-
-polyIdAppTy :: Term Ty
-polyIdAppTy = tarr tint tint

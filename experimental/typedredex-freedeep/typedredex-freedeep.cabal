@@ -52,94 +52,156 @@ library
 
 executable example-simple
     import:           warnings
-    main-is:          Simple.hs
+    main-is:          Simple/Main.hs
     other-modules:
+        Simple.Syntax
+        Simple.Rules
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
         typedredex-freedeep
-    hs-source-dirs:   examples
+    hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
         DataKinds
         TypeFamilies
         GADTs
         TypeOperators
-        QualifiedDo
+    ghc-options:      -main-is Simple.Main
 
-executable example-tests
+executable example-stlc
     import:           warnings
-    main-is:          Tests.hs
+    main-is:          Stlc/Main.hs
     other-modules:
-        Example.Stlc
-        Example.Pcf
-        Example.Poly
-        Example.ModeErrors
+        Stlc.Syntax
+        Stlc.Rules
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
         typedredex-freedeep
-    hs-source-dirs:   examples
+    hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
         DataKinds
         TypeFamilies
         GADTs
         TypeOperators
-        QualifiedDo
+    ghc-options:      -main-is Stlc.Main
+
+executable example-stlc-plus
+    import:           warnings
+    main-is:          StlcPlus/Main.hs
+    other-modules:
+        StlcPlus.Syntax
+        StlcPlus.Rules
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex-freedeep
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is StlcPlus.Main
+
+executable example-pcf
+    import:           warnings
+    main-is:          Pcf/Main.hs
+    other-modules:
+        Pcf.Syntax
+        Pcf.Rules
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex-freedeep
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is Pcf.Main
+
+executable example-poly
+    import:           warnings
+    main-is:          Poly/Main.hs
+    other-modules:
+        Poly.Syntax
+        Poly.Rules
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex-freedeep
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is Poly.Main
 
 executable example-mode-errors
     import:           warnings
-    main-is:          ModeErrorsMain.hs
+    main-is:          ModeErrors/Main.hs
     other-modules:
-        Example.ModeErrors
+        ModeErrors.Syntax
+        ModeErrors.Rules
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
         typedredex-freedeep
-    hs-source-dirs:   examples
+    hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
         DataKinds
         TypeFamilies
         GADTs
         TypeOperators
-        QualifiedDo
+    ghc-options:      -main-is ModeErrors.Main
 
 executable example-trace-partial
     import:           warnings
-    main-is:          TracePartialMain.hs
+    main-is:          TracePartial/Main.hs
     other-modules:
-        Example.TracePartial
-        Example.Stlc
-        Example.StlcPlus
+        TracePartial.Syntax
+        TracePartial.Rules
+        Stlc.Syntax
+        Stlc.Rules
+        StlcPlus.Syntax
+        StlcPlus.Rules
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
         typedredex-freedeep
-    hs-source-dirs:   examples
+    hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
         DataKinds
         TypeFamilies
         GADTs
         TypeOperators
-        QualifiedDo
+    ghc-options:      -main-is TracePartial.Main
 
 executable example-systemf-nominal
     import:           warnings
-    main-is:          SystemFNominalMain.hs
+    main-is:          SystemFNominal/Main.hs
     other-modules:
-        Example.SystemFNominal
+        SystemFNominal.Syntax
+        SystemFNominal.Rules
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
         typedredex-freedeep
-    hs-source-dirs:   examples
+    hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
         DataKinds
         TypeFamilies
         GADTs
         TypeOperators
-        QualifiedDo
+    ghc-options:      -main-is SystemFNominal.Main

@@ -1,9 +1,8 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE QualifiedDo #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
-module Example.SystemFNominal
+module SystemFNominal.Syntax
   ( Ty(..)
   , Tm(..)
   , Ctx(..)
@@ -21,19 +20,12 @@ module Example.SystemFNominal
   , ctxEmpty
   , ctxVar
   , ctxTy
-  , lookupVar
-  , tySubst
-  , tyEquiv
-  , infer
-  , idTm
-  , idTy
   ) where
 
-import TypedRedex.DSL hiding (var)
-import qualified TypedRedex.DSL as R
+import TypedRedex.Core.Term hiding (var)
 import TypedRedex.Nominal (NominalAtom, Permute(..), Hash(..))
 import TypedRedex.Nominal.Bind (Bind(..), bind, unbind)
-import TypedRedex.Nominal.Prelude (Nom, TyNom, nom, tynom, freshTyNom, unbind2)
+import TypedRedex.Nominal.Prelude (Nom, TyNom)
 import TypedRedex.Pretty (Pretty(..), PrettyM, Doc(..), (<+>), parens, prettyLogic, cycleNames)
 import Support.Nat
 
@@ -199,7 +191,7 @@ instance Pretty Tm where
     pure (dt <+> Doc " @" <+> dty)
 
 instance Pretty Ctx where
-  varNames = cycleNames ["Γ"]
+  varNames = cycleNames ["\\u0393"]
   prettyReified REmpty = pure "."
   prettyReified (RVarCtx x ty ctx) = do
     dx <- prettyLogic x
@@ -340,143 +332,3 @@ ctxVar = lift3 (\x ty ctx -> Ground (RVarCtx x ty ctx))
 
 ctxTy :: Term TyNom -> Term Ctx -> Term Ctx
 ctxTy = lift2 (\a ctx -> Ground (RTyCtx a ctx))
-
---------------------------------------------------------------------------------
--- Judgments
---------------------------------------------------------------------------------
-
-lookupVar :: Judgment "lookupVar" '[I, I, O] '[Ctx, Nom, Ty]
-lookupVar = judgment $ do
-  format $ \ctx x ty -> ctx <+> " |- " <+> x <+> " : " <+> ty
-  rules
-    [ rule "lookup-here" $ R.do
-        (x, ty, ctx) <- R.fresh
-        R.concl $ lookupVar (ctxVar x ty ctx) x ty
-
-    , rule "lookup-skip" $ R.do
-        (x, y, ty, ty', ctx) <- R.fresh
-        x =/= y
-        R.prem  $ lookupVar ctx x ty
-        R.concl $ lookupVar (ctxVar y ty' ctx) x ty
-
-    , rule "lookup-ty" $ R.do
-        (x, a, ty, ctx) <- R.fresh
-        R.prem  $ lookupVar ctx x ty
-        R.concl $ lookupVar (ctxTy a ctx) x ty
-    ]
-
-tySubst :: Judgment "tySubst" '[I, I, I, O] '[Ty, TyNom, Ty, Ty]
-tySubst = judgment $ do
-  format $ \body a repl res -> "[" <+> repl <+> "/" <+> a <+> "]" <+> body <+> " = " <+> res
-  rules
-    [ rule "subst-unit" $ R.do
-        (a, ty) <- R.fresh
-        R.concl $ tySubst tunit a ty tunit
-
-    , rule "subst-int" $ R.do
-        (a, ty) <- R.fresh
-        R.concl $ tySubst tint a ty tint
-
-    , rule "subst-var-hit" $ R.do
-        (a, ty) <- R.fresh
-        R.concl $ tySubst (tvar a) a ty ty
-
-    , rule "subst-var-miss" $ R.do
-        (a, b, ty) <- R.fresh
-        R.concl $ tySubst (tvar b) a ty (tvar b)
-        a =/= b
-
-    , rule "subst-arr" $ R.do
-        (t1, t2, a, ty, r1, r2) <- R.fresh
-        R.concl $ tySubst (tarr t1 t2) a ty (tarr r1 r2)
-        R.prem  $ tySubst t1 a ty r1
-        R.prem  $ tySubst t2 a ty r2
-
-    , rule "subst-forall-shadow" $ R.do
-        (a, body, ty) <- R.fresh
-        R.concl $ tySubst (tforall a body) a ty (tforall a body)
-
-    , rule "subst-forall" $ R.do
-        (a, b, body, ty, body', body'') <- R.fresh
-        bFresh <- freshTyNom
-        R.concl $ tySubst (tforall b body) a ty (tforall bFresh body'')
-        a =/= b
-        R.hash bFresh ty
-        (bind b body) === (bind bFresh body')
-        R.prem  $ tySubst body' a ty body''
-    ]
-
-tyEquiv :: Judgment "tyEquiv" '[I, I] '[Ty, Ty]
-tyEquiv = judgment $ do
-  format $ \t1 t2 -> t1 <+> " === " <+> t2
-  rules
-    [ rule "equiv-unit" $ R.do
-        R.concl $ tyEquiv tunit tunit
-
-    , rule "equiv-int" $ R.do
-        R.concl $ tyEquiv tint tint
-
-    , rule "equiv-var" $ R.do
-        a <- R.fresh
-        R.concl $ tyEquiv (tvar a) (tvar a)
-
-    , rule "equiv-arr" $ R.do
-        (a1, a2, b1, b2) <- R.fresh
-        R.concl $ tyEquiv (tarr a1 a2) (tarr b1 b2)
-        R.prem  $ tyEquiv a1 b1
-        R.prem  $ tyEquiv a2 b2
-
-    , rule "equiv-forall" $ R.do
-        (a, b, body, body') <- R.fresh
-        (_x, body1, body2) <- unbind2 (bind a body) (bind b body')
-        R.concl $ tyEquiv (tforall a body) (tforall b body')
-        R.prem  $ tyEquiv body1 body2
-    ]
-
-infer :: Judgment "infer" '[I, I, O] '[Ctx, Tm, Ty]
-infer = judgment $ do
-  format $ \ctx tm ty -> ctx <+> " |- " <+> tm <+> " : " <+> ty
-  rules
-    [ rule "infer-var" $ R.do
-        (ctx, x, ty) <- R.fresh
-        R.concl $ infer ctx (var x) ty
-        R.prem  $ lookupVar ctx x ty
-
-    , rule "infer-int" $ R.do
-        (ctx, n) <- R.fresh
-        R.concl $ infer ctx (intLit n) tint
-
-    , rule "infer-lam" $ R.do
-        (ctx, x, argTy, body, bodyTy) <- R.fresh
-        R.concl $ infer ctx (lam argTy x body) (tarr argTy bodyTy)
-        R.prem  $ infer (ctxVar x argTy ctx) body bodyTy
-
-    , rule "infer-app" $ R.do
-        (ctx, t1, t2, argTy, resTy) <- R.fresh
-        R.concl $ infer ctx (app t1 t2) resTy
-        R.prem  $ infer ctx t1 (tarr argTy resTy)
-        R.prem  $ infer ctx t2 argTy
-
-    , rule "infer-tlam" $ R.do
-        (ctx, a, body, bodyTy) <- R.fresh
-        R.concl $ infer ctx (tlam a body) (tforall a bodyTy)
-        R.prem  $ infer (ctxTy a ctx) body bodyTy
-
-    , rule "infer-tapp" $ R.do
-        (ctx, tm, a, bodyTy, argTy, resTy) <- R.fresh
-        R.concl $ infer ctx (tapp tm argTy) resTy
-        R.prem  $ infer ctx tm (tforall a bodyTy)
-        R.prem  $ tySubst bodyTy a argTy resTy
-    ]
-
---------------------------------------------------------------------------------
--- Sample terms
---------------------------------------------------------------------------------
-
-idTm :: Term Tm
-idTm =
-  tlam (tynom 0) (lam (tvar (tynom 0)) (nom 0) (var (nom 0)))
-
-idTy :: Term Ty
-idTy =
-  tforall (tynom 0) (tarr (tvar (tynom 0)) (tvar (tynom 0)))

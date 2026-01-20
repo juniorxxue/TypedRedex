@@ -1,3 +1,6 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 -- | Typeset interpreter: pretty-print rules as inference rules
 --
 -- Direct AST traversal, no execution.
@@ -12,15 +15,28 @@ import qualified Data.Set as S
 import TypedRedex.Core.IxFree (IxFree(..))
 import TypedRedex.Core.RuleF
 import TypedRedex.Pretty
-import TypedRedex.Nominal (NominalAtom, FreshName(..))
+import TypedRedex.Nominal (FreshName(..))
 
 --------------------------------------------------------------------------------
 -- Main interface
 --------------------------------------------------------------------------------
 
--- | Typeset all rules for a judgment call
-typeset :: JudgmentCall name modes ts -> String
-typeset jc = unlines
+class Typeset f where
+  typesetWith :: Int -> f -> String
+
+instance Typeset (JudgmentCall name modes ts) where
+  typesetWith _ = typesetCall
+
+instance Typeset f => Typeset (Term a -> f) where
+  typesetWith i f = typesetWith (i + 1) (f (var i))
+
+-- | Typeset all rules for a judgment.
+typeset :: Typeset f => f -> String
+typeset = typesetWith 0
+
+-- | Typeset all rules for a judgment call.
+typesetCall :: JudgmentCall name modes ts -> String
+typesetCall jc = unlines
   [ "Judgment: " ++ jcName jc
   , replicate 40 '-'
   , unlines (map typesetRule (jcRules jc))

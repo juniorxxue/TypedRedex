@@ -1,23 +1,18 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Example.Pcf
+module Pcf.Syntax
   ( Tm(..)
   , zero
   , succTm
   , predTm
   , if0
   , plus
-  , add
-  , evalP
   , one
   , two
   , three
   ) where
 
-import TypedRedex.DSL
-import qualified TypedRedex.DSL as R
+import TypedRedex.Core.Term
 
 --------------------------------------------------------------------------------
 -- Syntax
@@ -95,57 +90,3 @@ two = succTm one
 
 three :: Term Tm
 three = succTm two
-
---------------------------------------------------------------------------------
--- Judgments
---------------------------------------------------------------------------------
-
-add :: Judgment "add" '[I, I, O] '[Tm, Tm, Tm]
-add = judgment
-  [ rule "add-zero" $ R.do
-      y <- R.fresh
-      R.concl $ add zero y y
-
-  , rule "add-succ" $ R.do
-      (x, y, z) <- R.fresh
-      R.concl $ add (succTm x) y (succTm z)
-      R.prem  $ add x y z
-  ]
-
-evalP :: Judgment "eval" '[I, O] '[Tm, Tm]
-evalP = judgment
-  [ rule "eval-zero" $ R.do
-      R.concl $ evalP zero zero
-
-  , rule "eval-succ" $ R.do
-      (t, v) <- R.fresh
-      R.concl $ evalP (succTm t) (succTm v)
-      R.prem  $ evalP t v
-
-  , rule "eval-pred-zero" $ R.do
-      R.concl $ evalP (predTm zero) zero
-
-  , rule "eval-pred-succ" $ R.do
-      (t, v) <- R.fresh
-      R.concl $ evalP (predTm (succTm t)) v
-      R.prem  $ evalP t v
-
-  , rule "eval-if0-zero" $ R.do
-      (t, t1, t2, v) <- R.fresh
-      R.concl $ evalP (if0 t t1 t2) v
-      R.prem  $ evalP t zero
-      R.prem  $ evalP t1 v
-
-  , rule "eval-if0-succ" $ R.do
-      (t, n, t1, t2, v) <- R.fresh
-      R.concl $ evalP (if0 t t1 t2) v
-      R.prem  $ evalP t (succTm n)
-      R.prem  $ evalP t2 v
-
-  , rule "eval-plus" $ R.do
-      (t1, t2, v1, v2, v) <- R.fresh
-      R.concl $ evalP (plus t1 t2) v
-      R.prem  $ evalP t1 v1
-      R.prem  $ evalP t2 v2
-      R.prem  $ add v1 v2 v
-  ]

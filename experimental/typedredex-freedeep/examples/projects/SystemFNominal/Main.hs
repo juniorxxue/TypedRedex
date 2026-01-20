@@ -1,4 +1,4 @@
-module Main (main) where
+module SystemFNominal.Main (main) where
 
 import TypedRedex.Backend.Eval (eval, query, qfresh)
 import TypedRedex.Interp.Trace (TraceResult(..), prettyDerivation, trace)
@@ -6,7 +6,8 @@ import TypedRedex.Interp.Typeset (typeset)
 import TypedRedex.Nominal.Bind (Bind(..))
 import TypedRedex.Nominal.Prelude (TyNom(..), tynom)
 
-import Example.SystemFNominal as SF
+import SystemFNominal.Rules
+import SystemFNominal.Syntax
 import Support.Nat (zro, suc)
 
 assertElem :: (Eq a, Show a) => String -> a -> [a] -> IO ()
@@ -37,7 +38,9 @@ main :: IO ()
 main = do
   putStrLn "=== System F (Nominal) ==="
   putStrLn ""
-  putStrLn (typeset (infer ctxEmpty idTm idTy))
+  putStrLn (typeset infer)
+  putStrLn $ typeset tyEquiv
+  putStrLn $ typeset tySubst
 
   let a0 = TyNom 0
       idTyVal = TyForall (Bind a0 (TyArr (TyVar a0) (TyVar a0)))
