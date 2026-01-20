@@ -9,15 +9,12 @@ module TypedRedex.Nominal.Prelude
   , tynom
   , freshNom
   , freshTyNom
-  , unbind2
   ) where
 
-import Data.Typeable (Typeable)
 import TypedRedex.Core.Term
-import TypedRedex.DSL (RuleM, (===))
+import TypedRedex.DSL (RuleM)
 import qualified TypedRedex.DSL as DSL
 import TypedRedex.Nominal (NominalAtom(..), FreshName(..), Permute(..), Hash(..))
-import TypedRedex.Nominal.Bind (Bind, bind)
 import TypedRedex.Pretty (Pretty(..), Doc(..), cycleNames)
 
 --------------------------------------------------------------------------------
@@ -104,18 +101,3 @@ freshNom = DSL.freshName
 
 freshTyNom :: RuleM ts (Term TyNom)
 freshTyNom = DSL.freshName
-
--- | Open two binders with the same fresh name.
-unbind2
-  :: (NominalAtom name, FreshName name, Repr name, Repr body1, Repr body2,
-      Typeable name, Typeable body1, Typeable body2,
-      Permute name body1, Permute name body2)
-  => Term (Bind name body1)
-  -> Term (Bind name body2)
-  -> RuleM ts (Term name, Term body1, Term body2)
-unbind2 bnd1 bnd2 = DSL.do
-  name <- DSL.freshName
-  (body1, body2) <- DSL.fresh
-  (===) (bind name body1) bnd1
-  (===) (bind name body2) bnd2
-  DSL.return (name, body1, body2)

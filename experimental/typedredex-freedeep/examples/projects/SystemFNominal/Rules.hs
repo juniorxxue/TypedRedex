@@ -6,6 +6,7 @@ module SystemFNominal.Rules
   ( lookupVar
   , tySubst
   , tyEquiv
+  , tmEquiv
   , infer
   , idTm
   , idTy
@@ -16,7 +17,7 @@ import Prelude hiding ((>>=), (>>), return)
 import qualified Prelude as P
 import TypedRedex.DSL hiding (var)
 import TypedRedex.Nominal.Bind (bind)
-import TypedRedex.Nominal.Prelude (Nom, TyNom, freshTyNom, nom, tynom, unbind2)
+import TypedRedex.Nominal.Prelude (Nom, TyNom, nom, tynom)
 import TypedRedex.Pretty ((<+>))
 
 import SystemFNominal.Syntax
@@ -78,7 +79,7 @@ tySubst = judgment $
 
     , rule "subst-forall" $ do
         (a, b, body, ty, body', body'') <- fresh
-        bFresh <- freshTyNom
+        bFresh <- freshName
         concl $ tySubst (tforall b body) a ty (tforall bFresh body'')
         a =/= b
         hash bFresh ty
@@ -107,10 +108,48 @@ tyEquiv = judgment $
         prem  $ tyEquiv a2 b2
 
     , rule "equiv-forall" $ do
-        (a, b, body, body') <- fresh
-        (_x, body1, body2) <- unbind2 (bind a body) (bind b body')
-        concl $ tyEquiv (tforall a body) (tforall b body')
-        prem  $ tyEquiv body1 body2
+        (body, body') <- fresh
+        a <- freshName
+        concl $ tyEquiv (tforall a body) (tforall a body')
+        prem  $ tyEquiv body body'
+    ]
+
+tmEquiv :: Judgment "tmEquiv" '[I, I] '[Tm, Tm]
+tmEquiv = judgment $
+  format (\t1 t2 -> t1 <+> " === " <+> t2)
+  P.>> rules
+    [ rule "equiv-var" $ do
+        x <- fresh
+        concl $ tmEquiv (var x) (var x)
+
+    , rule "equiv-int" $ do
+        n <- fresh
+        concl $ tmEquiv (intLit n) (intLit n)
+
+    , rule "equiv-app" $ do
+        (t1, t2, u1, u2) <- fresh
+        concl $ tmEquiv (app t1 t2) (app u1 u2)
+        prem  $ tmEquiv t1 u1
+        prem  $ tmEquiv t2 u2
+
+    , rule "equiv-lam" $ do
+        (ty1, ty2, body, body') <- fresh
+        x <- freshName
+        concl $ tmEquiv (lam ty1 x body) (lam ty2 x body')
+        prem  $ tyEquiv ty1 ty2
+        prem  $ tmEquiv body body'
+
+    , rule "equiv-tlam" $ do
+        (body, body') <- fresh
+        a <- freshName
+        concl $ tmEquiv (tlam a body) (tlam a body')
+        prem  $ tmEquiv body body'
+
+    , rule "equiv-tapp" $ do
+        (t1, t2, ty1, ty2) <- fresh
+        concl $ tmEquiv (tapp t1 ty1) (tapp t2 ty2)
+        prem  $ tmEquiv t1 t2
+        prem  $ tyEquiv ty1 ty2
     ]
 
 infer :: Judgment "infer" '[I, I, O] '[Ctx, Tm, Ty]
