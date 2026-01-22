@@ -1,7 +1,1 @@
-packages:
-  typedredex-logic
-  typedredex-dsl
-  typedredex-interp
-  experimental/typedredex-hkt
-  experimental/typedredex-free
-  examples/poly
+packages: .
