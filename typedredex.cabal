@@ -1,5 +1,5 @@
 cabal-version:      3.0
-name:               typedredex-freedeep
+name:               typedredex
 version:            0.1.0.0
 synopsis:           Pure AST TypedRedex with multiple interpreters
 license:            MIT
@@ -59,7 +59,7 @@ executable example-simple
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
-        typedredex-freedeep
+        typedredex
     hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
@@ -78,7 +78,7 @@ executable example-stlc
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
-        typedredex-freedeep
+        typedredex
     hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
@@ -97,7 +97,7 @@ executable example-stlc-plus
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
-        typedredex-freedeep
+        typedredex
     hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
@@ -116,7 +116,7 @@ executable example-pcf
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
-        typedredex-freedeep
+        typedredex
     hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
@@ -135,7 +135,7 @@ executable example-poly
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
-        typedredex-freedeep
+        typedredex
     hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
@@ -144,6 +144,24 @@ executable example-poly
         GADTs
         TypeOperators
     ghc-options:      -main-is Poly.Main
+
+executable example-lcti
+    import:           warnings
+    main-is:          LCTI/Main.hs
+    other-modules:
+        LCTI.Syntax
+        LCTI.Rules
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is LCTI.Main
 
 executable example-mode-errors
     import:           warnings
@@ -154,7 +172,7 @@ executable example-mode-errors
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
-        typedredex-freedeep
+        typedredex
     hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
@@ -177,7 +195,7 @@ executable example-trace-partial
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
-        typedredex-freedeep
+        typedredex
     hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
@@ -196,7 +214,7 @@ executable example-systemf-nominal
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
-        typedredex-freedeep
+        typedredex
     hs-source-dirs:   examples/projects, examples
     default-language: GHC2021
     default-extensions:
