@@ -688,7 +688,7 @@ tySubst = judgment $
 -- Polarized subtyping (ssub)
 --------------------------------------------------------------------------------
 
-ssub :: Judgment "ssub" '[I, I, I, I, O] '[Env, Env, Ty, Polar, Ty, Env]
+ssub :: Judgment "ssub" '[I, I, I, I, I, O] '[Env, Env, Ty, Polar, Ty, Env]
 ssub = judgment $
   format (\env senv ty1 p ty2 senv' ->
     env <+> "; " <+> senv <+> " |- " <+> ty1 <+> " " <+> p <+> " " <+> ty2 <+> " |- " <+> senv')
