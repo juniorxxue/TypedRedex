@@ -15,6 +15,8 @@ module Poly.Rules
   , splittable
   , splitEnv
   , unsplitEnv
+  , grounding
+  , groundingP
   , inst
   , instP
   , ssub
@@ -284,6 +286,72 @@ unsplitEnv = judgment $
         concl $ unsplitEnv env b c a (ebound (tarr tyLA tyLB) a (tarr tyUA tyUB) env)
     ]
 
+-- all matching varaibles in the type will be grounded to result in the environment
+-- in positive posistion (co-variant): use upperbound
+-- in negative position (contra-variant): use lowerbound
+-- rely on instP
+-- inductive defined on type structure
+grounding :: Judgment "grounding" '[I, I, O] '[Env, Ty, Ty]
+grounding = judgment $
+  format (\env ty ty' -> env <+> " |- ground " <+> ty <+> " = " <+> ty')
+  P.>> rules
+    [ rule "grounding" $ do
+        (env, ty, ty') <- fresh
+        prem  $ groundingP env pos ty ty'
+        concl $ grounding env ty ty'
+    ]
+
+groundingP :: Judgment "groundingP" '[I, I, I, O] '[Env, Polar, Ty, Ty]
+groundingP = judgment $
+  format (\env p ty ty' -> env <+> " |-" <+> p <+> " ground " <+> ty <+> " = " <+> ty')
+  P.>> rules
+    [ rule "var-pos" $ do
+        (env, a, tyL, tyU) <- fresh
+        prem  $ lookupBoundVar env a tyL tyU
+        concl $ groundingP env pos (tvar a) tyU
+
+    , rule "var-neg" $ do
+        (env, a, tyL, tyU) <- fresh
+        prem  $ lookupBoundVar env a tyL tyU
+        concl $ groundingP env neg (tvar a) tyL
+
+    , rule "uvar" $ do
+        (env, a, p) <- fresh
+        prem  $ lookupUvar env a
+        concl $ groundingP env p (tvar a) (tvar a)
+
+    , rule "int" $ do
+        (env, p) <- fresh
+        concl $ groundingP env p tint tint
+
+    , rule "bool" $ do
+        (env, p) <- fresh
+        concl $ groundingP env p tbool tbool
+
+    , rule "top" $ do
+        (env, p) <- fresh
+        concl $ groundingP env p ttop ttop
+
+    , rule "bot" $ do
+        (env, p) <- fresh
+        concl $ groundingP env p tbot tbot
+
+    , rule "arr" $ do
+        (env, p, p') <- fresh
+        (tyA, tyB, tyA', tyB') <- fresh
+        prem  $ flipPolar p p'
+        prem  $ groundingP env p' tyA tyA'
+        prem  $ groundingP env p tyB tyB'
+        concl $ groundingP env p (tarr tyA tyB) (tarr tyA' tyB')
+
+    , rule "forall" $ do
+        (env, p) <- fresh
+        (tyBody, tyBody') <- fresh
+        a <- freshName
+        prem  $ groundingP (euvar a env) p tyBody tyBody'
+        concl $ groundingP env p (tforall a tyBody) (tforall a tyBody')
+    ]
+
 inst :: Judgment "inst" '[I, I, I, I, O] '[Ty, TyNom, Ty, Ty, Ty]
 inst = judgment $
   format (\tyL a tyU tyC tyR -> "[" <+> tyL <+> "<:" <+> a <+> "<:" <+> tyU <+> "]" <+> tyC <+> " = " <+> tyR)
@@ -362,15 +430,17 @@ ssub = judgment $
         concl $ ssub env tbot p tyA env
 
     , rule "var-l" $ do
-        (tyA, tyB, tyC, env1, env2, a) <- fresh
+        (tyA, grdA, tyB, tyC, env1, env2, a) <- fresh
         prem  $ lookupBoundVar env1 a tyB tyC
-        prem  $ updateUpper env1 a tyA env2
+        prem  $ grounding env1 tyA grdA
+        prem  $ updateUpper env1 a grdA env2
         concl $ ssub env1 (tvar a) pos tyA env2
 
     , rule "var-r" $ do
-        (tyA, tyB, tyC, env1, env2, a) <- fresh
+        (tyA, grdA, tyB, tyC, env1, env2, a) <- fresh
         prem  $ lookupBoundVar env1 a tyB tyC
-        prem  $ updateLower env1 a tyA env2
+        prem  $ grounding env1 tyA grdA
+        prem  $ updateLower env1 a grdA env2
         concl $ ssub env1 tyA neg (tvar a) env2
 
     , rule "arr" $ do
