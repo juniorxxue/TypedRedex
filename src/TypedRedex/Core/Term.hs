@@ -25,6 +25,7 @@ import Data.Kind (Type)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Typeable (Typeable, cast)
+import TypedRedex.Nominal (NominalAtom, Hash)
 -- | A term with runtime variable tracking.
 --
 -- @a@ is the Haskell type this term represents.
@@ -73,11 +74,14 @@ class Typeable a => Repr a where
   -- Override this to implement custom unification (e.g., alpha-equivalence).
   unifyReified
     :: (forall t. (Repr t, Typeable t) => Logic t -> Logic t -> s -> Maybe s)
+    -> (forall name term.
+           (NominalAtom name, Hash name term, Repr name, Repr term, Typeable name, Typeable term)
+        => Logic name -> Logic term -> s -> Maybe s)
     -> Reified a
     -> Reified a
     -> s
     -> Maybe s
-  unifyReified unif r1 r2 s =
+  unifyReified unif _addHash r1 r2 s =
     case (quote r1, quote r2) of
       ((n1, fs1), (n2, fs2))
         | n1 /= n2 -> Nothing

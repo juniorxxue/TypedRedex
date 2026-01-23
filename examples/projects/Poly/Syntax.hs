@@ -342,7 +342,7 @@ instance Pretty Context where
 
 prettyBind
   :: forall name body.
-     (NominalAtom name, Permute name body, Pretty name, Pretty body)
+     (NominalAtom name, Permute name body, Hash name body, Pretty name, Pretty body)
   => Logic (Bind name body)
   -> PrettyM (Doc, Doc)
 prettyBind bnd =

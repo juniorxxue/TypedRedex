@@ -205,7 +205,7 @@ instance Pretty Ctx where
 
 prettyBind
   :: forall name body.
-     (NominalAtom name, Permute name body, Pretty name, Pretty body)
+     (NominalAtom name, Permute name body, Hash name body, Pretty name, Pretty body)
   => Logic (Bind name body)
   -> PrettyM (Doc, Doc)
 prettyBind bnd =
@@ -283,6 +283,19 @@ instance Hash TyNom Tm where
           then False
           else occursIn a body
       TmTApp t ty -> occursIn a t || occursIn a ty
+
+instance Hash Nom Tm where
+  occursIn a tm =
+    case tm of
+      TmVar b -> a == b
+      TmLam _ (Bind b body) ->
+        if a == b
+          then False
+          else occursIn a body
+      TmApp t1 t2 -> occursIn a t1 || occursIn a t2
+      TmInt _ -> False
+      TmTAbs (Bind _ body) -> occursIn a body
+      TmTApp t _ -> occursIn a t
 
 --------------------------------------------------------------------------------
 -- Smart constructors

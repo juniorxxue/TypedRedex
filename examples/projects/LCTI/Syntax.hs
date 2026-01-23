@@ -578,7 +578,7 @@ instance Pretty Context where
 
 prettyBind
   :: forall name body.
-     (NominalAtom name, Permute name body, Pretty name, Pretty body)
+     (NominalAtom name, Permute name body, Hash name body, Pretty name, Pretty body)
   => Logic (Bind name body)
   -> PrettyM (Doc, Doc)
 prettyBind bnd =
@@ -593,7 +593,7 @@ prettyBind bnd =
 
 prettyBindList
   :: forall name body.
-     (NominalAtom [name], Permute [name] body, Pretty name, Pretty body)
+     (NominalAtom [name], Permute [name] body, Hash [name] body, Pretty name, Pretty body)
   => Logic (Bind [name] body)
   -> PrettyM (Doc, Doc)
 prettyBindList bnd =
@@ -804,6 +804,15 @@ instance Hash Nom Tm where
       Pair t1 t2 -> occursIn a t1 || occursIn a t2
       Fst t -> occursIn a t
       Snd t -> occursIn a t
+
+instance Hash (Nom, Ty) Tm where
+  occursIn (a, _) tm = occursIn a tm
+
+instance Hash [Nom] Tm where
+  occursIn ns tm = any (\n -> occursIn n tm) ns
+
+instance Hash [(Nom, Ty)] Tm where
+  occursIn ns tm = any (\(n, _) -> occursIn n tm) ns
 
 --------------------------------------------------------------------------------
 -- Smart constructors

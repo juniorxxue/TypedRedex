@@ -135,6 +135,18 @@ recheckHashConstraints s =
       s' = s { substHashConstraints = [] }
   in go (substHashConstraints s) s'
 
+addHash
+  :: (NominalAtom name, Hash name term, Repr name, Repr term, Typeable name, Typeable term)
+  => Logic name
+  -> Logic term
+  -> Subst
+  -> Maybe Subst
+addHash name term s =
+  case checkHashConstraint s (HashConstraint name term) of
+    Nothing -> Nothing
+    Just Nothing -> Just s
+    Just (Just hc) -> Just (addHashConstraint hc s)
+
 -- | Unify two logic terms, producing an updated substitution.
 unifyLogic :: (Repr a, Typeable a) => Logic a -> Logic a -> Subst -> Maybe Subst
 unifyLogic t1 t2 s =
@@ -145,7 +157,7 @@ unifyLogic t1 t2 s =
     (Term.Ground r1, Term.Ground r2) ->
       let r1' = Term.mapReified (applySubstLogic s) r1
           r2' = Term.mapReified (applySubstLogic s) r2
-      in Term.unifyReified unifyLogic r1' r2' s
+      in Term.unifyReified unifyLogic addHash r1' r2' s
   where
     bindVar i term s'
       | occurs i term s' = Nothing

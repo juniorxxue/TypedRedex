@@ -13,7 +13,7 @@ module TypedRedex.Nominal.Bind
 import Data.Typeable (Typeable)
 
 import TypedRedex.Core.Term
-import TypedRedex.Nominal (NominalAtom(..), Permute(..))
+import TypedRedex.Nominal (NominalAtom(..), Permute(..), Hash(..))
 import TypedRedex.Pretty (Pretty(..), Doc(..), (<+>), prettyLogic)
 
 -- | A binder that binds a name in a body.
@@ -39,7 +39,7 @@ instance {-# OVERLAPPING #-} (NominalAtom name, Permute name body) => Permute na
 instance {-# OVERLAPPABLE #-} (Permute name body) => Permute name (Bind other body) where
   swap a b (Bind n body) = Bind n (swap a b body)
 
-instance (NominalAtom name, Repr name, Repr body, Typeable name, Typeable body, Permute name body)
+instance (NominalAtom name, Repr name, Repr body, Typeable name, Typeable body, Permute name body, Hash name body)
     => Repr (Bind name body) where
   data Reified (Bind name body) = BindR (Logic name) (Logic body)
 
@@ -52,7 +52,7 @@ instance (NominalAtom name, Repr name, Repr body, Typeable name, Typeable body, 
 
   mapReified f (BindR n b) = BindR (f n) (f b)
 
-  unifyReified unif (BindR n1 b1) (BindR n2 b2) s =
+  unifyReified unif addHash (BindR n1 b1) (BindR n2 b2) s =
     case (n1, n2) of
       (Ground rn1, Ground rn2) ->
         case (reify rn1, reify rn2) of
@@ -62,21 +62,29 @@ instance (NominalAtom name, Repr name, Repr body, Typeable name, Typeable body, 
                 case (b1, b2) of
                   (_, Ground rb2) ->
                     case reify rb2 of
-                      Just body2 ->
+                      Just body2 -> do
+                        s' <- addHash (Ground rn1) b2 s
                         let swapped = swap a b body2
-                        in unif b1 (Ground (project swapped)) s
-                      Nothing -> unif b1 b2 s
+                        unif b1 (Ground (project swapped)) s'
+                      Nothing -> do
+                        s' <- addHash (Ground rn1) b2 s
+                        unif b1 b2 s'
                   (Ground rb1, _) ->
                     case reify rb1 of
-                      Just body1 ->
+                      Just body1 -> do
+                        s' <- addHash (Ground rn2) b1 s
                         let swapped = swap b a body1
-                        in unif (Ground (project swapped)) b2 s
-                      Nothing -> unif b1 b2 s
-                  _ -> unif b1 b2 s
+                        unif (Ground (project swapped)) b2 s'
+                      Nothing -> do
+                        s' <- addHash (Ground rn2) b1 s
+                        unif b1 b2 s'
+                  _ -> do
+                    s' <- addHash (Ground rn1) b2 s
+                    unif b1 b2 s'
           _ -> unif n1 n2 s >>= \s' -> unif b1 b2 s'
       _ -> unif n1 n2 s >>= \s' -> unif b1 b2 s'
 
-instance (NominalAtom name, Permute name body, Pretty name, Pretty body) => Pretty (Bind name body) where
+instance (NominalAtom name, Permute name body, Hash name body, Pretty name, Pretty body) => Pretty (Bind name body) where
   prettyReified (BindR n b) = do
     dn <- prettyLogic n
     db <- prettyLogic b
