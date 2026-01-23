@@ -56,7 +56,7 @@ data Subst = Subst
   }
 
 emptySubst :: Subst
-emptySubst = Subst IM.empty 0 0 []
+emptySubst = Subst IM.empty 0 1000 []
 
 data HashConstraint where
   HashConstraint

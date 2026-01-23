@@ -749,9 +749,13 @@ ssub = judgment $
         concl $ ssub env senv (tuncurry tysA tyA) p (tuncurry tysC tyD) senv''
 
     , rule "S-Forall" $ do
-        (env, senv, tyA, tyB, p, senv') <- fresh
-        a <- freshName
-        prem  $ ssub env (euvar a senv) tyA p tyB (euvar a senv')
+        (env, senv, a, tyA, tyB, p, senv', tyA', tyB') <- fresh
+        aFresh <- freshName
+        hash aFresh tyA
+        hash aFresh tyB
+        (bind a tyA) === (bind aFresh tyA')
+        (bind a tyB) === (bind aFresh tyB')
+        prem  $ ssub env (euvar aFresh senv) tyA' p tyB' (euvar aFresh senv')
         concl $ ssub env senv (tforall a tyA) p (tforall a tyB) senv'
 
     , rule "S-List" $ do
@@ -862,13 +866,19 @@ sub = judgment $
         concl $ sub env senv (tuncurry tysA tyB) (cuncurry tms h) senv'' (tuncurry tysA' tyB')
 
     , rule "S-Forall-L" $ do
-        (env, senv, a, tyA, tm, h, senv', tyB, tyC) <- fresh
-        prem  $ sub env (eevar a senv) tyA (cterm tm h) (esvar a tyB senv') tyC
+        (env, senv, a, tyA, tm, h, senv', tyB, tyC, tyA') <- fresh
+        aFresh <- freshName
+        hash aFresh tyA
+        (bind a tyA) === (bind aFresh tyA')
+        prem  $ sub env (eevar aFresh senv) tyA' (cterm tm h) (esvar aFresh tyB senv') tyC
         concl $ sub env senv (tforall a tyA) (cterm tm h) senv' tyC
 
     , rule "S-Forall-L-UC" $ do
-        (env, senv, a, tyA, tms, h, senv', tyB, tyC) <- fresh
-        prem  $ sub env (eevar a senv) tyA (cuncurry tms h) (esvar a tyB senv') tyC
+        (env, senv, a, tyA, tms, h, senv', tyB, tyC, tyA') <- fresh
+        aFresh <- freshName
+        hash aFresh tyA
+        (bind a tyA) === (bind aFresh tyA')
+        prem  $ sub env (eevar aFresh senv) tyA' (cuncurry tms h) (esvar aFresh tyB senv') tyC
         concl $ sub env senv (tforall a tyA) (cuncurry tms h) senv' tyC
 
     , rule "S-Svar" $ do
