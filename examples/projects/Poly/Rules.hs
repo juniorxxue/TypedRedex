@@ -572,10 +572,10 @@ infer = judgment $
         concl $ infer env1 (ctype (tarr ty1 ty2)) (lam x tm) (tarr ty1 ty3) env2
 
     , rule "lam2" $ do
-        (x, tm1, tm2, env1, ctx, env2) <- fresh
+        (x, tm1, tm2, env1, ctx, env2, env3) <- fresh
         (ty1, ty2) <- fresh
-        prem  $ infer env1 cempty tm2 ty1 env2
-        prem  $ infer (etrm x ty1 env1) ctx tm1 ty2 (etrm x ty1 env2)
+        prem  $ infer env1 cempty tm2 ty1 env1
+        prem  $ infer (etrm x ty1 env1) ctx tm1 ty2 (etrm x ty1 env3)
         concl $ infer env1 (ctm tm2 ctx) (lam x tm1) (tarr ty1 ty2) env2
 
     , rule "lam3" $ do
@@ -619,18 +619,4 @@ infer = judgment $
         ctx =/= cempty
         prem  $ sub env1 tyA ctx env2 tyB
         concl $ infer env1 ctx g tyB env2
-
-    , rule "plus" $ do
-        (tm1, tm2, env1, env2, env3) <- fresh
-        prem  $ infer env1 cempty tm1 tint env2
-        prem  $ infer env1 cempty tm2 tint env3
-        concl $ infer env1 cempty (plus tm1 tm2) tint env1
-
-    , rule "true" $ do
-        env <- fresh
-        concl $ infer env cempty true tbool env
-
-    , rule "false" $ do
-        env <- fresh
-        concl $ infer env cempty false tbool env
     ]

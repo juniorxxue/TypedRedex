@@ -163,6 +163,25 @@ executable example-lcti
         TypeOperators
     ghc-options:      -main-is LCTI.Main
 
+executable example-lcti-trace
+    import:           warnings
+    main-is:          LCTI/TraceFail.hs
+    other-modules:
+        LCTI.Main
+        LCTI.Syntax
+        LCTI.Rules
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is LCTI.TraceFail
+
 executable example-mode-errors
     import:           warnings
     main-is:          ModeErrors/Main.hs

@@ -12,6 +12,37 @@
 
   This is more general but more invasive; Proposal A is simpler and keeps Goal execution unchanged.
 
+  ## Trace interpreter logic
+
+  The trace interpreter replays judgment evaluation while building a partial derivation tree. It uses a
+  search tree so it can represent matching failures separately from real errors and stop at the first
+  interesting failure.
+
+  - Search tree nodes:
+    - NoMatch: head unification for a rule failed, so this rule does not apply (no derivation emitted).
+    - Fail: a real failure with a partial derivation attached.
+    - Success: a successful derivation.
+    - Choice: nondeterministic branches from multiple rules or multiple unifiers.
+  - Rule entry:
+    - Collect the rule head, premises, constraints, and negations.
+    - Head unification runs first; if it yields no solutions, return NoMatch (so other rules still try).
+  - Premises:
+    - Constraints (eq/neq/hash) run immediately; failure records a FailConstraint and marks remaining
+      premises as "(skipped)" in the derivation.
+    - Judgment premises recurse into the same trace search. If the premise fails, the parent rule
+      becomes FailPremise, and remaining premises are skipped.
+  - Negations:
+    - After premises, negations are checked. Failure produces FailNegation; success adds a NegC constraint.
+  - Derivation building:
+    - Conclusions and constraints are rendered with the current substitution applied.
+    - Failures keep the partial subtree that led to the failure, so you can inspect how far it got.
+  - Trace selection:
+    - The top-level `trace` picks the leftmost branch. If the leftmost branch fails, the derivation
+      returned is the first failure on that path; other branches are not explored.
+  - Output filtering:
+    - `prettyDerivationWithOmit` accepts a list of names and drops any premise derivation whose
+      judgment name or rule label matches (useful for suppressing repetitive `skip-*` rules).
+
   ## Nominal unification notes
 
   - Fresh-name supply: `freshName` is a global counter that does not track names already present in a goal.

@@ -6,11 +6,13 @@ module TypedRedex.Interp.Trace
   , PremTrace(..)
   , TraceResult(..)
   , prettyDerivation
+  , prettyDerivationWithOmit
   , trace
   ) where
 
 import Control.Monad.State.Strict (State, get, put, runState)
 import Data.List (intercalate)
+import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Typeable (Typeable)
@@ -81,19 +83,24 @@ data TraceResult a
   | TraceFail Failure Derivation
 
 prettyDerivation :: Derivation -> String
-prettyDerivation d =
-  let (lines', _) = runPrettyWith emptyPrettyCtx (renderDeriv d)
+prettyDerivation = prettyDerivationWithOmit []
+
+prettyDerivationWithOmit :: [String] -> Derivation -> String
+prettyDerivationWithOmit omitNames d =
+  let omitSet = S.fromList omitNames
+      (lines', _) = runPrettyWith emptyPrettyCtx (renderDeriv omitSet d)
   in unlines lines'
   where
-    renderDeriv :: Derivation -> PrettyM [String]
-    renderDeriv (Derivation rule concl prems constraints status) = do
+    renderDeriv :: Set String -> Derivation -> PrettyM [String]
+    renderDeriv omitSet (Derivation rule concl prems constraints status) = do
       conclDoc <- renderConclusion concl
       constraintDocs <- mapM renderConstraint constraints
       let concLine = renderDoc conclDoc
+          filtered = mapMaybe (filterPremTrace omitSet) prems
           prems' =
             case status of
-              Proven -> prems
-              Failed failure -> prems ++ [PremFailure failure]
+              Proven -> filtered
+              Failed failure -> filtered ++ [PremFailure failure]
           constraintText =
             case constraintDocs of
               [] -> ""
@@ -103,7 +110,7 @@ prettyDerivation d =
           let line = replicate (length concLine) '-' ++ " [" ++ rule ++ "]" ++ constraintText
           pure [line, concLine]
         _ -> do
-          premBlocks <- mapM renderPremTrace prems'
+          premBlocks <- mapM (renderPremTrace omitSet) prems'
           let combined = foldr1 sideBySide premBlocks
               width = maximum (length concLine : map length combined)
               line = replicate width '-' ++ " [" ++ rule ++ "]" ++ constraintText
@@ -126,10 +133,20 @@ prettyDerivation d =
     padRight :: Int -> String -> String
     padRight n s = s ++ replicate (n - length s) ' '
 
-    renderPremTrace :: PremTrace -> PrettyM [String]
-    renderPremTrace (PremDeriv deriv) = renderDeriv deriv
-    renderPremTrace (PremSkipped desc) = pure [desc ++ " (skipped)"]
-    renderPremTrace (PremFailure failure) = pure ["[FAIL: " ++ failureSummary failure ++ "]"]
+    renderPremTrace :: Set String -> PremTrace -> PrettyM [String]
+    renderPremTrace omitSet (PremDeriv deriv) = renderDeriv omitSet deriv
+    renderPremTrace _ (PremSkipped desc) = pure [desc ++ " (skipped)"]
+    renderPremTrace _ (PremFailure failure) = pure ["[FAIL: " ++ failureSummary failure ++ "]"]
+
+    filterPremTrace :: Set String -> PremTrace -> Maybe PremTrace
+    filterPremTrace omitSet prem =
+      case prem of
+        PremDeriv deriv ->
+          if dcName (derivConclusion deriv) `S.member` omitSet
+            || derivRule deriv `S.member` omitSet
+            then Nothing
+            else Just prem
+        _ -> Just prem
 
 renderConclusion :: DerivConclusion -> PrettyM Doc
 renderConclusion (DerivConclusion name fmt args) = do
@@ -169,25 +186,10 @@ failureSummary failure =
 --------------------------------------------------------------------------------
 
 data Search a
-  = Fail Failure Derivation
+  = NoMatch
+  | Fail Failure Derivation
   | Success a
   | Choice [Search a]
-
-collectSuccesses :: Search a -> [a]
-collectSuccesses (Fail _ _) = []
-collectSuccesses (Success a) = [a]
-collectSuccesses (Choice xs) = concatMap collectSuccesses xs
-
-leftmostFailure :: Search a -> Maybe (Failure, Derivation)
-leftmostFailure (Fail failure deriv) = Just (failure, deriv)
-leftmostFailure (Success _) = Nothing
-leftmostFailure (Choice xs) = go xs
-  where
-    go [] = Nothing
-    go (x:rest) =
-      case leftmostFailure x of
-        Just res -> Just res
-        Nothing -> go rest
 
 --------------------------------------------------------------------------------
 -- Trace Execution
@@ -198,17 +200,25 @@ trace q =
   let startSubst = emptySubst { substNextVar = queryNextVar q }
   in case queryCall q of
        SomeJudgmentCall jc ->
-         let search = searchJudgmentCall jc startSubst
-             oks =
-               [ TraceOk val deriv
-               | (s, deriv) <- collectSuccesses search
-               , Just val <- [queryExtract q s]
-               ]
-         in if null oks
-              then case leftmostFailure search of
-                     Just (failure, deriv) -> [TraceFail failure deriv]
-                     Nothing -> []
-              else oks
+         case leftmostTrace (queryExtract q) (searchJudgmentCall jc startSubst) of
+           Just res -> [res]
+           Nothing -> []
+
+leftmostTrace
+  :: (Subst -> Maybe a)
+  -> Search (Subst, Derivation)
+  -> Maybe (TraceResult a)
+leftmostTrace _ NoMatch = Nothing
+leftmostTrace _ (Fail failure deriv) = Just (TraceFail failure deriv)
+leftmostTrace extract (Success (s, deriv)) =
+  TraceOk <$> extract s <*> pure deriv
+leftmostTrace extract (Choice xs) = go xs
+  where
+    go [] = Nothing
+    go (x:rest) =
+      case leftmostTrace extract x of
+        Nothing -> go rest
+        Just res -> Just res
 
 --------------------------------------------------------------------------------
 -- Rule collection
@@ -332,7 +342,14 @@ searchJudgmentCall jc s =
           deriv = buildDerivation "<no rule>" jc s [] [] (Failed failure)
       in Fail failure deriv
     rules ->
-      Choice [searchRule jc rule s | rule <- rules]
+      let branches = [searchRule jc rule s | rule <- rules]
+          filtered = filter (not . isNoMatch) branches
+      in case filtered of
+           [] ->
+             let failure = FailHead (renderJudgmentCall jc)
+                 deriv = buildDerivation "<no matching rule>" jc s [] [] (Failed failure)
+             in Fail failure deriv
+           _ -> Choice filtered
 
 searchRule
   :: JudgmentCall name modes ts
@@ -354,15 +371,16 @@ searchRule jc (Rule ruleLabel body) s0 =
              in Fail failure deriv
            Right orderedPrems ->
              case exec headGoal s1 of
-               [] ->
-                 let failure = FailHead (renderJudgmentCall jc)
-                     deriv = buildDerivation ruleLabel jc s1 [] [] (Failed failure)
-                 in Fail failure deriv
+               [] -> NoMatch
                heads ->
                  Choice
                    [ searchPremises jc ruleLabel orderedPrems (reverse (csNegs collect)) [] [] sHead
                    | sHead <- heads
                    ]
+
+isNoMatch :: Search a -> Bool
+isNoMatch NoMatch = True
+isNoMatch _ = False
 
 searchPremises
   :: JudgmentCall name modes ts
@@ -409,6 +427,11 @@ handlePremiseCall
   -> Search (Subst, Derivation)
 handlePremiseCall jc ruleLabel prem rest negs premTraces constraints s branch =
   case branch of
+    NoMatch ->
+      let skipped = premTraces ++ skipPremises rest
+          failure' = FailPremise (paDesc prem)
+          deriv = buildDerivation ruleLabel jc s skipped constraints (Failed failure')
+      in Fail failure' deriv
     Fail _failure premDeriv ->
       let skipped = premTraces ++ [PremDeriv premDeriv] ++ skipPremises rest
           failure' = FailPremise (paDesc prem)

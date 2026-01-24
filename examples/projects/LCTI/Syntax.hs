@@ -538,24 +538,7 @@ instance Pretty Polar where
 instance Pretty Env where
   varNames = cycleNames ["G"]
   prettyReified REmpty = pure "."
-  prettyReified (RTrm x ty env) = do
-    dx <- prettyLogic x
-    dty <- prettyLogic ty
-    denv <- prettyLogic env
-    pure (denv <+> Doc ", " <+> dx <+> Doc ":" <+> dty)
-  prettyReified (RUvar a env) = do
-    da <- prettyLogic a
-    denv <- prettyLogic env
-    pure (denv <+> Doc ", " <+> da)
-  prettyReified (REvar a env) = do
-    da <- prettyLogic a
-    denv <- prettyLogic env
-    pure (denv <+> Doc ", " <+> da <+> Doc "^")
-  prettyReified (RSvar a ty env) = do
-    da <- prettyLogic a
-    dty <- prettyLogic ty
-    denv <- prettyLogic env
-    pure (denv <+> Doc ", " <+> da <+> Doc "=" <+> dty)
+  prettyReified _ = pure "G..."
 
 instance Pretty Context where
   varNames = cycleNames ["S"]

@@ -1,4 +1,10 @@
-module LCTI.Main (main) where
+module LCTI.Main
+  ( main
+  , Expectation(..)
+  , TestCase(..)
+  , testCases
+  , preEnv
+  ) where
 
 import TypedRedex.Backend.Eval (eval, query, qfresh)
 import TypedRedex.Core.Term (ground)

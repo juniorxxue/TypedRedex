@@ -131,6 +131,8 @@ main = do
   printTrace "infer id (g 1) : top (ctx top)" (trace qPolyIdGTop)
   assertNonEmpty "infer id (g 1) : top (ctx top)" (eval qPolyIdGTop)
 
+
+
   -- let qPolyGIdTop = query $ do
   --       env <- qfresh
   --       pure (infer envGId (ctype ttop) gIdApp ttop env, ttop)
