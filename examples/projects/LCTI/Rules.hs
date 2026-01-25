@@ -647,18 +647,12 @@ tySubst = judgment $
         prem  $ tySubst t2 a ty r2
         concl $ tySubst (tarr t1 t2) a ty (tarr r1 r2)
 
-    , rule "subst-forall-shadow" $ do
-        (a, body, ty) <- fresh
-        concl $ tySubst (tforall a body) a ty (tforall a body)
-
     , rule "subst-forall" $ do
-        (a, b, body, ty, body', body'') <- fresh
-        bFresh <- freshName
-        a =/= b
-        hash bFresh ty
-        (bind b body) === (bind bFresh body')
-        prem  $ tySubst body' a ty body''
-        concl $ tySubst (tforall b body) a ty (tforall bFresh body'')
+        (a, ty, body'') <- fresh
+        b <- freshName
+        body <- fresh
+        concl $ tySubst (tforall b body) a ty (tforall b body'')
+        prem  $ tySubst body a ty body''
 
     , rule "subst-uncurry" $ do
         (tys, ty, a, repl, tys', ty') <- fresh

@@ -124,6 +124,14 @@ data RuleF (ts :: [Type]) s t (a :: Type) where
   FreshNameF :: (NominalAtom name, FreshName name, Repr name, Typeable name)
              => RuleF ts s s (Term name)
 
+  -- | Guard block.
+  --
+  -- Guards are executed before normal premises/constraints, and multiple guards
+  -- run in source order. This is useful to force an imperative order when mode
+  -- analysis cannot infer one.
+  GuardF :: RuleM ts ()
+         -> RuleF ts s s ()
+
   -- | Conclusion
   ConclF :: JudgmentCall name modes ts
          -> RuleF ts s s ()

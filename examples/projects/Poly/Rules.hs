@@ -41,7 +41,7 @@ import Poly.Syntax
 
 flipPolar :: Judgment "flipPolar" '[I, O] '[Polar, Polar]
 flipPolar = judgment $
-  format (\p p' -> p <+> " = " <+> p')
+  format (\p p' -> p <+> " is flipped to " <+> p')
   P.>> rules
     [ rule "pos" $ do
         concl $ flipPolar pos neg
@@ -59,7 +59,7 @@ lookupTmVar = judgment $
 
     , rule "skip-trm" $ do
         (x, y, ty, ty', env) <- fresh
-        x =/= y
+        guard $ x =/= y
         prem  $ lookupTmVar env x ty
         concl $ lookupTmVar (etrm y ty' env) x ty
 
@@ -89,7 +89,7 @@ lookupUvar = judgment $
 
     , rule "skip-uvar" $ do
         (a, b, env) <- fresh
-        a =/= b
+        guard $ a =/= b
         prem  $ lookupUvar env a
         concl $ lookupUvar (euvar b env) a
 
@@ -120,7 +120,7 @@ lookupBoundVar = judgment $
     , rule "skip-bound" $ do
         (a, b, tyL, tyU) <- fresh
         (tyL', tyU', env) <- fresh
-        a =/= b
+        guard $ a =/= b
         prem  $ lookupBoundVar env a tyL tyU
         concl $ lookupBoundVar (ebound tyL' b tyU' env) a tyL tyU
     ]
@@ -213,7 +213,7 @@ updateUpper = judgment $
     , rule "skip-bound" $ do
         (a, b, tyNew, env, env') <- fresh
         (tyL', tyU') <- fresh
-        a =/= b
+        guard $ a =/= b
         prem  $ updateUpper env a tyNew env'
         concl $ updateUpper (ebound tyL' b tyU' env) a tyNew (ebound tyL' b tyU' env')
     ]
@@ -240,7 +240,7 @@ updateLower = judgment $
     , rule "skip-bound" $ do
         (a, b, tyNew, env, env') <- fresh
         (tyL', tyU') <- fresh
-        a =/= b
+        guard $ a =/= b
         prem  $ updateLower env a tyNew env'
         concl $ updateLower (ebound tyL' b tyU' env) a tyNew (ebound tyL' b tyU' env')
     ]
@@ -376,7 +376,7 @@ instP = judgment $
 
     , rule "var-other" $ do
         (tyL, a, tyU, p, b) <- fresh
-        a =/= b
+        guard $ a =/= b
         concl $ instP tyL a tyU p (tvar b) (tvar b)
 
     , rule "int" $ do
@@ -403,7 +403,7 @@ instP = judgment $
         (tyL, a, tyU, p) <- fresh
         (tyBody, tyBody') <- fresh
         b <- freshName
-        a =/= b
+        guard $ a =/= b
         prem  $ instP tyL a tyU p tyBody tyBody'
         concl $ instP tyL a tyU p (tforall b tyBody) (tforall b tyBody')
     ]
@@ -525,7 +525,7 @@ tySubst = judgment $
     , rule "subst-var-miss" $ do
         (a, b, ty) <- fresh
         concl $ tySubst (tvar b) a ty (tvar b)
-        a =/= b
+        guard $ a =/= b
 
     , rule "subst-arr" $ do
         (t1, t2, a, ty, r1, r2) <- fresh
@@ -533,18 +533,12 @@ tySubst = judgment $
         prem  $ tySubst t1 a ty r1
         prem  $ tySubst t2 a ty r2
 
-    , rule "subst-forall-shadow" $ do
-        (a, body, ty) <- fresh
-        concl $ tySubst (tforall a body) a ty (tforall a body)
-
     , rule "subst-forall" $ do
-        (a, b, body, ty, body', body'') <- fresh
-        bFresh <- freshName
-        concl $ tySubst (tforall b body) a ty (tforall bFresh body'')
-        a =/= b
-        hash bFresh ty
-        (bind b body) === (bind bFresh body')
-        prem  $ tySubst body' a ty body''
+        (a, ty, body'') <- fresh
+        b <- freshName
+        body <- fresh
+        concl $ tySubst (tforall b body) a ty (tforall b body'')
+        prem  $ tySubst body a ty body''
     ]
 
 infer :: Judgment "infer" '[I, I, I, O, O] '[Env, Context, Tm, Ty, Env]
@@ -615,7 +609,7 @@ infer = judgment $
     , rule "sub" $ do
         (env1, env, env2) <- fresh
         (ctx, g, tyA, tyB) <- fresh
-        ctx =/= cempty
+        guard $ ctx =/= cempty
         prem  $ infer env1 cempty g tyA env
         prem  $ sub env1 tyA ctx env2 tyB
         concl $ infer env1 ctx g tyB env2

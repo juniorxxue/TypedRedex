@@ -253,6 +253,7 @@ derivDepth deriv =
 
 data CollectState = CollectState
   { csAvailVars :: Set Int
+  , csGuards    :: [PremAction]
   , csPrems     :: [PremAction]
   , csNegs      :: [NegAction]
   , csHeadGoal  :: Maybe Goal
@@ -260,29 +261,34 @@ data CollectState = CollectState
   }
 
 emptyCollect :: CollectState
-emptyCollect = CollectState S.empty [] [] Nothing Nothing
+emptyCollect = CollectState S.empty [] [] [] Nothing Nothing
 
 data SomeTermList ts where
   SomeTermList :: TermList ts -> SomeTermList ts
 
 collectRule
   :: forall ts a.
-     Maybe (SomeTermList ts)
+     Bool
+  -> Maybe (SomeTermList ts)
   -> RuleM ts a
   -> CollectState
   -> State Subst CollectState
-collectRule _ (Pure _) st = pure st
-collectRule caller (Bind op k) st = case op of
+collectRule _ _ (Pure _) st = pure st
+collectRule inGuard caller (Bind op k) st = case op of
   FreshF -> do
     term <- freshTerm
     -- Fresh introduces an unground logic variable; it is not "available" for
     -- mode scheduling until it is produced by an output or provided by the
     -- caller via the rule head inputs.
-    collectRule caller (k term) st
+    collectRule inGuard caller (k term) st
 
   FreshNameF -> do
     term <- freshNameTerm
-    collectRule caller (k term) st
+    collectRule inGuard caller (k term) st
+
+  GuardF innerRule -> do
+    st' <- collectRule True caller innerRule st
+    collectRule inGuard caller (k ()) st'
 
   ConclF jc ->
     let (caller', headGoal) = resolveHead caller jc
@@ -291,38 +297,50 @@ collectRule caller (Bind op k) st = case op of
           , csHeadGoal = Just headGoal
           , csHeadCall = Just (SomeJudgmentCall jc)
           }
-    in collectRule caller' (k ()) st'
+    in collectRule inGuard caller' (k ()) st'
 
   PremF jc ->
     let action = PremAction (jcReqVars jc) (jcProdVars jc) (PremCall jc) (renderJudgmentCall jc)
-        st' = st { csPrems = action : csPrems st }
-    in collectRule caller (k ()) st'
+        st' =
+          if inGuard
+            then st { csGuards = action : csGuards st }
+            else st { csPrems = action : csPrems st }
+    in collectRule inGuard caller (k ()) st'
 
   NegF innerRule ->
     let action = NegAction (translateRuleClosed innerRule) (ruleName innerRule)
         st' = st { csNegs = action : csNegs st }
-    in collectRule caller (k ()) st'
+    in collectRule inGuard caller (k ()) st'
 
   EqF t1 t2 ->
     let vars = S.union (termVars t1) (termVars t2)
         constraint = EqC (termVal t1) (termVal t2)
         action = PremAction vars S.empty (PremConstraint constraint (G.Unify (termVal t1) (termVal t2))) (renderEq t1 t2)
-        st' = st { csPrems = action : csPrems st }
-    in collectRule caller (k ()) st'
+        st' =
+          if inGuard
+            then st { csGuards = action : csGuards st }
+            else st { csPrems = action : csPrems st }
+    in collectRule inGuard caller (k ()) st'
 
   NEqF t1 t2 ->
     let vars = S.union (termVars t1) (termVars t2)
         constraint = NeqC (termVal t1) (termVal t2)
         action = PremAction vars S.empty (PremConstraint constraint (G.Disunify (termVal t1) (termVal t2))) (renderNeq t1 t2)
-        st' = st { csPrems = action : csPrems st }
-    in collectRule caller (k ()) st'
+        st' =
+          if inGuard
+            then st { csGuards = action : csGuards st }
+            else st { csPrems = action : csPrems st }
+    in collectRule inGuard caller (k ()) st'
 
   HashF name term ->
     let vars = S.union (termVars name) (termVars term)
         constraint = HashC (termVal name) (termVal term)
         action = PremAction vars S.empty (PremConstraint constraint (G.Hash (termVal name) (termVal term))) (renderHash name term)
-        st' = st { csPrems = action : csPrems st }
-    in collectRule caller (k ()) st'
+        st' =
+          if inGuard
+            then st { csGuards = action : csGuards st }
+            else st { csPrems = action : csPrems st }
+    in collectRule inGuard caller (k ()) st'
   where
     freshTerm :: forall a'. (Repr a', Typeable a') => State Subst (Term a')
     freshTerm = do
@@ -385,14 +403,16 @@ searchRule
   -> Subst
   -> Search (Subst, Derivation)
 searchRule jc (Rule ruleLabel body) s0 =
-  let (collect, s1) = runState (collectRule (Just (SomeTermList (jcArgs jc))) body emptyCollect) s0
+  let (collect, s1) = runState (collectRule False (Just (SomeTermList (jcArgs jc))) body emptyCollect) s0
   in case csHeadGoal collect of
        Nothing ->
          let failure = FailHead (renderJudgmentCall jc)
              deriv = buildDerivation ruleLabel jc s1 [] [] (Failed failure)
          in Fail failure deriv
        Just headGoal ->
-         let orderedPrems = schedulePremises (csAvailVars collect) (reverse (csPrems collect))
+         let guards = reverse (csGuards collect)
+             avail' = foldr (S.union . paProd) (csAvailVars collect) guards
+             orderedPrems = guards ++ schedulePremises avail' (reverse (csPrems collect))
          in case exec headGoal s1 of
               [] -> NoMatch
               heads ->

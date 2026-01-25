@@ -9,6 +9,7 @@ module TypedRedex.Backend.Engine
   , translateRuleClosed
   ) where
 
+import Data.List (foldl')
 import Data.Set (Set)
 import qualified Data.Set as S
 
@@ -83,72 +84,98 @@ data DeferredAction
 
 data InterpState = InterpState
   { isAvailVars :: Set Int
+  , isGuards   :: [PremAction]
   , isDeferred  :: [DeferredAction]
   , isHeadGoal  :: Maybe Goal
   }
 
 emptyState :: InterpState
-emptyState = InterpState S.empty [] Nothing
+emptyState = InterpState S.empty [] [] Nothing
 
 buildGoal :: forall ts a.
              Maybe (SomeTermList ts)
           -> RuleM ts a
           -> InterpState
           -> Goal
-buildGoal _ (Pure _) st = finalize st
-buildGoal caller (Bind op k) st = case op of
+buildGoal caller m st =
+  run False caller m st (\_ _ st' -> finalize st')
+  where
+    -- CPS interpreter so GuardF can run a nested program and then continue.
+    run :: forall a'. Bool -> Maybe (SomeTermList ts) -> RuleM ts a' -> InterpState
+        -> (a' -> Maybe (SomeTermList ts) -> InterpState -> Goal)
+        -> Goal
+    run _ caller' (Pure a) st' cont = cont a caller' st'
+    run inGuard caller' (Bind op k) st' cont = case op of
 
-  FreshF ->
-    Fresh $ \v ->
-      let term = Term (S.singleton (unVarId v)) (logicVar v)
-      -- Fresh introduces an unground logic variable; it is not "available" for
-      -- mode scheduling until it is produced by an output or provided by the
-      -- caller via the rule head inputs.
-      in buildGoal caller (k term) st
+      FreshF ->
+        Fresh $ \v ->
+          let term = Term (S.singleton (unVarId v)) (logicVar v)
+          -- Fresh introduces an unground logic variable; it is not "available"
+          -- for mode scheduling until it is produced by an output or provided
+          -- by the caller via the rule head inputs.
+          in run inGuard caller' (k term) st' cont
 
-  FreshNameF ->
-    FreshName $ \name ->
-      let term = Term S.empty name
-      in buildGoal caller (k term) st
+      FreshNameF ->
+        FreshName $ \name ->
+          let term = Term S.empty name
+          in run inGuard caller' (k term) st' cont
 
-  ConclF jc ->
-    let (caller', headGoal) = resolveHead caller jc
-        st' = st
-          { isAvailVars = S.union (isAvailVars st) (jcReqVars jc)
-          , isHeadGoal = Just headGoal
-          }
-    in buildGoal caller' (k ()) st'
+      GuardF inner ->
+        run True caller' inner st' (\_ caller'' st'' -> run inGuard caller'' (k ()) st'' cont)
 
-  PremF jc ->
-    let action = PremA $ PremAction (jcReqVars jc) (jcProdVars jc) (PremCall jc) (renderJudgmentCall jc)
-        st' = st { isDeferred = action : isDeferred st }
-    in buildGoal caller (k ()) st'
+      ConclF jc ->
+        let (caller'', headGoal) = resolveHead caller' jc
+            st'' = st'
+              { isAvailVars = S.union (isAvailVars st') (jcReqVars jc)
+              , isHeadGoal = Just headGoal
+              }
+        in run inGuard caller'' (k ()) st'' cont
 
-  NegF innerRule ->
-    let action = NegA (NegAction (translateRule Nothing innerRule) (ruleName innerRule))
-        st' = st { isDeferred = action : isDeferred st }
-    in buildGoal caller (k ()) st'
+      PremF jc ->
+        let premAction = PremAction (jcReqVars jc) (jcProdVars jc) (PremCall jc) (renderJudgmentCall jc)
+            st'' =
+              if inGuard
+                then st' { isGuards = premAction : isGuards st' }
+                else st' { isDeferred = PremA premAction : isDeferred st' }
+        in run inGuard caller' (k ()) st'' cont
 
-  EqF t1 t2 ->
-    let vars = S.union (termVars t1) (termVars t2)
-        constraint = EqC (termVal t1) (termVal t2)
-        action = PremA $ PremAction vars S.empty (PremConstraint constraint (Unify (termVal t1) (termVal t2))) (renderEq t1 t2)
-        st' = st { isDeferred = action : isDeferred st }
-    in buildGoal caller (k ()) st'
+      NegF innerRule ->
+        let action = NegA (NegAction (translateRule Nothing innerRule) (ruleName innerRule))
+            st'' = st' { isDeferred = action : isDeferred st' }
+        in run inGuard caller' (k ()) st'' cont
 
-  NEqF t1 t2 ->
-    let vars = S.union (termVars t1) (termVars t2)
-        constraint = NeqC (termVal t1) (termVal t2)
-        action = PremA $ PremAction vars S.empty (PremConstraint constraint (Disunify (termVal t1) (termVal t2))) (renderNeq t1 t2)
-        st' = st { isDeferred = action : isDeferred st }
-    in buildGoal caller (k ()) st'
+      EqF t1 t2 ->
+        let vars = S.union (termVars t1) (termVars t2)
+            constraint = EqC (termVal t1) (termVal t2)
+            premAction =
+              PremAction vars S.empty (PremConstraint constraint (Unify (termVal t1) (termVal t2))) (renderEq t1 t2)
+            st'' =
+              if inGuard
+                then st' { isGuards = premAction : isGuards st' }
+                else st' { isDeferred = PremA premAction : isDeferred st' }
+        in run inGuard caller' (k ()) st'' cont
 
-  HashF name term ->
-    let vars = S.union (termVars name) (termVars term)
-        constraint = HashC (termVal name) (termVal term)
-        action = PremA $ PremAction vars S.empty (PremConstraint constraint (Hash (termVal name) (termVal term))) (renderHash name term)
-        st' = st { isDeferred = action : isDeferred st }
-    in buildGoal caller (k ()) st'
+      NEqF t1 t2 ->
+        let vars = S.union (termVars t1) (termVars t2)
+            constraint = NeqC (termVal t1) (termVal t2)
+            premAction =
+              PremAction vars S.empty (PremConstraint constraint (Disunify (termVal t1) (termVal t2))) (renderNeq t1 t2)
+            st'' =
+              if inGuard
+                then st' { isGuards = premAction : isGuards st' }
+                else st' { isDeferred = PremA premAction : isDeferred st' }
+        in run inGuard caller' (k ()) st'' cont
+
+      HashF name term ->
+        let vars = S.union (termVars name) (termVars term)
+            constraint = HashC (termVal name) (termVal term)
+            premAction =
+              PremAction vars S.empty (PremConstraint constraint (Hash (termVal name) (termVal term))) (renderHash name term)
+            st'' =
+              if inGuard
+                then st' { isGuards = premAction : isGuards st' }
+                else st' { isDeferred = PremA premAction : isDeferred st' }
+        in run inGuard caller' (k ()) st'' cont
 
 resolveHead :: Maybe (SomeTermList ts)
             -> JudgmentCall name modes ts
@@ -170,10 +197,12 @@ finalize st =
   case isHeadGoal st of
     Nothing -> Failure
     Just headGoal ->
-      let deferred = reverse (isDeferred st)
+      let guards = reverse (isGuards st)
+          deferred = reverse (isDeferred st)
           (prems, negs) = partitionDeferred deferred
           negGoal = conjGoals (map (Neg . naGoal) negs)
-          ordered = schedulePremises (isAvailVars st) prems
+          avail' = foldl' (\a p -> S.union a (paProd p)) (isAvailVars st) guards
+          ordered = guards ++ schedulePremises avail' prems
           premGoal = conjGoals (map premToGoal ordered)
       in conjGoals [headGoal, premGoal, negGoal]
   where

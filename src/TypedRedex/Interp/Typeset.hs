@@ -104,6 +104,10 @@ extractRule body =
             dummyTerm = Term S.empty (Ground (project name))
         in go (k dummyTerm) ex'
 
+      GuardF innerRule ->
+        let ex' = go innerRule ex
+        in go (k ()) ex'
+
       ConclF jc ->
         go (k ()) ex { exConclusion = Just (Premise jc) }
 

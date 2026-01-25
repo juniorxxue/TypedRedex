@@ -42,6 +42,8 @@ module TypedRedex.DSL
   , Fresh
     -- * Rule operations
   , concl, prem, neg
+  , guard
+  , guardCall
   , hash
   , (===), (=/=)
     -- * Judgments
@@ -141,6 +143,19 @@ prem = liftF . PremF
 
 neg :: Rule name ts' -> RuleM ts ()
 neg = liftF . NegF
+
+-- | Mark a clause as a guard.
+--
+-- Guards are executed before non-guard premises/constraints, and multiple
+-- guards run in source order.
+guard :: RuleM ts () -> RuleM ts ()
+guard m = liftF (GuardF m)
+
+-- | Convenience: guard a judgment call directly.
+--
+-- Equivalent to @guard (prem jc)@.
+guardCall :: JudgmentCall name modes ts' -> RuleM ts ()
+guardCall jc = guard (prem jc)
 
 infix 4 ===, =/=
 
