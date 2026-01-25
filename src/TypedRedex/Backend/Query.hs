@@ -13,7 +13,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Typeable (Typeable)
 
-import TypedRedex.Backend.Engine (SomeJudgmentCall(..), checkQueryInputs, translate)
+import TypedRedex.Backend.Engine (SomeJudgmentCall(..), translate)
 import TypedRedex.Backend.Goal
   ( Goal
   , Subst
@@ -58,15 +58,12 @@ query qm =
       nextVar'   = max nextVar (maxVar + 1)
       goal       = translate jc
       extractFn  = \s -> extractOut s outSpec
-  in case checkQueryInputs jc of
-       Nothing ->
-         Query
-           { queryGoal = goal
-           , queryNextVar = nextVar'
-           , queryExtract = extractFn
-           , queryCall = SomeJudgmentCall jc
-           }
-       Just err -> error err
+  in Query
+       { queryGoal = goal
+       , queryNextVar = nextVar'
+       , queryExtract = extractFn
+       , queryCall = SomeJudgmentCall jc
+       }
   where
     runQueryState :: QueryM a -> (a, Int)
     runQueryState (QueryM st) = evalState ((,) <$> st <*> get) 0

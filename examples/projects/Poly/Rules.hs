@@ -462,7 +462,7 @@ ssub = judgment $
 sub :: Judgment "sub" '[I, I, I, O, O] '[Env, Ty, Context, Env, Ty]
 sub = judgment $
   format (\env1 ty1 ctx env2 ty2 ->
-    env1 <+> " |- " <+> ty1 <+> " <: " <+> ctx <+> " |- " <+> env2 <+> " => " <+> ty2)
+    env1 <+> " |- " <+> ty1 <+> " <: " <+> ctx <+> " -| " <+> env2 <+> " ~> " <+> ty2)
   P.>> rules
     [ rule "empty" $ do
         (env, ty) <- fresh
@@ -477,8 +477,8 @@ sub = judgment $
         (tyA, tyB, tyC, tyD) <- fresh
         (a, env1, env2) <- fresh
         (tm, ctx, instTy) <- fresh
-        prem  $ inst tyC a tyD tyB instTy
         prem  $ sub (ebound tbot a ttop env1) tyA (ctm tm ctx) (ebound tyC a tyD env2) tyB
+        prem  $ inst tyC a tyD tyB instTy
         concl $ sub env1 (tforall a tyA) (ctm tm ctx) env2 instTy
 
     , rule "term" $ do
@@ -489,13 +489,13 @@ sub = judgment $
         prem  $ sub env2 tyB ctx env3 tyD
         concl $ sub env1 (tarr tyA tyB) (ctm tm ctx) env3 (tarr tyA' tyD)
 
-    , rule "svar" $ do
-        (tyA, tyB, tyC) <- fresh
-        (env1, env2) <- fresh
-        (a, ctx) <- fresh
-        prem  $ lookupBoundVar env1 a tyA tyB
-        prem  $ sub env1 tyB ctx env2 tyC
-        concl $ sub env1 (tvar a) ctx env2 tyC
+    -- , rule "svar" $ do
+    --     (tyA, tyB, tyC) <- fresh
+    --     (env1, env2) <- fresh
+    --     (a, ctx) <- fresh
+    --     prem  $ lookupBoundVar env1 a tyA tyB
+    --     prem  $ sub env1 tyB ctx env2 tyC
+    --     concl $ sub env1 (tvar a) ctx env2 tyC
     ]
 
 tySubst :: Judgment "tySubst" '[I, I, I, O] '[Ty, TyNom, Ty, Ty]
@@ -574,9 +574,9 @@ infer = judgment $
     , rule "lam2" $ do
         (x, tm1, tm2, env1, ctx, env2, env3) <- fresh
         (ty1, ty2) <- fresh
-        prem  $ infer env1 cempty tm2 ty1 env1
+        prem  $ infer env1 cempty tm2 ty1 env2
         prem  $ infer (etrm x ty1 env1) ctx tm1 ty2 (etrm x ty1 env3)
-        concl $ infer env1 (ctm tm2 ctx) (lam x tm1) (tarr ty1 ty2) env2
+        concl $ infer env1 (ctm tm2 ctx) (lam x tm1) (tarr ty1 ty2) env3
 
     , rule "lam3" $ do
         (x, tm, env1, env2, env3, env4) <- fresh
@@ -615,8 +615,8 @@ infer = judgment $
     , rule "sub" $ do
         (env1, env, env2) <- fresh
         (ctx, g, tyA, tyB) <- fresh
-        prem  $ infer env1 cempty g tyA env
         ctx =/= cempty
+        prem  $ infer env1 cempty g tyA env
         prem  $ sub env1 tyA ctx env2 tyB
         concl $ infer env1 ctx g tyB env2
     ]

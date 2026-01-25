@@ -1,4 +1,4 @@
--- | Shared evaluation engine: mode checks, scheduling, and goal translation.
+-- | Shared evaluation engine: scheduling and goal translation.
 module TypedRedex.Backend.Engine
   ( SomeJudgmentCall(..)
   , Constraint(..)
@@ -7,15 +7,8 @@ module TypedRedex.Backend.Engine
   , NegAction(..)
   , translate
   , translateRuleClosed
-  , checkQueryInputs
-  , schedulePremisesChecked
-  , renderJudgmentCall
-  , renderEq
-  , renderNeq
-  , renderHash
   ) where
 
-import Data.List (intercalate)
 import Data.Set (Set)
 import qualified Data.Set as S
 
@@ -26,7 +19,8 @@ import TypedRedex.Backend.Goal
   )
 import TypedRedex.Core.IxFree (IxFree(..))
 import TypedRedex.Core.RuleF
-import TypedRedex.Pretty (Doc(..), Pretty(..), formatJudgment)
+import TypedRedex.Pretty (Pretty(..))
+import TypedRedex.Render (renderEq, renderJudgmentCall, renderHash, renderNeq)
 
 -- | Existential wrapper for judgment calls.
 data SomeJudgmentCall where
@@ -53,6 +47,11 @@ data PremAction = PremAction
   , paDesc :: String
   }
 
+instance Schedulable PremAction where
+  schedReqVars = paReq
+  schedProdVars = paProd
+  schedDesc = paDesc
+
 data NegAction = NegAction
   { naGoal  :: Goal
   , naLabel :: String
@@ -71,8 +70,8 @@ translate jc =
   disjGoals [translateRule (Just (SomeTermList (jcArgs jc))) rule | rule <- jcRules jc]
 
 translateRule :: Maybe (SomeTermList ts) -> Rule name ts -> Goal
-translateRule caller (Rule name body) =
-  buildGoal caller body (emptyState name)
+translateRule caller (Rule _ body) =
+  buildGoal caller body emptyState
 
 -- | Translate a rule without external caller arguments (used for negation).
 translateRuleClosed :: Rule name ts -> Goal
@@ -86,12 +85,10 @@ data InterpState = InterpState
   { isAvailVars :: Set Int
   , isDeferred  :: [DeferredAction]
   , isHeadGoal  :: Maybe Goal
-  , isHeadCall  :: Maybe SomeJudgmentCall
-  , isRuleName  :: String
   }
 
-emptyState :: String -> InterpState
-emptyState name = InterpState S.empty [] Nothing Nothing name
+emptyState :: InterpState
+emptyState = InterpState S.empty [] Nothing
 
 buildGoal :: forall ts a.
              Maybe (SomeTermList ts)
@@ -104,8 +101,10 @@ buildGoal caller (Bind op k) st = case op of
   FreshF ->
     Fresh $ \v ->
       let term = Term (S.singleton (unVarId v)) (logicVar v)
-          st' = st { isAvailVars = S.insert (unVarId v) (isAvailVars st) }
-      in buildGoal caller (k term) st'
+      -- Fresh introduces an unground logic variable; it is not "available" for
+      -- mode scheduling until it is produced by an output or provided by the
+      -- caller via the rule head inputs.
+      in buildGoal caller (k term) st
 
   FreshNameF ->
     FreshName $ \name ->
@@ -117,7 +116,6 @@ buildGoal caller (Bind op k) st = case op of
         st' = st
           { isAvailVars = S.union (isAvailVars st) (jcReqVars jc)
           , isHeadGoal = Just headGoal
-          , isHeadCall = Just (SomeJudgmentCall jc)
           }
     in buildGoal caller' (k ()) st'
 
@@ -175,11 +173,9 @@ finalize st =
       let deferred = reverse (isDeferred st)
           (prems, negs) = partitionDeferred deferred
           negGoal = conjGoals (map (Neg . naGoal) negs)
-      in case schedulePremisesChecked (isRuleName st) (isHeadCall st) (isAvailVars st) prems of
-           Left err -> error err
-           Right ordered ->
-             let premGoal = conjGoals (map premToGoal ordered)
-             in conjGoals [headGoal, premGoal, negGoal]
+          ordered = schedulePremises (isAvailVars st) prems
+          premGoal = conjGoals (map premToGoal ordered)
+      in conjGoals [headGoal, premGoal, negGoal]
   where
     premToGoal :: PremAction -> Goal
     premToGoal prem =
@@ -192,39 +188,6 @@ partitionDeferred = foldr go ([], [])
   where
     go (PremA p) (ps, ns) = (p:ps, ns)
     go (NegA n) (ps, ns) = (ps, n:ns)
-
-schedulePremisesChecked
-  :: String
-  -> Maybe SomeJudgmentCall
-  -> Set Int
-  -> [PremAction]
-  -> Either String [PremAction]
-schedulePremisesChecked ruleName headCall avail prems =
-  let premSchedule = schedulePremises avail prems
-      ghostOut = ghostOutputs headCall prems
-      schedErr = either Just (const Nothing) premSchedule
-  in if S.null ghostOut
-       then case premSchedule of
-              Left err -> Left (renderModeError ruleName headCall (Just err) ghostOut)
-              Right ordered -> Right ordered
-       else Left (renderModeError ruleName headCall schedErr ghostOut)
-
-schedulePremises :: Set Int -> [PremAction] -> Either String [PremAction]
-schedulePremises _ [] = Right []
-schedulePremises avail prems =
-  case selectReady avail prems of
-    Nothing -> Left (renderScheduleError avail prems)
-    Just (ready, rest) ->
-      (ready :) <$> schedulePremises (S.union avail (paProd ready)) rest
-
-selectReady :: Set Int -> [PremAction] -> Maybe (PremAction, [PremAction])
-selectReady _ [] = Nothing
-selectReady avail (p:ps)
-  | paReq p `S.isSubsetOf` avail = Just (p, ps)
-  | otherwise = case selectReady avail ps of
-      Nothing -> Nothing
-      Just (ready, rest) -> Just (ready, p : rest)
-
 conjGoals :: [Goal] -> Goal
 conjGoals = foldr Conj Success
 
@@ -235,92 +198,3 @@ disjGoals (g:gs) = Disj g (disjGoals gs)
 
 unVarId :: VarId a -> Int
 unVarId (VarId i) = i
-
-renderModeError
-  :: String
-  -> Maybe SomeJudgmentCall
-  -> Maybe String
-  -> Set Int
-  -> String
-renderModeError ruleName headCall schedErr ghostOut =
-  intercalate "\n" (filter (not . null)
-    [ "Mode error in rule " ++ ruleName
-    , case headCall of
-        Nothing -> ""
-        Just (SomeJudgmentCall jc) -> "  conclusion: " ++ renderJudgmentCall jc
-    , maybe "" id schedErr
-    , if S.null ghostOut
-        then ""
-        else "  ghost outputs (never produced): " ++ renderVarSet ghostOut
-    ])
-
-renderJudgmentCall :: JudgmentCall name modes ts -> String
-renderJudgmentCall jc =
-  let docs = renderTermDocs (jcArgs jc)
-      Doc rendered = formatJudgment (jcName jc) (jcFormat jc) docs
-  in rendered
-
-renderTerm :: Repr a => Term a -> String
-renderTerm t =
-  displayLogic (termVal t)
-
-renderEq :: Repr a => Term a -> Term a -> String
-renderEq t1 t2 = renderTerm t1 ++ " === " ++ renderTerm t2
-
-renderNeq :: Repr a => Term a -> Term a -> String
-renderNeq t1 t2 = renderTerm t1 ++ " =/= " ++ renderTerm t2
-
-renderHash :: (Repr name, Repr term) => Term name -> Term term -> String
-renderHash name term = renderTerm name ++ " # " ++ renderTerm term
-
-renderVarSet :: Set Int -> String
-renderVarSet s =
-  case S.toAscList s of
-    [] -> "(none)"
-    xs -> intercalate " " (map renderVar xs)
-  where
-    renderVar i = "?" ++ show i
-
-renderTermDocs :: TermList ts -> [Doc]
-renderTermDocs TNil = []
-renderTermDocs (t :> ts) = Doc (displayLogic (termVal t)) : renderTermDocs ts
-
-renderScheduleError :: Set Int -> [PremAction] -> String
-renderScheduleError avail prems =
-  let blockedPrems = filter (\p -> not (paReq p `S.isSubsetOf` avail)) prems
-      reqs = S.unions (map paReq blockedPrems)
-      blocked = S.difference reqs avail
-      prod = S.unions (map paProd prems)
-      ghostInputs = S.difference blocked prod
-      blockedMsg = "  blocked vars: " ++ renderVarSet blocked
-      ghostMsg =
-        if S.null ghostInputs
-          then ""
-          else "  ghost inputs (never produced): " ++ renderVarSet ghostInputs
-      premLines = case blockedPrems of
-        [] -> ""
-        _ ->
-          "  blocked premises:\n" ++ unlines (map (\p -> "    - " ++ paDesc p) blockedPrems)
-  in intercalate "\n" (filter (not . null)
-       [ "  cannot schedule premises"
-       , blockedMsg
-       , ghostMsg
-       , premLines
-       ])
-
-ghostOutputs :: Maybe SomeJudgmentCall -> [PremAction] -> Set Int
-ghostOutputs Nothing _ = S.empty
-ghostOutputs (Just (SomeJudgmentCall jc)) prems =
-  let bodyProd = S.unions (map paProd prems)
-  in S.difference (jcProdVars jc) (S.union (jcReqVars jc) bodyProd)
-
-checkQueryInputs :: JudgmentCall name modes ts -> Maybe String
-checkQueryInputs jc =
-  let inputVars' = jcReqVars jc
-  in if S.null inputVars'
-       then Nothing
-       else Just (intercalate "\n"
-         [ "Mode error in query"
-         , "  call: " ++ renderJudgmentCall jc
-         , "  ungrounded vars: " ++ renderVarSet inputVars'
-         ])

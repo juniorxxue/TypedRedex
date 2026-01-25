@@ -169,7 +169,7 @@ type RuleBuilder (name :: Symbol) ts =
   -> RuleM ts ()
   -> Rule name ts
 
--- | Define a rule with compile-time schedule checking.
+-- | Define a rule.
 rule :: forall name ts. String -> RuleM ts () -> Rule name ts
 rule = Rule
 

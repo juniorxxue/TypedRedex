@@ -1,12 +1,12 @@
 module ModeErrors.Main (main) where
 
-import Control.Exception (SomeException, displayException, evaluate, try)
 import TypedRedex.Backend.Eval (eval, query, qfresh)
+import TypedRedex.Interp.MCheck (mcheck)
 import TypedRedex.Interp.Trace (TraceResult(..), prettyDerivation, trace)
 import TypedRedex.Interp.Typeset (typeset)
 
 import ModeErrors.Rules (bad, f)
-import ModeErrors.Syntax (Nat, zro)
+import ModeErrors.Syntax (zro)
 
 main :: IO ()
 main = do
@@ -14,6 +14,10 @@ main = do
   putStrLn ""
   putStrLn (typeset f)
   putStrLn (typeset bad)
+  putStrLn "--- mcheck f ---"
+  putStrLn (mcheck f)
+  putStrLn "--- mcheck bad ---"
+  putStrLn (mcheck bad)
 
   let qOk = query $ do
         out <- qfresh
@@ -32,8 +36,5 @@ main = do
         out <- qfresh
         pure (bad zro out, out)
 
-  putStrLn "--- eval bad (expected error) ---"
-  result <- try (evaluate (eval qBad)) :: IO (Either SomeException [Nat])
-  case result of
-    Left err -> putStrLn (displayException err)
-    Right xs -> print xs
+  putStrLn "--- eval bad ---"
+  print (eval qBad)

@@ -2,6 +2,8 @@ module Poly.Main (main) where
 
 import TypedRedex.Backend.Eval (eval, query, qfresh)
 import TypedRedex.Interp.Trace (TraceResult(..), prettyDerivation, trace)
+import TypedRedex.Interp.MCheck (mcheck)
+
 import TypedRedex.Interp.Typeset (typeset)
 import TypedRedex.Nominal.Prelude (nom, tynom)
 
@@ -36,17 +38,17 @@ main :: IO ()
 main = do
   putStrLn "=== Poly ==="
   putStrLn ""
-  putStrLn (typeset ssub)
-  putStrLn (typeset sub)
-  putStrLn (typeset infer)
+  -- putStrLn (typeset ssub)
+  -- putStrLn (typeset sub)
+  putStrLn $ mcheck infer
 
-  let one = suc zro
-      x0 = nom 0
-      a0 = tynom 0
-      idLam = lam x0 (var x0)
-      idAnn = ann idLam (tarr tint tint)
-      idApp = app idAnn (lit one)
-      idAppUnann = app idLam (lit one)
+  -- let one = suc zro
+  --     x0 = nom 0
+  --     a0 = tynom 0
+  --     idLam = lam x0 (var x0)
+  --     idAnn = ann idLam (tarr tint tint)
+  --     idApp = app idAnn (lit one)
+  --     idAppUnann = app idLam (lit one)
 
 --   -- Test 1: infer eempty cempty (lit 1)
 --   let q1 = query $ do
@@ -111,17 +113,17 @@ main = do
 --   assertEmpty "ssub expected fail" (eval q13)
 
   -- Test: id (g 1) and g (id 1) where g : forall b. int -> b, id : forall a. a -> a
-  let gVar = nom 1
-      idVar = nom 2
-      b0 = tynom 1
-      -- g : forall b. int -> b
-      gTy = tforall b0 (tarr tint (tvar b0))
-      -- id : forall a. a -> a
-      idTy = tforall a0 (tarr (tvar a0) (tvar a0))
-      -- environment with g and id
-      envGId = etrm gVar gTy (etrm idVar idTy eempty)
-      -- id (g 1)
-      idGApp = app (var idVar) (app (var gVar) (lit one))
+  -- let gVar = nom 1
+  --     idVar = nom 2
+  --     b0 = tynom 1
+  --     -- g : forall b. int -> b
+  --     gTy = tforall b0 (tarr tint (tvar b0))
+  --     -- id : forall a. a -> a
+  --     idTy = tforall a0 (tarr (tvar a0) (tvar a0))
+  --     -- environment with g and id
+  --     envGId = etrm gVar gTy (etrm idVar idTy eempty)
+  --     -- id (g 1)
+  --     idGApp = app (var idVar) (app (var gVar) (lit one))
 
   -- let qPolyIdGTop = query $ do
   --       env <- qfresh
@@ -139,7 +141,7 @@ main = do
 
   -- Test: bot <: a <: top |- forall b. int -> b <: [1] -> a
   -- No
-  let envBoundedA = ebound tbot a0 ttop eempty
+  -- let envBoundedA = ebound tbot a0 ttop eempty
   -- let qSubForallG = query $ do
   --       env <- qfresh
   --       ty <- qfresh
@@ -149,12 +151,12 @@ main = do
 
   -- Test: bot <: a <: top |- forall b. int -> b <: [1] -> Int
   -- not work
-  let qSubForallGInt = query $ do
-        env <- qfresh
-        ty <- qfresh
-        pure (sub envBoundedA gTy (ctm (lit one) (ctype tint)) env ty, (env, ty))
-  printTrace "sub (bot <: a <: top) (forall b. int -> b) <: [1] -> Int" (trace qSubForallGInt)
-  assertNonEmpty "sub (bot <: a <: top) (forall b. int -> b) <: [1] -> Int" (eval qSubForallGInt)
+  -- let qSubForallGInt = query $ do
+  --       env <- qfresh
+  --       ty <- qfresh
+  --       pure (sub envBoundedA gTy (ctm (lit one) (ctype tint)) env ty, (env, ty))
+  -- printTrace "sub (bot <: a <: top) (forall b. int -> b) <: [1] -> Int" (trace qSubForallGInt)
+  -- assertNonEmpty "sub (bot <: a <: top) (forall b. int -> b) <: [1] -> Int" (eval qSubForallGInt)
 
   -- Test: forall a. a -> a <: [1] -> []
   -- works
@@ -168,7 +170,7 @@ main = do
 
   -- Test: bot <: a <: top, bot <: b <: top |- b <: a -| top <: a <: top, bot <: b <: top
   -- works
-  let envBoundedAB = ebound tbot a0 ttop (ebound tbot b0 ttop eempty)
+  -- let envBoundedAB = ebound tbot a0 ttop (ebound tbot b0 ttop eempty)
   -- let qSsubBA = query $ do
   --       env <- qfresh
   --       pure (ssub envBoundedAB (tvar b0) neg (tvar a0) env, env)

@@ -23,11 +23,6 @@ import TypedRedex.Backend.Engine
   , PremKind(..)
   , PremAction(..)
   , NegAction(..)
-  , renderEq
-  , renderJudgmentCall
-  , renderHash
-  , renderNeq
-  , schedulePremisesChecked
   , translateRuleClosed
   )
 import TypedRedex.Backend.Query (Query(..))
@@ -43,6 +38,7 @@ import TypedRedex.Core.IxFree (IxFree(..))
 import TypedRedex.Core.RuleF
 import TypedRedex.Pretty
 import TypedRedex.Nominal (NominalAtom, FreshName(..))
+import TypedRedex.Render (renderEq, renderHash, renderJudgmentCall, renderNeq)
 
 --------------------------------------------------------------------------------
 -- Derivation Trees
@@ -279,9 +275,10 @@ collectRule _ (Pure _) st = pure st
 collectRule caller (Bind op k) st = case op of
   FreshF -> do
     term <- freshTerm
-    let Term vars _ = term
-        st' = st { csAvailVars = S.union (csAvailVars st) vars }
-    collectRule caller (k term) st'
+    -- Fresh introduces an unground logic variable; it is not "available" for
+    -- mode scheduling until it is produced by an output or provided by the
+    -- caller via the rule head inputs.
+    collectRule caller (k term) st
 
   FreshNameF -> do
     term <- freshNameTerm
@@ -395,19 +392,14 @@ searchRule jc (Rule ruleLabel body) s0 =
              deriv = buildDerivation ruleLabel jc s1 [] [] (Failed failure)
          in Fail failure deriv
        Just headGoal ->
-         case schedulePremisesChecked ruleLabel (csHeadCall collect) (csAvailVars collect) (reverse (csPrems collect)) of
-           Left err ->
-             let failure = FailMode err
-                 deriv = buildDerivation ruleLabel jc s1 [] [] (Failed failure)
-             in Fail failure deriv
-           Right orderedPrems ->
-             case exec headGoal s1 of
-               [] -> NoMatch
-               heads ->
-                 Choice
-                   [ searchPremises jc ruleLabel orderedPrems (reverse (csNegs collect)) [] [] sHead
-                   | sHead <- heads
-                   ]
+         let orderedPrems = schedulePremises (csAvailVars collect) (reverse (csPrems collect))
+         in case exec headGoal s1 of
+              [] -> NoMatch
+              heads ->
+                Choice
+                  [ searchPremises jc ruleLabel orderedPrems (reverse (csNegs collect)) [] [] sHead
+                  | sHead <- heads
+                  ]
 
 isNoMatch :: Search a -> Bool
 isNoMatch NoMatch = True
