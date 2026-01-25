@@ -37,8 +37,9 @@
     - Conclusions and constraints are rendered with the current substitution applied.
     - Failures keep the partial subtree that led to the failure, so you can inspect how far it got.
   - Trace selection:
-    - The top-level `trace` picks the leftmost branch. If the leftmost branch fails, the derivation
-      returned is the first failure on that path; other branches are not explored.
+    - The top-level `trace` returns the first successful branch if any succeed (left-to-right).
+    - If no branch succeeds, it returns the deepest failing derivation (max derivation depth);
+      ties are broken left-to-right.
   - Output filtering:
     - `prettyDerivationWithOmit` accepts a list of names and drops any premise derivation whose
       judgment name or rule label matches (useful for suppressing repetitive `skip-*` rules).

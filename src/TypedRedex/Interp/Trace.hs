@@ -200,25 +200,54 @@ trace q =
   let startSubst = emptySubst { substNextVar = queryNextVar q }
   in case queryCall q of
        SomeJudgmentCall jc ->
-         case leftmostTrace (queryExtract q) (searchJudgmentCall jc startSubst) of
+         case selectTrace (queryExtract q) (searchJudgmentCall jc startSubst) of
            Just res -> [res]
            Nothing -> []
 
-leftmostTrace
+data PickResult a
+  = PickOk a Derivation
+  | PickFail Failure Derivation Int
+
+selectTrace
   :: (Subst -> Maybe a)
   -> Search (Subst, Derivation)
   -> Maybe (TraceResult a)
-leftmostTrace _ NoMatch = Nothing
-leftmostTrace _ (Fail failure deriv) = Just (TraceFail failure deriv)
-leftmostTrace extract (Success (s, deriv)) =
-  TraceOk <$> extract s <*> pure deriv
-leftmostTrace extract (Choice xs) = go xs
+selectTrace extract search =
+  toTrace <$> select search
   where
-    go [] = Nothing
-    go (x:rest) =
-      case leftmostTrace extract x of
-        Nothing -> go rest
-        Just res -> Just res
+    toTrace pick =
+      case pick of
+        PickOk a deriv -> TraceOk a deriv
+        PickFail failure deriv _ -> TraceFail failure deriv
+
+    select NoMatch = Nothing
+    select (Fail failure deriv) =
+      Just (PickFail failure deriv (derivDepth deriv))
+    select (Success (s, deriv)) =
+      case extract s of
+        Just a -> Just (PickOk a deriv)
+        Nothing -> Nothing
+    select (Choice xs) = selectChoice xs
+
+    selectChoice = go Nothing
+      where
+        go best [] = best
+        go best (x:rest) =
+          case select x of
+            Nothing -> go best rest
+            Just ok@(PickOk _ _) -> Just ok
+            Just fail@(PickFail _ _ _) ->
+              go (Just (bestFailure best fail)) rest
+
+    bestFailure Nothing candidate = candidate
+    bestFailure (Just current@(PickFail _ _ depthCurr)) candidate@(PickFail _ _ depthCand)
+      | depthCurr >= depthCand = current
+      | otherwise = candidate
+    bestFailure (Just (PickOk _ _)) candidate = candidate
+
+derivDepth :: Derivation -> Int
+derivDepth deriv =
+  1 + maximum (0 : [derivDepth d | PremDeriv d <- derivPremises deriv])
 
 --------------------------------------------------------------------------------
 -- Rule collection
