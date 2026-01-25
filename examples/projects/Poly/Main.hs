@@ -122,14 +122,80 @@ main = do
       envGId = etrm gVar gTy (etrm idVar idTy eempty)
       -- id (g 1)
       idGApp = app (var idVar) (app (var gVar) (lit one))
-      -- g (id 1)
-      gIdApp = app (var gVar) (app (var idVar) (lit one))
 
-  let qPolyIdGTop = query $ do
+  -- let qPolyIdGTop = query $ do
+  --       env <- qfresh
+  --       pure (infer envGId (ctype ttop) idGApp ttop env, ttop)
+  -- printTrace "infer id (g 1) : top (ctx top)" (trace qPolyIdGTop)
+  -- assertNonEmpty "infer id (g 1) : top (ctx top)" (eval qPolyIdGTop)
+
+  -- Test: envGId |- forall a. a -> a <: [g 1] ~> []
+  -- let qSubForallIdG = query $ do
+  --       env <- qfresh
+  --       ty <- qfresh
+  --       pure (sub envGId idTy (ctm (app (var gVar) (lit one)) cempty) env ty, (env, ty))
+  -- printTrace "sub envGId (forall a. a -> a) <: [g 1] ~> []" (trace qSubForallIdG)
+  -- assertNonEmpty "sub envGId (forall a. a -> a) <: [g 1] ~> []" (eval qSubForallIdG)
+
+  -- Test: bot <: a <: top |- forall b. int -> b <: [1] -> a
+  -- No
+  let envBoundedA = ebound tbot a0 ttop eempty
+  -- let qSubForallG = query $ do
+  --       env <- qfresh
+  --       ty <- qfresh
+  --       pure (sub envBoundedA gTy (ctm (lit one) (ctype (tvar a0))) env ty, (env, ty))
+  -- printTrace "sub (bot <: a <: top) (forall b. int -> b) <: [1] -> a" (trace qSubForallG)
+  -- assertNonEmpty "sub (bot <: a <: top) (forall b. int -> b) <: [1] -> a" (eval qSubForallG)
+
+  -- Test: bot <: a <: top |- forall b. int -> b <: [1] -> Int
+  -- not work
+  let qSubForallGInt = query $ do
         env <- qfresh
-        pure (infer envGId (ctype ttop) idGApp ttop env, ttop)
-  printTrace "infer id (g 1) : top (ctx top)" (trace qPolyIdGTop)
-  assertNonEmpty "infer id (g 1) : top (ctx top)" (eval qPolyIdGTop)
+        ty <- qfresh
+        pure (sub envBoundedA gTy (ctm (lit one) (ctype tint)) env ty, (env, ty))
+  printTrace "sub (bot <: a <: top) (forall b. int -> b) <: [1] -> Int" (trace qSubForallGInt)
+  assertNonEmpty "sub (bot <: a <: top) (forall b. int -> b) <: [1] -> Int" (eval qSubForallGInt)
+
+  -- Test: forall a. a -> a <: [1] -> []
+  -- works
+  -- let qSubIdLit = query $ do
+  --       env <- qfresh
+  --       ty <- qfresh
+  --       pure (sub eempty idTy (ctm (lit one) cempty) env ty, (env, ty))
+  -- printTrace "sub (forall a. a -> a) <: [1] -> []" (trace qSubIdLit)
+  -- assertNonEmpty "sub (forall a. a -> a) <: [1] -> []" (eval qSubIdLit)
+
+
+  -- Test: bot <: a <: top, bot <: b <: top |- b <: a -| top <: a <: top, bot <: b <: top
+  -- works
+  let envBoundedAB = ebound tbot a0 ttop (ebound tbot b0 ttop eempty)
+  -- let qSsubBA = query $ do
+  --       env <- qfresh
+  --       pure (ssub envBoundedAB (tvar b0) neg (tvar a0) env, env)
+  -- printTrace "ssub (bot <: a <: top, bot <: b <: top) b <=- a" (trace qSsubBA)
+  -- assertNonEmpty "ssub (bot <: a <: top, bot <: b <: top) b <=- a" (eval qSsubBA)
+
+  -- Test: bot <: a <: top, bot <: b <: top |- b <:- int
+  -- works
+  -- let qSsubBInt = query $ do
+  --       env <- qfresh
+  --       pure (ssub envBoundedAB (tvar b0) neg tint env, env)
+  -- printTrace "ssub (bot <: a <: top, bot <: b <: top) b <=- int" (trace qSsubBInt)
+  -- assertNonEmpty "ssub (bot <: a <: top, bot <: b <: top) b <=- int" (eval qSsubBInt)
+
+  -- Test: bot <: a <: top, bot <: b <: top |- int => 1 => ?
+  -- works
+  -- let qInferLitAB = query $ do
+  --       ty <- qfresh
+  --       env <- qfresh
+  --       pure (infer envBoundedAB (ctype tint) (lit one) ty env, (ty, env))
+  -- printTrace "infer (bot <: a <: top, bot <: b <: top) int => 1 => ?" (trace qInferLitAB)
+  -- assertNonEmpty "infer (bot <: a <: top, bot <: b <: top) int => 1 => ?" (eval qInferLitAB)
+
+
+
+
+
 
 
 

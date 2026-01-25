@@ -97,25 +97,27 @@ prettyDerivationWithOmit omitNames d =
       constraintDocs <- mapM renderConstraint constraints
       let concLine = renderDoc conclDoc
           filtered = mapMaybe (filterPremTrace omitSet) prems
-          prems' =
-            case status of
-              Proven -> filtered
-              Failed failure -> filtered ++ [PremFailure failure]
+          prems' = filtered
           constraintText =
             case constraintDocs of
               [] -> ""
               cs -> " [" ++ intercalate ", " (map renderDoc cs) ++ "]"
+          failureText =
+            case status of
+              Proven -> ""
+              Failed failure -> " [FAIL: " ++ failureSummary failure ++ "]"
+          concLineFull = concLine ++ failureText
       case prems' of
         [] -> do
-          let line = replicate (length concLine) '-' ++ " [" ++ rule ++ "]" ++ constraintText
-          pure [line, concLine]
+          let line = replicate (length concLineFull) '-' ++ " [" ++ rule ++ "]" ++ constraintText
+          pure [line, concLineFull]
         _ -> do
           premBlocks <- mapM (renderPremTrace omitSet) prems'
           let combined = foldr1 sideBySide premBlocks
-              width = maximum (length concLine : map length combined)
+              width = maximum (length concLineFull : map length combined)
               line = replicate width '-' ++ " [" ++ rule ++ "]" ++ constraintText
-              concPad = (width - length concLine) `div` 2
-              concLine' = replicate concPad ' ' ++ concLine
+              concPad = (width - length concLineFull) `div` 2
+              concLine' = replicate concPad ' ' ++ concLineFull
           pure (combined ++ [line, concLine'])
 
     sideBySide :: [String] -> [String] -> [String]
