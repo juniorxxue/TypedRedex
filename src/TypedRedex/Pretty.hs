@@ -31,6 +31,7 @@ module TypedRedex.Pretty
   , runPretty
   , runPrettyWith
   , emptyPrettyCtx
+  , maskedPrettyCtx
   , prettyLogic
   , prettyTerm
   , prettyGround
@@ -124,13 +125,25 @@ numberedNames sym = sym : [sym ++ show i | i <- [1 :: Int ..]]
 -- Pretty class
 --------------------------------------------------------------------------------
 
+data VarStyle
+  = VarStyleNamed   -- ^ Use each type's 'varNames' to name logic variables.
+  | VarStyleMasked  -- ^ Render all logic variables as "?" (hides unification ids).
+
 data PrettyCtx = PrettyCtx
   { pcVarMap :: Map (TypeRep, Int) Int
   , pcNext   :: Map TypeRep Int
+  , pcVarStyle :: VarStyle
   }
 
 emptyPrettyCtx :: PrettyCtx
-emptyPrettyCtx = PrettyCtx M.empty M.empty
+emptyPrettyCtx = PrettyCtx M.empty M.empty VarStyleNamed
+
+-- | Pretty-print context that hides all logic variables as "?".
+--
+-- Useful for interactive debug output where exposing unification variable
+-- identities is distracting.
+maskedPrettyCtx :: PrettyCtx
+maskedPrettyCtx = emptyPrettyCtx { pcVarStyle = VarStyleMasked }
 
 newtype PrettyM a = PrettyM (State PrettyCtx a)
   deriving (Functor, Applicative, Monad)
@@ -163,18 +176,22 @@ instance {-# OVERLAPPABLE #-} Repr a => Pretty a where
 prettyVar :: forall a. Pretty a => Int -> PrettyM Doc
 prettyVar vid = PrettyM $ do
   st <- get
-  let ty = typeRep (Proxy @a)
-  case M.lookup (ty, vid) (pcVarMap st) of
-    Just idx -> pure (Doc (varNames @a !! idx))
-    Nothing -> do
-      let nextIdx = M.findWithDefault 0 ty (pcNext st)
-          name = varNames @a !! nextIdx
-          st' = st
-            { pcVarMap = M.insert (ty, vid) nextIdx (pcVarMap st)
-            , pcNext = M.insert ty (nextIdx + 1) (pcNext st)
-            }
-      put st'
-      pure (Doc name)
+  case pcVarStyle st of
+    VarStyleMasked ->
+      pure (Doc "?")
+    VarStyleNamed -> do
+      let ty = typeRep (Proxy @a)
+      case M.lookup (ty, vid) (pcVarMap st) of
+        Just idx -> pure (Doc (varNames @a !! idx))
+        Nothing -> do
+          let nextIdx = M.findWithDefault 0 ty (pcNext st)
+              name = varNames @a !! nextIdx
+              st' = st
+                { pcVarMap = M.insert (ty, vid) nextIdx (pcVarMap st)
+                , pcNext = M.insert ty (nextIdx + 1) (pcNext st)
+                }
+          put st'
+          pure (Doc name)
 
 prettyLogic :: forall a. Pretty a => Logic a -> PrettyM Doc
 prettyLogic (Var i) = prettyVar @a i

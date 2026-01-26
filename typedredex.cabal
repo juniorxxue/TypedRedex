@@ -22,6 +22,7 @@ library
         TypedRedex.Interp.MCheck
         TypedRedex.Interp.Typeset
         TypedRedex.Interp.Trace
+        TypedRedex.Interp.Debug
         TypedRedex.Backend.Goal
         TypedRedex.Backend.Engine
         TypedRedex.Backend.Eval
@@ -183,6 +184,26 @@ executable example-lcti-trace
         GADTs
         TypeOperators
     ghc-options:      -main-is LCTI.TraceFail
+
+executable example-lcti-debug
+    import:           warnings
+    main-is:          LCTI/Debug.hs
+    other-modules:
+        LCTI.Main
+        LCTI.Syntax
+        LCTI.Rules
+    build-depends:
+        base >= 4.17 && < 5,
+        containers,
+        typedredex
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is LCTI.Debug
 
 executable example-mode-errors
     import:           warnings

@@ -1,6 +1,7 @@
 -- | Trace interpreter: execute queries with derivation trees.
 module TypedRedex.Interp.Trace
-  ( Derivation(..)
+  ( DerivConclusion(..)
+  , Derivation(..)
   , DerivStatus(..)
   , Failure(..)
   , PremTrace(..)
@@ -241,6 +242,9 @@ selectTrace extract search =
     bestFailure (Just current@(PickFail _ _ depthCurr)) candidate@(PickFail _ _ depthCand)
       | depthCurr >= depthCand = current
       | otherwise = candidate
+    -- Candidate is only ever a failure in this selection loop; keep this case
+    -- to satisfy exhaustiveness checking.
+    bestFailure (Just current@(PickFail _ _ _)) (PickOk _ _) = current
     bestFailure (Just (PickOk _ _)) candidate = candidate
 
 derivDepth :: Derivation -> Int
