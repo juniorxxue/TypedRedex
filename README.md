@@ -126,3 +126,52 @@ Painful example about
 ```
 forall b. Int -> b <: [1] -> Int
 ```
+
+## Debug Interpreter
+
+My prompt
+```
+   collect information during the process, when terminate, it will return a string, we can print this string
+
+  what debug interpreter does:
+
+  it will print information in the terminal on the fly with nice rendered information, which will make user to know where the issue is even it does not terminate.
+
+  --- Example ---
+
+  let's use a simple STLC typing as example, it has some rules: Ty-Int, Ty-Lam, Ty-App, Ty-Var
+
+
+  suppose we want to type-check ((\y:Int (\x:Int. x)) 1) 1
+
+  the infer is (Env, Term, Type) and the mode is (I, I, O)
+
+  when run debug interpreter: it will show the information in the terminal:
+
+  Matching Ty-Int --- Failed
+
+  {then it [becomes]}
+
+  Matching Ty-Lam --- Failed
+
+  {then it [becomes]}
+
+  Matching Ty-App -- Succeed
+
+    Matching Task (1): ((\y:Int (\x:Int. x)) 1) : Int -> ?
+    ....
+
+    Matching Task (2): 1 : Int
+
+
+  note the information of Int is based on the partial substitution (when we colelct some info, we can first ground this info for display)
+
+  My given output is a bit vague and perhaps not very correct, and I cannot present certain animtation, but I described what I said.
+
+  You have certain freedom to design this debug interpreter, and the point is to let user aware of the current processing messages,
+
+  one of the princples is you should not expose the unification variables like (x_35, y_45) to user, use "?" for information that do not know, use ground values for those info
+  we know.
+
+  You should run it and test it by yourself, use LCTI example as a sample to test, since there're plenty of existing examples there.
+```
