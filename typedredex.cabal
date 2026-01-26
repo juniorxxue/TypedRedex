@@ -52,13 +52,12 @@ library
         StandaloneKindSignatures
         AllowAmbiguousTypes
 
-executable example-simple
+executable example-lcti
     import:           warnings
-    main-is:          Simple/Main.hs
+    main-is:          LCTI/Main.hs
     other-modules:
-        Simple.Syntax
-        Simple.Rules
-        Support.Nat
+        LCTI.Syntax
+        LCTI.Rules
     build-depends:
         base >= 4.17 && < 5,
         typedredex
@@ -69,64 +68,7 @@ executable example-simple
         TypeFamilies
         GADTs
         TypeOperators
-    ghc-options:      -main-is Simple.Main
-
-executable example-stlc
-    import:           warnings
-    main-is:          Stlc/Main.hs
-    other-modules:
-        Stlc.Syntax
-        Stlc.Rules
-        Support.Nat
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is Stlc.Main
-
-executable example-stlc-plus
-    import:           warnings
-    main-is:          StlcPlus/Main.hs
-    other-modules:
-        StlcPlus.Syntax
-        StlcPlus.Rules
-        Support.Nat
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is StlcPlus.Main
-
-executable example-pcf
-    import:           warnings
-    main-is:          Pcf/Main.hs
-    other-modules:
-        Pcf.Syntax
-        Pcf.Rules
-        Support.Nat
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is Pcf.Main
+    ghc-options:      -main-is LCTI.Main
 
 executable example-poly
     import:           warnings
@@ -146,101 +88,3 @@ executable example-poly
         GADTs
         TypeOperators
     ghc-options:      -main-is Poly.Main
-
-executable example-lcti
-    import:           warnings
-    main-is:          LCTI/Main.hs
-    other-modules:
-        LCTI.Syntax
-        LCTI.Rules
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is LCTI.Main
-
-executable example-lcti-trace
-    import:           warnings
-    main-is:          LCTI/TraceFail.hs
-    other-modules:
-        LCTI.Main
-        LCTI.Syntax
-        LCTI.Rules
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is LCTI.TraceFail
-
-executable example-mode-errors
-    import:           warnings
-    main-is:          ModeErrors/Main.hs
-    other-modules:
-        ModeErrors.Syntax
-        ModeErrors.Rules
-        Support.Nat
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is ModeErrors.Main
-
-executable example-trace-partial
-    import:           warnings
-    main-is:          TracePartial/Main.hs
-    other-modules:
-        TracePartial.Syntax
-        TracePartial.Rules
-        Stlc.Syntax
-        Stlc.Rules
-        StlcPlus.Syntax
-        StlcPlus.Rules
-        Support.Nat
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is TracePartial.Main
-
-executable example-systemf-nominal
-    import:           warnings
-    main-is:          SystemFNominal/Main.hs
-    other-modules:
-        SystemFNominal.Syntax
-        SystemFNominal.Rules
-        Support.Nat
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is SystemFNominal.Main
