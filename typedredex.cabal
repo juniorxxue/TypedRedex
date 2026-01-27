@@ -88,3 +88,22 @@ executable example-poly
         GADTs
         TypeOperators
     ghc-options:      -main-is Poly.Main
+
+executable example-polyweak
+    import:           warnings
+    main-is:          PolyWeak/Main.hs
+    other-modules:
+        PolyWeak.Syntax
+        PolyWeak.Rules
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is PolyWeak.Main

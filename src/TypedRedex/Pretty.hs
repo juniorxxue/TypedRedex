@@ -31,6 +31,7 @@ module TypedRedex.Pretty
   , runPretty
   , runPrettyWith
   , emptyPrettyCtx
+  , anonPrettyCtx
   , prettyLogic
   , prettyTerm
   , prettyGround
@@ -127,10 +128,22 @@ numberedNames sym = sym : [sym ++ show i | i <- [1 :: Int ..]]
 data PrettyCtx = PrettyCtx
   { pcVarMap :: Map (TypeRep, Int) Int
   , pcNext   :: Map TypeRep Int
+  , pcVarStyle :: VarStyle
   }
 
+data VarStyle
+  = VarStyleNames
+  | VarStyleAnon
+
 emptyPrettyCtx :: PrettyCtx
-emptyPrettyCtx = PrettyCtx M.empty M.empty
+emptyPrettyCtx = PrettyCtx M.empty M.empty VarStyleNames
+
+-- | A 'PrettyCtx' that prints all unification variables as \"?\".
+--
+-- Useful for user-facing debug output (e.g., traces) where internal variable
+-- identities are distracting.
+anonPrettyCtx :: PrettyCtx
+anonPrettyCtx = PrettyCtx M.empty M.empty VarStyleAnon
 
 newtype PrettyM a = PrettyM (State PrettyCtx a)
   deriving (Functor, Applicative, Monad)
@@ -163,18 +176,21 @@ instance {-# OVERLAPPABLE #-} Repr a => Pretty a where
 prettyVar :: forall a. Pretty a => Int -> PrettyM Doc
 prettyVar vid = PrettyM $ do
   st <- get
-  let ty = typeRep (Proxy @a)
-  case M.lookup (ty, vid) (pcVarMap st) of
-    Just idx -> pure (Doc (varNames @a !! idx))
-    Nothing -> do
-      let nextIdx = M.findWithDefault 0 ty (pcNext st)
-          name = varNames @a !! nextIdx
-          st' = st
-            { pcVarMap = M.insert (ty, vid) nextIdx (pcVarMap st)
-            , pcNext = M.insert ty (nextIdx + 1) (pcNext st)
-            }
-      put st'
-      pure (Doc name)
+  case pcVarStyle st of
+    VarStyleAnon -> pure (Doc "?")
+    VarStyleNames -> do
+      let ty = typeRep (Proxy @a)
+      case M.lookup (ty, vid) (pcVarMap st) of
+        Just idx -> pure (Doc (varNames @a !! idx))
+        Nothing -> do
+          let nextIdx = M.findWithDefault 0 ty (pcNext st)
+              name = varNames @a !! nextIdx
+              st' = st
+                { pcVarMap = M.insert (ty, vid) nextIdx (pcVarMap st)
+                , pcNext = M.insert ty (nextIdx + 1) (pcNext st)
+                }
+          put st'
+          pure (Doc name)
 
 prettyLogic :: forall a. Pretty a => Logic a -> PrettyM Doc
 prettyLogic (Var i) = prettyVar @a i

@@ -84,7 +84,8 @@ prettyDerivation = prettyDerivationWithOmit []
 prettyDerivationWithOmit :: [String] -> Derivation -> String
 prettyDerivationWithOmit omitNames d =
   let omitSet = S.fromList omitNames
-      (lines', _) = runPrettyWith emptyPrettyCtx (renderDeriv omitSet d)
+      -- Trace output is user-facing: hide internal unification variable names.
+      (lines', _) = runPrettyWith anonPrettyCtx (renderDeriv omitSet d)
   in unlines lines'
   where
     renderDeriv :: Set String -> Derivation -> PrettyM [String]
@@ -101,7 +102,11 @@ prettyDerivationWithOmit omitNames d =
           failureText =
             case status of
               Proven -> ""
-              Failed failure -> " [FAIL: " ++ failureSummary failure ++ "]"
+              Failed failure ->
+                -- Only show failures at the origin (leaf) in the displayed tree.
+                if any premIsFailed prems'
+                  then ""
+                  else " [FAIL: " ++ failureSummary failure ++ "]"
           concLineFull = concLine ++ failureText
       case prems' of
         [] -> do
@@ -135,6 +140,13 @@ prettyDerivationWithOmit omitNames d =
     renderPremTrace omitSet (PremDeriv deriv) = renderDeriv omitSet deriv
     renderPremTrace _ (PremSkipped desc) = pure [desc ++ " (skipped)"]
     renderPremTrace _ (PremFailure failure) = pure ["[FAIL: " ++ failureSummary failure ++ "]"]
+
+    premIsFailed :: PremTrace -> Bool
+    premIsFailed (PremDeriv d') =
+      case derivStatus d' of
+        Proven -> False
+        Failed _ -> True
+    premIsFailed _ = False
 
     filterPremTrace :: Set String -> PremTrace -> Maybe PremTrace
     filterPremTrace omitSet prem =
@@ -384,7 +396,7 @@ searchJudgmentCall
 searchJudgmentCall jc s =
   case jcRules jc of
     [] ->
-      let failure = FailHead (renderJudgmentCall jc)
+      let failure = FailHead (ppJudgmentCall s jc)
           deriv = buildDerivation "<no rule>" jc s [] [] (Failed failure)
       in Fail failure deriv
     rules ->
@@ -392,7 +404,7 @@ searchJudgmentCall jc s =
           filtered = filter (not . isNoMatch) branches
       in case filtered of
            [] ->
-             let failure = FailHead (renderJudgmentCall jc)
+             let failure = FailHead (ppJudgmentCall s jc)
                  deriv = buildDerivation "<no matching rule>" jc s [] [] (Failed failure)
              in Fail failure deriv
            _ -> Choice filtered
@@ -406,7 +418,7 @@ searchRule jc (Rule ruleLabel body) s0 =
   let (collect, s1) = runState (collectRule False (Just (SomeTermList (jcArgs jc))) body emptyCollect) s0
   in case csHeadGoal collect of
        Nothing ->
-         let failure = FailHead (renderJudgmentCall jc)
+         let failure = FailHead (ppJudgmentCall s1 jc)
              deriv = buildDerivation ruleLabel jc s1 [] [] (Failed failure)
          in Fail failure deriv
        Just headGoal ->
@@ -444,8 +456,8 @@ searchPremises jc ruleLabel prems negs premTraces constraints s =
           case exec goal s of
             [] ->
               let constraints' = constraint : constraints
-                  skipped = premTraces ++ skipPremises rest
-                  failure = FailConstraint (paDesc prem)
+                  skipped = premTraces ++ skipPremises s rest
+                  failure = FailConstraint (ppConstraint s constraint)
                   deriv = buildDerivation ruleLabel jc s skipped constraints' (Failed failure)
               in Fail failure deriv
             subs ->
@@ -471,13 +483,13 @@ handlePremiseCall
 handlePremiseCall jc ruleLabel prem rest negs premTraces constraints s branch =
   case branch of
     NoMatch ->
-      let skipped = premTraces ++ skipPremises rest
-          failure' = FailPremise (paDesc prem)
+      let skipped = premTraces ++ skipPremises s rest
+          failure' = FailPremise (ppPremAction s prem)
           deriv = buildDerivation ruleLabel jc s skipped constraints (Failed failure')
       in Fail failure' deriv
     Fail _failure premDeriv ->
-      let skipped = premTraces ++ [PremDeriv premDeriv] ++ skipPremises rest
-          failure' = FailPremise (paDesc prem)
+      let skipped = premTraces ++ [PremDeriv premDeriv] ++ skipPremises s rest
+          failure' = FailPremise (ppPremAction s prem)
           deriv = buildDerivation ruleLabel jc s skipped constraints (Failed failure')
       in Fail failure' deriv
     Success (s', premDeriv) ->
@@ -510,8 +522,39 @@ searchNegations jc ruleLabel negs premTraces constraints s =
             | s' <- subs
             ]
 
-skipPremises :: [PremAction] -> [PremTrace]
-skipPremises = map (PremSkipped . paDesc)
+skipPremises :: Subst -> [PremAction] -> [PremTrace]
+skipPremises s = map (PremSkipped . ppPremAction s)
+
+--------------------------------------------------------------------------------
+-- Pretty (grounded) descriptions for trace output
+--------------------------------------------------------------------------------
+
+ppJudgmentCall :: Subst -> JudgmentCall name modes ts -> String
+ppJudgmentCall s jc =
+  let (d, _) = runPrettyWith anonPrettyCtx (renderJudgmentCallDoc s jc)
+  in renderDoc d
+
+renderJudgmentCallDoc :: Subst -> JudgmentCall name modes ts -> PrettyM Doc
+renderJudgmentCallDoc s jc = do
+  docs <- mapM renderPrettyTerm (map (applySubstPrettyTerm s) (jcPretty jc))
+  pure (formatJudgment (jcName jc) (jcFormat jc) docs)
+
+ppPremAction :: Subst -> PremAction -> String
+ppPremAction s prem =
+  let (d, _) = runPrettyWith anonPrettyCtx (renderPremActionDoc s prem)
+  in renderDoc d
+
+renderPremActionDoc :: Subst -> PremAction -> PrettyM Doc
+renderPremActionDoc s prem =
+  case paKind prem of
+    PremCall jc -> renderJudgmentCallDoc s jc
+    PremConstraint constraint _goal ->
+      renderConstraint (applySubstConstraint s constraint)
+
+ppConstraint :: Subst -> Constraint -> String
+ppConstraint s constraint =
+  let (d, _) = runPrettyWith anonPrettyCtx (renderConstraint (applySubstConstraint s constraint))
+  in renderDoc d
 
 --------------------------------------------------------------------------------
 -- Rendering helpers
@@ -530,6 +573,27 @@ applySubstConstraint _ (NegC name) = NegC name
 applySubstPrettyTerm :: Subst -> PrettyTerm -> PrettyTerm
 applySubstPrettyTerm s (PrettyTerm l) = PrettyTerm (applySubstLogic s l)
 
+applySubstConclusion :: Subst -> DerivConclusion -> DerivConclusion
+applySubstConclusion s (DerivConclusion name fmt args) =
+  DerivConclusion
+    { dcName = name
+    , dcFormat = fmt
+    , dcArgs = map (applySubstPrettyTerm s) args
+    }
+
+applySubstPremTrace :: Subst -> PremTrace -> PremTrace
+applySubstPremTrace s (PremDeriv d) = PremDeriv (applySubstDerivation s d)
+applySubstPremTrace _ (PremSkipped desc) = PremSkipped desc
+applySubstPremTrace _ (PremFailure f) = PremFailure f
+
+applySubstDerivation :: Subst -> Derivation -> Derivation
+applySubstDerivation s deriv =
+  deriv
+    { derivConclusion = applySubstConclusion s (derivConclusion deriv)
+    , derivPremises = map (applySubstPremTrace s) (derivPremises deriv)
+    , derivConstraints = map (applySubstConstraint s) (derivConstraints deriv)
+    }
+
 buildDerivation
   :: String
   -> JudgmentCall name modes ts
@@ -540,12 +604,17 @@ buildDerivation
   -> Derivation
 buildDerivation ruleLabel jc s prems constraints status =
   let concl = buildConclusion jc s
-      applied = map (applySubstConstraint s) (reverse constraints)
+      appliedConstraints = map (applySubstConstraint s) (reverse constraints)
+      -- Ground the entire subtree with the substitution known at this node.
+      --
+      -- This improves trace readability because earlier premises can mention
+      -- variables that only become known after later premises/constraints.
+      appliedPremises = map (applySubstPremTrace s) prems
   in Derivation
        { derivRule = ruleLabel
        , derivConclusion = concl
-       , derivPremises = prems
-       , derivConstraints = applied
+       , derivPremises = appliedPremises
+       , derivConstraints = appliedConstraints
        , derivStatus = status
        }
 
