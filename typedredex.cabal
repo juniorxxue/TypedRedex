@@ -70,6 +70,24 @@ executable example-lcti
         TypeOperators
     ghc-options:      -main-is LCTI.Main
 
+executable example-lti
+    import:           warnings
+    main-is:          LTI/Main.hs
+    other-modules:
+        LTI.Syntax
+        LTI.Rules
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is LTI.Main
+
 executable example-poly
     import:           warnings
     main-is:          Poly/Main.hs

@@ -36,11 +36,17 @@ typeset = typesetWith 0
 
 -- | Typeset all rules for a judgment call.
 typesetCall :: JudgmentCall name modes ts -> String
-typesetCall jc = unlines
-  [ "Judgment: " ++ jcName jc
-  , replicate 40 '-'
-  , unlines (map typesetRule (jcRules jc))
-  ]
+typesetCall jc =
+  let title = jcName jc
+      width = length title + 4
+      border = replicate width '-'
+  in unlines
+       [ border
+       , "| " ++ title ++ " |"
+       , border
+       , ""
+       , unlines (map typesetRule (jcRules jc))
+       ]
 
 -- | Typeset a single rule
 typesetRule :: Rule name ts -> String
@@ -53,12 +59,8 @@ typesetRule (Rule ruleLabel body) =
       constraintLine =
         case constraintDocs of
           [] -> ""
-          cs -> "  [" ++ intercalate ", " (map renderDoc cs) ++ "]"
-  in unlines
-       [ "[" ++ ruleLabel ++ "]"
-       , ""
-       , formatInferenceRule premLine conclLine constraintLine
-       ]
+          cs -> " [" ++ intercalate ", " (map renderDoc cs) ++ "]"
+  in formatInferenceRule ruleLabel premLine conclLine constraintLine
 
 --------------------------------------------------------------------------------
 -- Rule extraction
@@ -143,13 +145,13 @@ typesetTermList tl =
 -- Formatting
 --------------------------------------------------------------------------------
 
-formatInferenceRule :: String -> String -> String -> String
-formatInferenceRule premLine conclusion constraintLine =
+formatInferenceRule :: String -> String -> String -> String -> String
+formatInferenceRule ruleLabel premLine conclusion constraintLine =
   let width = max (length conclusion) (length premLine)
       bar = replicate width '-'
   in unlines $ filter (not . null)
        [ premLine
-       , bar ++ constraintLine
+       , bar ++ " " ++ ruleLabel ++ constraintLine
        , conclusion
        ]
 
