@@ -106,7 +106,7 @@ We use a simply-typed lambda calculus (STLC) throughout:
 # 1. Defining Syntax
 
 ```scheme
-(define-language myLang
+(define-language STLC
   (e (e e)
      x
      (λ (x τ) e)
@@ -128,7 +128,7 @@ We use a simply-typed lambda calculus (STLC) throughout:
 2. Use `redex-match` to test the grammar
 
 ```scheme
-(redex-match myLang e (term (λ (x num) 1)))
+(redex-match STLC e (term (λ (x num) 1)))
 ```
 
 {pause}
@@ -143,7 +143,7 @@ We use a simply-typed lambda calculus (STLC) throughout:
 <div style="flex: 1;">
 
 ```scheme
-(define-judgment-form λv
+(define-judgment-form STLC
   #:mode (typeof I I O)
   #:contract (typeof Γ e τ)
 
@@ -235,10 +235,7 @@ We use a simply-typed lambda calculus (STLC) throughout:
                types))]))
 ```
 
-Notes:
-
-1. Random generation in Redex is a huge amount of work
-2. 
+Random generation in Redex is a huge amount of work
 
 {pause up}
 
@@ -292,15 +289,26 @@ Common friction points:
 # TypedRedex: Defining Syntax
 
 1. Define systax in plain Haskell ADTs
+
 ```haskell
-data Ty  = TInt | TArr Ty Ty
-data Tm  = Var Nom | Lam (Bind (Nom, Ty) Tm) | App Tm Tm | Lit Int
-data Env = Empty | Extend Env Nom Ty
+data Ty = TyInt | TyBool | TyArr Ty Ty
+
+data Tm
+  = TmVar Nom
+  | Lit Nat
+  | Lam Ty (Bind Nom Tm)
+  | App Tm Tm
+  | Plus Tm Tm
+  | BTrue
+  | BFalse
+  | If Tm Tm Tm
+
+data Env = EEmpty | EBind Nom Ty Env
 ```
 
 `Bind` and `Nom` are built-in support of binders
 
-{pause}
+{pause up}
 
 2. Provide Repr instances for embedding into terms
 ```haskell
@@ -356,22 +364,25 @@ tarr = lift2 (\a b -> Ground (RTArr a b))
 
 ```haskell
 typeof :: Judgment "typeof" '[I, I, O] '[Env, Tm, Ty]
-typeof = judgment
-  [ rule "Ty-Int" $ do
-      (g, n) <- fresh
-      concl $ typeof g (lit n) tint
-
-  , rule "Ty-Var" $ do
-      (g, x, ty) <- fresh
-      prem  $ lookup g x ty
-      concl $ typeof g (var x) ty
-
-  , rule "Ty-App" $ do
-      (g, t1, t2, a, b) <- fresh
-      prem  $ typeof g t1 (tarr a b)
-      prem  $ typeof g t2 a
-      concl $ typeof g (app t1 t2) b
-  ]
+typeof = judgment $
+  format (\env tm ty -> env <+> " ⊢ " <+> tm <+> " : " <+> ty)
+  >>
+  rules
+    [ rule "Ty-Int" $ do
+        (g, n) <- fresh
+        concl $ typeof g (lit n) tint
+  
+    , rule "Ty-Var" $ do
+        (g, x, ty) <- fresh
+        prem  $ lookup g x ty
+        concl $ typeof g (var x) ty
+  
+    , rule "Ty-App" $ do
+        (g, t1, t2, a, b) <- fresh
+        prem  $ typeof g t1 (tarr a b)
+        prem  $ typeof g t2 a
+        concl $ typeof g (app t1 t2) b
+    ]
 ```
 
 {pause up}
@@ -400,11 +411,15 @@ typeof :: Judgment "typeof" '[I, I, O] '[Env, Tm, Ty]
 We can always derive a plain Haskell function (no logics involved).
 
 ```haskell
-inferType :: Env -> Tm -> [Ty]
-inferType env tm =
-  eval $ query $ do
-    ty <- qfresh
-    pure (typeof (ground env) (ground tm) ty, ty)
+infer0 :: Tm -> [Ty]
+infer0 tm = eval $ query $ do
+  ty <- qfresh
+  pure (typeof eempty (ground tm) ty, ty)
+  
+step1 :: Tm -> [Tm]
+step1 tm = eval $ query $ do
+  tm' <- qfresh
+  pure (step (ground tm) tm', tm')  
 ```
 
 {pause}
@@ -422,9 +437,21 @@ inferType env tm =
 Determinism: at most one type for any well-typed term
 
 ```haskell
-prop_typeofDeterministic :: Env -> Tm -> Bool
-prop_typeofDeterministic env tm =
-  length (inferType env tm) <= 1
+prop_progress :: WT -> Property
+prop_progress (WT expected tm) =
+  case infer0 tm of
+    [ty] | ty == expected ->
+      withCoverage tm $
+        isValue tm || not (null (step1 tm))
+    _ -> counterexample "generator/typechecker mismatch" False
+    
+prop_preservation :: WT -> Property
+prop_preservation (WT expected tm) =
+  case infer0 tm of
+    [ty] | ty == expected ->
+      withCoverage tm $
+        conjoin [ infer0 tm' == [ty] | tm' <- step1 tm ]
+    _ -> counterexample "generator/typechecker mismatch" False    
 ```
 
 1. Use QuickCheck to generate random (closed) terms
@@ -436,7 +463,7 @@ Integrates naturally with the Haskell testing ecosystem.
 
 {pause up}
 
-# Feature: Static Mode Checking
+# Feature: Mode Checking
 
 TypedRedex provides a mode-checking interpreter:
 
@@ -471,21 +498,22 @@ putStrLn (typeset infer)
 
 **Output excerpt:**
 
-```
-─────────────────────────────
-           | infer |
-─────────────────────────────
-
-───────────────────── Ty-Int
-Γ ⊢ n : Int
-
-Γ ⊢ x : A
-─────────────────── Ty-Var
+```text
+Γ (x) = A
+--------- T-Var
 Γ ⊢ x : A
 
+Γ, x:A ⊢ e : B
+---------------------- T-Abs
+Γ ⊢ \x : A. e : A -> B
 
-
+Γ ⊢ e : B -> A    Γ ⊢ e1 : B
+---------------------------- T-App
+Γ ⊢ (e e1) : A
 ```
+
+1. Configurations in `Pretty` instance of ASTs and `format` of judgments.
+2. Able to export Latex code with cross-reference.
 
 {pause up}
 
@@ -512,7 +540,8 @@ In PL research, rules are often "almost right."
 
 {pause}
 
-- **Plain Haskell:** `Debug.Trace` to print, but painful.
+**Plain Haskell:** 
+- `Debug.Trace` to print, but painful.
 - Need a feature logs "which pattern is matched".
 
 {pause up}
@@ -520,17 +549,30 @@ In PL research, rules are often "almost right."
 # Feature: Partial Derivations — Example
 
 ```haskell
-import TypedRedex.Interp.Trace (trace, prettyDerivation)
-
--- trace :: Query a -> [TraceResult a]
+let qTypeof = query $ do
+      ty <- qfresh
+      pure (typeof eempty expr ty, ty)
+printTrace _ (trace qTypeof)
 ```
 
 {pause}
 
 **Failing case output (abbreviated):**
 
-```
-todo
+```text
+--- trace if (\x:Bool. \y:Int. 1 + true) true 1 then 1 else 2 (failed) ---
+---------------------------------------------------------------------------------------------------- [<no matching rule>]                                                                                     
+., x:bool, y:int ⊢ (S(0) + true) : bool [FAIL: head failed: ., x:bool, y:int ⊢ (S(0) + true) : bool]                                                                                                          
+------------------------------------------------------------------------------------------------------------------------- [T-Abs]                                                                             
+                                    ., x:bool ⊢ \y : int. (S(0) + true) : int -> bool                                                                                                                         
+--------------------------------------------------------------------------------------------------------------------------------- [T-Abs]                                                                     
+                                   . ⊢ \x : bool. \y : int. (S(0) + true) : bool -> ? -> bool                                               . ⊢ true : ? (skipped)                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------ [T-App]                                    
+                                                    . ⊢ (\x : bool. \y : int. (S(0) + true) true) : ? -> bool                                                                . ⊢ S(0) : ? (skipped)           
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- [T-App]   
+                                                                    . ⊢ ((\x : bool. \y : int. (S(0) + true) true) S(0)) : bool                                                                               . ⊢ S(0) : ? (skipped)   . ⊢ S(S(0)) : ? (skipped)
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- [T-If]
+                                                                                       . ⊢ if ((\x : bool. \y : int. (S(0) + true) true) S(0)) then S(0) else S(S(0)) : ?
 ```
 
 {pause}
@@ -564,10 +606,9 @@ Shows exactly where derivation stopped → tune the next rule.
 
 # Architecture Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     DSL Layer (RuleM)                       │
-│         rule "Ty-App" $ R.do { ... }                        │
 └──────────────────────────┬──────────────────────────────────┘
                            │ build
                            ▼

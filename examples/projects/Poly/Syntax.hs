@@ -313,7 +313,7 @@ instance Pretty Polar where
   prettyReified RNeg = pure "<=-"
 
 instance Pretty Env where
-  varNames = cycleNames ["G"]
+  varNames = cycleNames ["Γ"]
   prettyReified REmpty = pure "."
   prettyReified (RTrm x ty env) = do
     dx <- prettyLogic x

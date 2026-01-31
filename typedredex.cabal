@@ -125,3 +125,25 @@ executable example-polyweak
         GADTs
         TypeOperators
     ghc-options:      -main-is PolyWeak.Main
+
+executable example-stlc
+    import:           warnings
+    main-is:          STLC/Main.hs
+    other-modules:
+        STLC.Syntax
+        STLC.Rules
+        STLC.Gen
+        STLC.Properties
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        QuickCheck,
+        typedredex
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is STLC.Main

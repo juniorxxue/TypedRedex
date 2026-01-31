@@ -2158,7 +2158,7 @@ relevance:0},{begin:/-&gt;/}]})})();hljs.registerLanguage(&quot;ocaml&quot;,e)})
 &lt;/ul&gt;
 &lt;div up-at-unpause pause&gt;&lt;/div&gt;
 &lt;h1 id=&quot;1-defining-syntax&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#1-defining-syntax&quot;&gt;&lt;/a&gt;&lt;span&gt;1. Defining Syntax&lt;/span&gt;&lt;/h1&gt;
-&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(define-language myLang
+&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(define-language STLC
   (e (e e)
      x
      (λ (x τ) e)
@@ -2177,7 +2177,7 @@ relevance:0},{begin:/-&gt;/}]})})();hljs.registerLanguage(&quot;ocaml&quot;,e)})
 &lt;ol start=&quot;2&quot;&gt;
 &lt;li&gt;&lt;span&gt;Use &lt;/span&gt;&lt;code&gt;redex-match&lt;/code&gt;&lt;span&gt; to test the grammar&lt;/span&gt;&lt;/li&gt;
 &lt;/ol&gt;
-&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(redex-match myLang e (term (λ (x num) 1)))
+&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(redex-match STLC e (term (λ (x num) 1)))
 &lt;/code&gt;&lt;/pre&gt;
 &lt;div pause&gt;&lt;/div&gt;
 &lt;ol start=&quot;3&quot;&gt;
@@ -2187,7 +2187,7 @@ relevance:0},{begin:/-&gt;/}]})})();hljs.registerLanguage(&quot;ocaml&quot;,e)})
 &lt;h1 id=&quot;2-defining-a-judgment-typing&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#2-defining-a-judgment-typing&quot;&gt;&lt;/a&gt;&lt;span&gt;2. Defining a Judgment (Typing)&lt;/span&gt;&lt;/h1&gt;
 &lt;div style=&quot;display: flex; gap: 1em;&quot;&gt;
 &lt;div style=&quot;flex: 1;&quot;&gt;
-&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(define-judgment-form λv
+&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(define-judgment-form STLC
   #:mode (typeof I I O)
   #:contract (typeof Γ e τ)
 
@@ -2260,11 +2260,7 @@ relevance:0},{begin:/-&gt;/}]})})();hljs.registerLanguage(&quot;ocaml&quot;,e)})
        (equal? (judgment-holds (typeof · ,v τ) τ)
                types))]))
 &lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;&lt;span&gt;Notes:&lt;/span&gt;&lt;/p&gt;
-&lt;ol&gt;
-&lt;li&gt;&lt;span&gt;Random generation in Redex is a huge amount of work&lt;/span&gt;&lt;/li&gt;
-&lt;li&gt;&lt;/li&gt;
-&lt;/ol&gt;
+&lt;p&gt;&lt;span&gt;Random generation in Redex is a huge amount of work&lt;/span&gt;&lt;/p&gt;
 &lt;div up-at-unpause pause&gt;&lt;/div&gt;
 &lt;h1 id=&quot;pain-points-of-redex-in-practice&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#pain-points-of-redex-in-practice&quot;&gt;&lt;/a&gt;&lt;span&gt;Pain Points of Redex (in practice)&lt;/span&gt;&lt;/h1&gt;
 &lt;p&gt;&lt;span&gt;Common friction points:&lt;/span&gt;&lt;/p&gt;
@@ -2302,12 +2298,22 @@ relevance:0},{begin:/-&gt;/}]})})();hljs.registerLanguage(&quot;ocaml&quot;,e)})
 &lt;ol&gt;
 &lt;li&gt;&lt;span&gt;Define systax in plain Haskell ADTs&lt;/span&gt;&lt;/li&gt;
 &lt;/ol&gt;
-&lt;pre&gt;&lt;code class=&quot;language-haskell&quot;&gt;data Ty  = TInt | TArr Ty Ty
-data Tm  = Var Nom | Lam (Bind (Nom, Ty) Tm) | App Tm Tm | Lit Int
-data Env = Empty | Extend Env Nom Ty
+&lt;pre&gt;&lt;code class=&quot;language-haskell&quot;&gt;data Ty = TyInt | TyBool | TyArr Ty Ty
+
+data Tm
+  = TmVar Nom
+  | Lit Nat
+  | Lam Ty (Bind Nom Tm)
+  | App Tm Tm
+  | Plus Tm Tm
+  | BTrue
+  | BFalse
+  | If Tm Tm Tm
+
+data Env = EEmpty | EBind Nom Ty Env
 &lt;/code&gt;&lt;/pre&gt;
 &lt;p&gt;&lt;code&gt;Bind&lt;/code&gt;&lt;span&gt; and &lt;/span&gt;&lt;code&gt;Nom&lt;/code&gt;&lt;span&gt; are built-in support of binders&lt;/span&gt;&lt;/p&gt;
-&lt;div pause&gt;&lt;/div&gt;
+&lt;div up-at-unpause pause&gt;&lt;/div&gt;
 &lt;ol start=&quot;2&quot;&gt;
 &lt;li&gt;&lt;span&gt;Provide Repr instances for embedding into terms&lt;/span&gt;&lt;/li&gt;
 &lt;/ol&gt;
@@ -2358,22 +2364,25 @@ tarr = lift2 (\a b -&amp;gt; Ground (RTArr a b))
 &lt;div up-at-unpause pause&gt;&lt;/div&gt;
 &lt;h1 id=&quot;typedredex-defining-judgments&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#typedredex-defining-judgments&quot;&gt;&lt;/a&gt;&lt;span&gt;TypedRedex: Defining Judgments&lt;/span&gt;&lt;/h1&gt;
 &lt;pre&gt;&lt;code class=&quot;language-haskell&quot;&gt;typeof :: Judgment &amp;quot;typeof&amp;quot; '[I, I, O] '[Env, Tm, Ty]
-typeof = judgment
-  [ rule &amp;quot;Ty-Int&amp;quot; $ do
-      (g, n) &amp;lt;- fresh
-      concl $ typeof g (lit n) tint
-
-  , rule &amp;quot;Ty-Var&amp;quot; $ do
-      (g, x, ty) &amp;lt;- fresh
-      prem  $ lookup g x ty
-      concl $ typeof g (var x) ty
-
-  , rule &amp;quot;Ty-App&amp;quot; $ do
-      (g, t1, t2, a, b) &amp;lt;- fresh
-      prem  $ typeof g t1 (tarr a b)
-      prem  $ typeof g t2 a
-      concl $ typeof g (app t1 t2) b
-  ]
+typeof = judgment $
+  format (\env tm ty -&amp;gt; env &amp;lt;+&amp;gt; &amp;quot; ⊢ &amp;quot; &amp;lt;+&amp;gt; tm &amp;lt;+&amp;gt; &amp;quot; : &amp;quot; &amp;lt;+&amp;gt; ty)
+  &amp;gt;&amp;gt;
+  rules
+    [ rule &amp;quot;Ty-Int&amp;quot; $ do
+        (g, n) &amp;lt;- fresh
+        concl $ typeof g (lit n) tint
+  
+    , rule &amp;quot;Ty-Var&amp;quot; $ do
+        (g, x, ty) &amp;lt;- fresh
+        prem  $ lookup g x ty
+        concl $ typeof g (var x) ty
+  
+    , rule &amp;quot;Ty-App&amp;quot; $ do
+        (g, t1, t2, a, b) &amp;lt;- fresh
+        prem  $ typeof g t1 (tarr a b)
+        prem  $ typeof g t2 a
+        concl $ typeof g (app t1 t2) b
+    ]
 &lt;/code&gt;&lt;/pre&gt;
 &lt;div up-at-unpause pause&gt;&lt;/div&gt;
 &lt;h1 id=&quot;what-the-type-signature-gives-you&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#what-the-type-signature-gives-you&quot;&gt;&lt;/a&gt;&lt;span&gt;What the Type Signature Gives You&lt;/span&gt;&lt;/h1&gt;
@@ -2396,11 +2405,15 @@ typeof = judgment
 &lt;div up-at-unpause pause&gt;&lt;/div&gt;
 &lt;h1 id=&quot;typedredex-running-a-judgment&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#typedredex-running-a-judgment&quot;&gt;&lt;/a&gt;&lt;span&gt;TypedRedex: Running a Judgment&lt;/span&gt;&lt;/h1&gt;
 &lt;p&gt;&lt;span&gt;We can always derive a plain Haskell function (no logics involved).&lt;/span&gt;&lt;/p&gt;
-&lt;pre&gt;&lt;code class=&quot;language-haskell&quot;&gt;inferType :: Env -&amp;gt; Tm -&amp;gt; [Ty]
-inferType env tm =
-  eval $ query $ do
-    ty &amp;lt;- qfresh
-    pure (typeof (ground env) (ground tm) ty, ty)
+&lt;pre&gt;&lt;code class=&quot;language-haskell&quot;&gt;infer0 :: Tm -&amp;gt; [Ty]
+infer0 tm = eval $ query $ do
+  ty &amp;lt;- qfresh
+  pure (typeof eempty (ground tm) ty, ty)
+  
+step1 :: Tm -&amp;gt; [Tm]
+step1 tm = eval $ query $ do
+  tm' &amp;lt;- qfresh
+  pure (step (ground tm) tm', tm')  
 &lt;/code&gt;&lt;/pre&gt;
 &lt;div pause&gt;&lt;/div&gt;
 &lt;p&gt;&lt;strong&gt;&lt;span&gt;Same Redex workflow:&lt;/span&gt;&lt;/strong&gt;&lt;/p&gt;
@@ -2412,9 +2425,21 @@ inferType env tm =
 &lt;div up-at-unpause pause&gt;&lt;/div&gt;
 &lt;h1 id=&quot;typedredex-property-testing&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#typedredex-property-testing&quot;&gt;&lt;/a&gt;&lt;span&gt;TypedRedex: Property Testing&lt;/span&gt;&lt;/h1&gt;
 &lt;p&gt;&lt;span&gt;Determinism: at most one type for any well-typed term&lt;/span&gt;&lt;/p&gt;
-&lt;pre&gt;&lt;code class=&quot;language-haskell&quot;&gt;prop_typeofDeterministic :: Env -&amp;gt; Tm -&amp;gt; Bool
-prop_typeofDeterministic env tm =
-  length (inferType env tm) &amp;lt;= 1
+&lt;pre&gt;&lt;code class=&quot;language-haskell&quot;&gt;prop_progress :: WT -&amp;gt; Property
+prop_progress (WT expected tm) =
+  case infer0 tm of
+    [ty] | ty == expected -&amp;gt;
+      withCoverage tm $
+        isValue tm || not (null (step1 tm))
+    _ -&amp;gt; counterexample &amp;quot;generator/typechecker mismatch&amp;quot; False
+    
+prop_preservation :: WT -&amp;gt; Property
+prop_preservation (WT expected tm) =
+  case infer0 tm of
+    [ty] | ty == expected -&amp;gt;
+      withCoverage tm $
+        conjoin [ infer0 tm' == [ty] | tm' &amp;lt;- step1 tm ]
+    _ -&amp;gt; counterexample &amp;quot;generator/typechecker mismatch&amp;quot; False    
 &lt;/code&gt;&lt;/pre&gt;
 &lt;ol&gt;
 &lt;li&gt;&lt;span&gt;Use QuickCheck to generate random (closed) terms&lt;/span&gt;&lt;/li&gt;
@@ -2423,7 +2448,7 @@ prop_typeofDeterministic env tm =
 &lt;div pause&gt;&lt;/div&gt;
 &lt;p&gt;&lt;span&gt;Integrates naturally with the Haskell testing ecosystem.&lt;/span&gt;&lt;/p&gt;
 &lt;div up-at-unpause pause&gt;&lt;/div&gt;
-&lt;h1 id=&quot;feature-static-mode-checking&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#feature-static-mode-checking&quot;&gt;&lt;/a&gt;&lt;span&gt;Feature: Static Mode Checking&lt;/span&gt;&lt;/h1&gt;
+&lt;h1 id=&quot;feature-mode-checking&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#feature-mode-checking&quot;&gt;&lt;/a&gt;&lt;span&gt;Feature: Mode Checking&lt;/span&gt;&lt;/h1&gt;
 &lt;p&gt;&lt;span&gt;TypedRedex provides a mode-checking interpreter:&lt;/span&gt;&lt;/p&gt;
 &lt;pre&gt;&lt;code class=&quot;language-haskell&quot;&gt;import TypedRedex.Interp.MCheck (mcheck)
 
@@ -2446,20 +2471,22 @@ putStrLn (typeset infer)
 &lt;/code&gt;&lt;/pre&gt;
 &lt;div pause&gt;&lt;/div&gt;
 &lt;p&gt;&lt;strong&gt;&lt;span&gt;Output excerpt:&lt;/span&gt;&lt;/strong&gt;&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;─────────────────────────────
-           | infer |
-─────────────────────────────
-
-───────────────────── Ty-Int
-Γ ⊢ n : Int
-
-Γ ⊢ x : A
-─────────────────── Ty-Var
+&lt;pre&gt;&lt;code class=&quot;language-text&quot;&gt;Γ (x) = A
+--------- T-Var
 Γ ⊢ x : A
 
+Γ, x:A ⊢ e : B
+---------------------- T-Abs
+Γ ⊢ \x : A. e : A -&amp;gt; B
 
-
+Γ ⊢ e : B -&amp;gt; A    Γ ⊢ e1 : B
+---------------------------- T-App
+Γ ⊢ (e e1) : A
 &lt;/code&gt;&lt;/pre&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;span&gt;Configurations in &lt;/span&gt;&lt;code&gt;Pretty&lt;/code&gt;&lt;span&gt; instance of ASTs and &lt;/span&gt;&lt;code&gt;format&lt;/code&gt;&lt;span&gt; of judgments.&lt;/span&gt;&lt;/li&gt;
+&lt;li&gt;&lt;span&gt;Able to export Latex code with cross-reference.&lt;/span&gt;&lt;/li&gt;
+&lt;/ol&gt;
 &lt;div up-at-unpause pause&gt;&lt;/div&gt;
 &lt;h1 id=&quot;feature-partial-derivations&quot;&gt;&lt;a class=&quot;anchor&quot; aria-hidden=&quot;true&quot; href=&quot;#feature-partial-derivations&quot;&gt;&lt;/a&gt;&lt;span&gt;Feature: Partial Derivations&lt;/span&gt;&lt;/h1&gt;
 &lt;p&gt;&lt;span&gt;In PL research, rules are often &amp;quot;almost right.&amp;quot;&lt;/span&gt;&lt;/p&gt;
@@ -2478,8 +2505,9 @@ putStrLn (typeset infer)
 &lt;li&gt;&lt;span&gt;Displaying the matched rule in the process, in case of non-terminating.&lt;/span&gt;&lt;/li&gt;
 &lt;/ol&gt;
 &lt;div pause&gt;&lt;/div&gt;
+&lt;p&gt;&lt;strong&gt;&lt;span&gt;Plain Haskell:&lt;/span&gt;&lt;/strong&gt;&lt;/p&gt;
 &lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;&lt;span&gt;Plain Haskell:&lt;/span&gt;&lt;/strong&gt;&lt;span&gt; &lt;/span&gt;&lt;code&gt;Debug.Trace&lt;/code&gt;&lt;span&gt; to print, but painful.&lt;/span&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Debug.Trace&lt;/code&gt;&lt;span&gt; to print, but painful.&lt;/span&gt;&lt;/li&gt;
 &lt;li&gt;&lt;span&gt;Need a feature logs &amp;quot;which pattern is matched&amp;quot;.&lt;/span&gt;&lt;/li&gt;
 &lt;/ul&gt;
 &lt;div up-at-unpause pause&gt;&lt;/div&gt;
@@ -2490,7 +2518,19 @@ putStrLn (typeset infer)
 &lt;/code&gt;&lt;/pre&gt;
 &lt;div pause&gt;&lt;/div&gt;
 &lt;p&gt;&lt;strong&gt;&lt;span&gt;Failing case output (abbreviated):&lt;/span&gt;&lt;/strong&gt;&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;todo
+&lt;pre&gt;&lt;code class=&quot;language-text&quot;&gt;--- trace if (\x:Bool. \y:Int. 1 + true) true 1 then 1 else 2 (failed) ---
+---------------------------------------------------------------------------------------------------- [&amp;lt;no matching rule&amp;gt;]                                                                                     
+., x:bool, y:int ⊢ (S(0) + true) : bool [FAIL: head failed: ., x:bool, y:int ⊢ (S(0) + true) : bool]                                                                                                          
+------------------------------------------------------------------------------------------------------------------------- [T-Abs]                                                                             
+                                    ., x:bool ⊢ \y : int. (S(0) + true) : int -&amp;gt; bool                                                                                                                         
+--------------------------------------------------------------------------------------------------------------------------------- [T-Abs]                                                                     
+                                   . ⊢ \x : bool. \y : int. (S(0) + true) : bool -&amp;gt; ? -&amp;gt; bool                                               . ⊢ true : ? (skipped)                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------ [T-App]                                    
+                                                    . ⊢ (\x : bool. \y : int. (S(0) + true) true) : ? -&amp;gt; bool                                                                . ⊢ S(0) : ? (skipped)           
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- [T-App]   
+                                                                    . ⊢ ((\x : bool. \y : int. (S(0) + true) true) S(0)) : bool                                                                               . ⊢ S(0) : ? (skipped)   . ⊢ S(S(0)) : ? (skipped)
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- [T-If]
+                                                                                       . ⊢ if ((\x : bool. \y : int. (S(0) + true) true) S(0)) then S(0) else S(S(0)) : ?
 &lt;/code&gt;&lt;/pre&gt;
 &lt;div pause&gt;&lt;/div&gt;
 &lt;p&gt;&lt;span&gt;Shows exactly where derivation stopped → tune the next rule.&lt;/span&gt;&lt;/p&gt;
