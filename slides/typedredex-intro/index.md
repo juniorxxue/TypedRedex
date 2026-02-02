@@ -59,26 +59,26 @@
 
 **Recent uses**
 
-Blame-Correct Support for Receiver Properties in Recursively-Structured Actor Contracts  
+Blame-Correct Support for Receiver Properties in Recursively-Structured Actor Contracts
 *Vandenbogaerde, Stiévenart, De Roover (2024)*
 
-Verifying Rust Implementation of Page Tables in a Software Enclave Hypervisor  
+Verifying Rust Implementation of Page Tables in a Software Enclave Hypervisor
 *Dai, Liu, Sjoberg, Li, Chen, Wang, Jia, Anderson, Elbeheiry, Sondhi, Zhang, Ni, Yan, Gu, He (2024)*
 
-The Fearless Journey  
+The Fearless Journey
 *Webster, Servetto, Homer (2024 (arXiv))*
 
-Secure RDTs: Enforcing Access Control Policies for Offline Available JSON Data  
+Secure RDTs: Enforcing Access Control Policies for Offline Available JSON Data
 *Renaux, Van den Vonder, De Meuter (2023)*
 
-A Formal Model of Checked C  
+A Formal Model of Checked C
 *Li, Liu, Postol, Lampropoulos, Van Horn, Hicks (2022)*
 
 {pause up}
 
 ## Typical workflow
 
-1. **Define** syntax and judgments/relations. 
+1. **Define** syntax and judgments/relations.
 2. **Execute** them on concrete terms
 3. **Test** meta-theory with random program generation
 4. **Typeset** generate PDF to share
@@ -181,7 +181,7 @@ We use a simply-typed lambda calculus (STLC) throughout:
 ```
 
 </div>
-</div>  
+</div>
 
 {pause}
 
@@ -318,7 +318,7 @@ instance Repr Ty where
     | RTArr (Logic Ty) (Logic Ty)
 
 project TInt = RTInt
-project (TArr a b) = RTArr (Ground (project a)) (Ground (project b))      
+project (TArr a b) = RTArr (Ground (project a)) (Ground (project b))
 
 reify RTInt = Just TInt
 reify (RTArr (Ground a) (Ground b)) = TArr <$> reify a <*> reify b
@@ -344,12 +344,12 @@ instance Pretty Ty where
 {pause}
 4. Provide smart constructors used in DSL
 
-```haskell    
+```haskell
 tint :: Term Ty
 tint = ground TInt
 
 tarr :: Term Ty -> Term Ty -> Term Ty
-tarr = lift2 (\a b -> Ground (RTArr a b))    
+tarr = lift2 (\a b -> Ground (RTArr a b))
 ```
 
 {pause}
@@ -371,12 +371,12 @@ typeof = judgment $
     [ rule "Ty-Int" $ do
         (g, n) <- fresh
         concl $ typeof g (lit n) tint
-  
+
     , rule "Ty-Var" $ do
         (g, x, ty) <- fresh
         prem  $ lookup g x ty
         concl $ typeof g (var x) ty
-  
+
     , rule "Ty-App" $ do
         (g, t1, t2, a, b) <- fresh
         prem  $ typeof g t1 (tarr a b)
@@ -400,7 +400,7 @@ typeof :: Judgment "typeof" '[I, I, O] '[Env, Tm, Ty]
 **Static guarantees:**
 
 1. Judgment name at the type level → unique identification
-2. Mode list (`I`/`O`) at the type level 
+2. Mode list (`I`/`O`) at the type level
   - possible to be checked at compile time
 3. Argument types → arity and type mismatches caught early
 
@@ -415,11 +415,11 @@ infer0 :: Tm -> [Ty]
 infer0 tm = eval $ query $ do
   ty <- qfresh
   pure (typeof eempty (ground tm) ty, ty)
-  
+
 step1 :: Tm -> [Tm]
 step1 tm = eval $ query $ do
   tm' <- qfresh
-  pure (step (ground tm) tm', tm')  
+  pure (step (ground tm) tm', tm')
 ```
 
 {pause}
@@ -444,14 +444,14 @@ prop_progress (WT expected tm) =
       withCoverage tm $
         isValue tm || not (null (step1 tm))
     _ -> counterexample "generator/typechecker mismatch" False
-    
+
 prop_preservation :: WT -> Property
 prop_preservation (WT expected tm) =
   case infer0 tm of
     [ty] | ty == expected ->
       withCoverage tm $
         conjoin [ infer0 tm' == [ty] | tm' <- step1 tm ]
-    _ -> counterexample "generator/typechecker mismatch" False    
+    _ -> counterexample "generator/typechecker mismatch" False
 ```
 
 1. Use QuickCheck to generate random (closed) terms
@@ -533,14 +533,14 @@ In PL research, rules are often "almost right."
 
 **Redex:** "No answers." (and good luck debugging)
 
-**TypedRedex:** 
+**TypedRedex:**
 
 1. Returns a partial derivation tree showing exactly where it got stuck.
 2. Displaying the matched rule in the process, in case of non-terminating.
 
 {pause}
 
-**Plain Haskell:** 
+**Plain Haskell:**
 - `Debug.Trace` to print, but painful.
 - Need a feature logs "which pattern is matched".
 
@@ -548,28 +548,31 @@ In PL research, rules are often "almost right."
 
 # Feature: Partial Derivations — Example
 
+This example will fail in the middle of type-checking `1 + true`.
+
+```text
+if (\x:Bool. \y:Int. 1 + true) true 1 then 1 else 2
+```
+{pause}
+call the trace interpreter:
 ```haskell
 let qTypeof = query $ do
       ty <- qfresh
       pure (typeof eempty expr ty, ty)
 printTrace _ (trace qTypeof)
 ```
-
 {pause}
 
-**Failing case output (abbreviated):**
-
 ```text
---- trace if (\x:Bool. \y:Int. 1 + true) true 1 then 1 else 2 (failed) ---
----------------------------------------------------------------------------------------------------- [<no matching rule>]                                                                                     
-., x:bool, y:int ⊢ (S(0) + true) : bool [FAIL: head failed: ., x:bool, y:int ⊢ (S(0) + true) : bool]                                                                                                          
-------------------------------------------------------------------------------------------------------------------------- [T-Abs]                                                                             
-                                    ., x:bool ⊢ \y : int. (S(0) + true) : int -> bool                                                                                                                         
---------------------------------------------------------------------------------------------------------------------------------- [T-Abs]                                                                     
-                                   . ⊢ \x : bool. \y : int. (S(0) + true) : bool -> ? -> bool                                               . ⊢ true : ? (skipped)                                            
------------------------------------------------------------------------------------------------------------------------------------------------------------------- [T-App]                                    
-                                                    . ⊢ (\x : bool. \y : int. (S(0) + true) true) : ? -> bool                                                                . ⊢ S(0) : ? (skipped)           
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- [T-App]   
+---------------------------------------------------------------------------------------------------- [<no matching rule>]
+., x:bool, y:int ⊢ (S(0) + true) : bool [FAIL: head failed: ., x:bool, y:int ⊢ (S(0) + true) : bool]
+------------------------------------------------------------------------------------------------------------------------- [T-Abs]
+                                    ., x:bool ⊢ \y : int. (S(0) + true) : int -> bool
+--------------------------------------------------------------------------------------------------------------------------------- [T-Abs]
+                                   . ⊢ \x : bool. \y : int. (S(0) + true) : bool -> ? -> bool                                               . ⊢ true : ? (skipped)
+------------------------------------------------------------------------------------------------------------------------------------------------------------------ [T-App]
+                                                    . ⊢ (\x : bool. \y : int. (S(0) + true) true) : ? -> bool                                                                . ⊢ S(0) : ? (skipped)
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- [T-App]
                                                                     . ⊢ ((\x : bool. \y : int. (S(0) + true) true) S(0)) : bool                                                                               . ⊢ S(0) : ? (skipped)   . ⊢ S(S(0)) : ? (skipped)
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- [T-If]
                                                                                        . ⊢ if ((\x : bool. \y : int. (S(0) + true) true) S(0)) then S(0) else S(S(0)) : ?
@@ -716,6 +719,10 @@ cabal run example-lcti
 
 # Future Work
 
+**Syntax:**
+- Order-sensitive rules
+- More preludes: arithmetic, booleans, lists, etc.
+
 **Ergonomics:**
 
 - More syntax helpers for `Repr` and standard containers
@@ -729,6 +736,23 @@ cabal run example-lcti
 
 {pause up}
 
-# Thank You
+# References
 
-**Questions?**
+**Embedding and DSLs:**
+1. Combining Deep and Shallow Embedding for EDSL
+2. Typed Tagless Final Interpreters
+
+**Higher-kinded types:**
+1. Logic Programming with Extensible Types
+2. Typed Embedding of miniKanren for Functional Conversion
+
+**Minikanren implementations:**
+1. Constructive Negation for MiniKanren
+2. A Fresh Name in Nominal Logic Programming
+3. µKanren: A Minimal Functional Core for Relational Programming
+4. Visualizing miniKanren Search with a Fine-Grained Small-Step Semantics
+
+**PLT Redex:**
+1. Redex2Coq: towards a theory of decidability of Redex's reduction semantics
+2. Randomized Testing in PLT Redex
+3. An Overview of Property-Based Testing for the Working Semanticist

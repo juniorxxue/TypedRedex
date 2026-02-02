@@ -127,6 +127,260 @@ Painful example about
 forall b. Int -> b <: [1] -> Int
 ```
 
+## Ordered Combinator
+
+This is a proposal to add an *ordered* rule combinator to the judgment-definition DSL.
+The intent is “fallback rules”: later rules should only be tried when all earlier rules fail for the
+same judgment call.
+
+This proposal is deliberately operational (like Prolog clause order + negation-as-failure), because
+the current evaluator is operational: it explores multiple rules via fair interleaving.
+
+### Surface syntax
+
+Conceptually (pseudo-syntax):
+
+```txt
+judgment $
+format ...
+>>
+rules ...
+>>
+ord_rules [
+  rule "1"
+  rule "2"
+  ...
+]
+```
+
+In the Haskell DSL used in this repo, the analogous form is:
+
+```hs
+import qualified Prelude as P
+
+judgment $
+  format ...
+  P.>> rules [...]
+  P.>> ord_rules [...]
+```
+
+(`P.>>` is used in examples because `TypedRedex.DSL` hides Prelude’s `(>>)`.)
+
+### Intended semantics (precise enough to implement)
+
+Fix a judgment call `J(args)` and a current substitution/state `s`.
+
+- **Current behavior (today)**: all rules for `J` are tried nondeterministically and their solution
+  streams are merged fairly (via `interleave` on `Disj` in `src/TypedRedex/Backend/Goal.hs`).
+- **With `ord_rules`**: a rule introduced by `ord_rules` is *conditionally enabled*:
+  it is allowed to run only if **no earlier rule** (in the same judgment definition, after
+  desugaring) can produce *any* solution for the same call `J(args)` under `s`.
+
+This is intentionally a “first-success commits” notion:
+if an earlier rule has at least one solution, later ordered rules are not allowed to contribute any
+solutions (even if they could).
+
+### Desugaring (informal, but correct)
+
+The earlier README text `not $ prem1` is too weak in general: order should depend on whether the
+*entire earlier rule* can derive the same judgment call (including head unification + all premises),
+not just whether one particular premise holds.
+
+Let `R1, R2, ..., Rn` be the rules in source order for the judgment (after concatenating multiple
+`rules [...]` blocks and expanding multiple `ord_rules [...]` blocks).
+
+Define `Goal(Ri)` as “the goal produced by translating rule `Ri` against the current caller args”
+(i.e. head unification + scheduled premises + constraints + negations).
+
+Then each ordered rule `Ri` (introduced by `ord_rules`) is desugared to:
+
+```txt
+not $ (Goal(R1) OR Goal(R2) OR ... OR Goal(R{i-1}))
+<original premises/constraints/negations of Ri>
+---------------------------------------------
+<original conclusion/head of Ri>
+```
+
+Expanded example (when an ordered block is appended after some prefix rules):
+
+```txt
+rules     [A, B]
+>>
+ord_rules [C, D, E]
+```
+
+desugars (conceptually) to:
+
+```txt
+rules [
+  A,
+  B,
+  new_C = (not $ (A or B))               ; C
+  new_D = (not $ (A or B or new_C))      ; D
+  new_E = (not $ (A or B or new_C or new_D)) ; E
+]
+```
+
+where each `not $ (...)` is “no earlier rule has any solution for the same judgment call”.
+
+Concrete 2-rule example (single ordered block):
+
+rule 1:
+
+```txt
+prem1
+-----
+concl
+```
+
+rule 2:
+
+```txt
+prem2
+-----
+concl
+```
+
+`ord_rules [rule1, rule2]` means rule 2 is desugared to:
+
+```txt
+not $ (rule1 can derive concl)
+prem2
+-----
+concl
+```
+
+and if there is a prefix `rules [...]` before the ordered block, even *rule 1* is guarded:
+
+```txt
+not $ (any earlier rule can derive concl)
+prem1
+-----
+concl
+```
+
+### Composition laws for `>>` (builder sequencing)
+
+These are the laws we want at the *DSL construction* level:
+
+- `rules [1] >> rules [2]` is equivalent to `rules [1,2]` (plain concatenation).
+- `rules [1] >> ord_rules [2]` is equivalent to `rules [1, new_2]` where `new_2` is rule `2` after
+  ordered desugaring against the full prefix `[1]` (i.e. guarded by failure of `[1]`).
+
+### Implementation proposals
+
+There are two realistic ways to implement this in the current architecture.
+
+#### Proposal A (recommended): implement ordering at Goal translation time
+
+Key idea: keep rules as rules, but when translating a judgment call, *wrap ordered rules with a
+prefix-failure guard goal*.
+
+This avoids rewriting `RuleM` programs (which is hard because `fresh` allocates variables inside the
+free monad), and it enforces the guard *before* the rule body runs (important for termination).
+
+Minimal changes:
+
+1) **Extend judgment metadata** to remember which rules are “ordered”.
+   For example, in `src/TypedRedex/Core/RuleF.hs`, extend `JudgmentDef`/`JudgmentCall` with a tag list:
+
+   - `judgmentRules :: [Rule name ts]` (unchanged)
+   - `judgmentRuleTags :: [RuleTag]` where `RuleTag = Plain | Ordered`
+   - and similarly `jcRuleTags :: [RuleTag]`
+
+   Invariant: `length jcRules == length jcRuleTags`.
+
+2) **Add a builder combinator** in `src/TypedRedex/DSL.hs`:
+
+   - `ord_rules :: [Rule name ts] -> JudgmentBuilder name modes ts ()`
+
+   It appends the rules (like `rules`) but records `Ordered` tags for them.
+
+3) **Change the translator** (`src/TypedRedex/Backend/Engine.hs`) from:
+
+   - `translate jc = disjGoals [translateRule args r | r <- jcRules jc]`
+
+   to a sequential fold that carries the prefix goal:
+
+   - Let `prefix = Failure` initially.
+   - For each rule `r_i` with tag `t_i`:
+     - `base = translateRule (Just args) r_i`
+     - `goal_i = case t_i of`
+       - `Plain   -> base`
+       - `Ordered -> Conj (Neg prefix) base`
+     - update `prefix = Disj prefix goal_i`
+   - Finally, return `disjGoals [goal_1, ..., goal_n]` (or just `prefix` if you build it that way).
+
+Operationally, this matches the desugaring section:
+`Neg prefix` succeeds iff no earlier rule goal produces any solution.
+
+Notes / consequences:
+
+- **Guard placement vs head unification**: conceptually, the “not $ prefix” guard is a *premise* of the
+  ordered rule, so it runs after the rule’s head unifies with the caller, but before any other
+  premises. The simple `Conj (Neg prefix) base` runs the guard even when the rule head would fail to
+  match; that is equivalent for the solution set, but it can be extra work. If this matters, split
+  `translateRule` into `(headGoal, restGoal)` and insert `Neg prefix` between them.
+- **Termination behavior is “Prolog-like”**: if an earlier rule diverges (never produces a solution
+  and never finitely fails), later ordered rules are never tried.
+- **Performance**: the `Neg prefix` check *re-runs* earlier rules (as a “can any earlier rule succeed?”
+  query). In the common “fallback at the end” use case, this is usually acceptable; but it is a real
+  cost. (See Proposal B for an optimization path.)
+
+4) **Trace / Typeset / MCheck**:
+   - `Trace` currently selects the first successful rule left-to-right anyway, so it will usually
+     *appear* consistent. If we want exact consistency with `eval`’s solution set, we should also
+     add the same `Neg prefix` guard check in `searchJudgmentCall` for ordered rules.
+   - `Typeset` and `MCheck` should be taught to display ordered rules distinctly (e.g. annotate rule
+     labels with `[ordered]` or print an “ordered block” header), since the ordering is no longer
+     visible if we only store tags.
+
+#### Proposal B (optimization): add a committed-choice Goal constructor
+
+If Proposal A is too slow (because each ordered rule checks `Neg prefix` and thus repeatedly
+evaluates the prefix), add a new Goal constructor:
+
+```hs
+data Goal
+  = ...
+  | OrElse Goal Goal   -- run left; if it has any solution, commit to it; otherwise run right
+```
+
+and in `exec`:
+
+```hs
+exec (OrElse g1 g2) s =
+  case exec g1 s of
+    []     -> exec g2 s
+    rs@(_:_) -> rs
+```
+
+Then translate an ordered block `[r1, r2, ..., rn]` as:
+
+```txt
+OrElse (Goal(r1)) (OrElse (Goal(r2)) (... Goal(rn)))
+```
+
+and if there is a plain prefix `P` before the ordered block, you can do:
+
+```txt
+OrElse (Goal(P-as-disjunction)) (Goal(ordered-block))
+```
+
+This avoids re-running the prefix for every ordered rule and matches the intended “first-success
+commits” semantics more directly. It is more invasive (Goal/exec/Trace support), but it is the
+cleanest operational model.
+
+### Caveats (documented behavior, not bugs)
+
+- **Negation-as-failure**: “not $ ...” is *existence-of-solution* under the current operational
+  interpreter, not logical negation. This is acceptable here because `ord_rules` is explicitly an
+  operational feature.
+- **Loss of completeness**: ordered rules intentionally discard solutions from later rules whenever an
+  earlier rule has any solution.
+- **Non-termination**: earlier divergence prevents later ordered rules from running (consistent with
+  “ordered fallback” semantics).
+
 ## Debug Interpreter
 
 My prompt

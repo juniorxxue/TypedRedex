@@ -74,3 +74,27 @@ subList = judgment $
         prem $ subList xs ys
         concl $ subList (lcons x xs) (lcons y ys)
     ]
+
+{-
+least upper bound
+
+A \/ B ~> C
+
+
+B <: A
+--------------------- lub-l
+A \/ B ~> A
+
+A <: B
+--------------------- lub-r
+A \/ B ~> B
+
+
+[A] /\ [B] ~> [E]
+C \/ D ~> F
+----------------------------------------------------------------- lub-arr
+forall [a]. [A] -> B \/ forall [a]. [C] -> D ~> forall [a]. [E] -> F
+
+
+
+-}
