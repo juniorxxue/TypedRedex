@@ -72,7 +72,7 @@ import TypedRedex.Core.IxFree (liftF)
 import qualified TypedRedex.Core.IxFree as Ix
 import TypedRedex.Core.Term
 import TypedRedex.Core.RuleF
-import TypedRedex.Pretty (Doc, FmtFn(..), FmtArgs)
+import TypedRedex.Pretty (Doc, FmtFn(..), FmtArgs, Pretty)
 import TypedRedex.Nominal (NominalAtom, Hash, FreshName)
 
 --------------------------------------------------------------------------------
@@ -159,18 +159,18 @@ guardCall jc = guard (prem jc)
 
 infix 4 ===, =/=
 
-(===) :: forall a ts. (Repr a, Typeable a)
+(===) :: forall a ts. (Repr a, Typeable a, Pretty a)
       => Term a -> Term a
       -> RuleM ts ()
 (===) t1 t2 = liftF (EqF t1 t2)
 
-(=/=) :: forall a ts. (Repr a, Typeable a)
+(=/=) :: forall a ts. (Repr a, Typeable a, Pretty a)
       => Term a -> Term a
       -> RuleM ts ()
 (=/=) t1 t2 = liftF (NEqF t1 t2)
 
 -- | Freshness constraint: name # term (name does not occur in term).
-hash :: (NominalAtom name, Hash name term, Repr name, Repr term, Typeable name, Typeable term)
+hash :: (NominalAtom name, Hash name term, Repr name, Repr term, Typeable name, Typeable term, Pretty name, Pretty term)
      => Term name -> Term term -> RuleM ts ()
 hash name term = liftF (HashF name term)
 

@@ -145,16 +145,16 @@ data RuleF (ts :: [Type]) s t (a :: Type) where
        -> RuleF ts s s ()
 
   -- | Equality constraint
-  EqF :: (Repr a, Typeable a)
+  EqF :: (Repr a, Typeable a, Pretty a)
       => Term a -> Term a
       -> RuleF ts s s ()
 
   -- | Disequality constraint
-  NEqF :: (Repr a, Typeable a)
+  NEqF :: (Repr a, Typeable a, Pretty a)
       => Term a -> Term a
       -> RuleF ts s s ()
 
   -- | Freshness (hash) constraint: name # term
-  HashF :: (NominalAtom name, Hash name term, Repr name, Repr term, Typeable name, Typeable term)
+  HashF :: (NominalAtom name, Hash name term, Repr name, Repr term, Typeable name, Typeable term, Pretty name, Pretty term)
         => Term name -> Term term
         -> RuleF ts s s ()
