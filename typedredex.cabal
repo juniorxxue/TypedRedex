@@ -147,3 +147,22 @@ executable example-stlc
         GADTs
         TypeOperators
     ghc-options:      -main-is STLC.Main
+
+executable example-signal
+    import:           warnings
+    main-is:          Signal/Main.hs
+    other-modules:
+        Signal.Syntax
+        Signal.Rules
+        Support.Nat
+    build-depends:
+        base >= 4.17 && < 5,
+        typedredex
+    hs-source-dirs:   examples/projects, examples
+    default-language: GHC2021
+    default-extensions:
+        DataKinds
+        TypeFamilies
+        GADTs
+        TypeOperators
+    ghc-options:      -main-is Signal.Main
