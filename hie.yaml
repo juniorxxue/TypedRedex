@@ -1,0 +1,25 @@
+cradle:
+  cabal:
+    - path: "./src"
+      component: "lib:typedredex"
+
+    - path: "./examples/projects/LCTI"
+      component: "exe:example-lcti"
+
+    - path: "./examples/projects/LTI"
+      component: "exe:example-lti"
+
+    - path: "./examples/projects/Poly"
+      component: "exe:example-poly"
+
+    - path: "./examples/projects/PolyWeak"
+      component: "exe:example-polyweak"
+
+    - path: "./examples/projects/STLC"
+      component: "exe:example-stlc"
+
+    - path: "./examples/projects/Signal"
+      component: "exe:example-signal"
+
+    - path: "./examples/Support"
+      component: "exe:example-signal"

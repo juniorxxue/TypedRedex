@@ -30,6 +30,9 @@ module Signal.Syntax
   , euvar
   , eevar
   , esvar
+  , Signal(..)
+  , yes
+  , no
   , cempty
   , ctype
   , ctm
@@ -82,6 +85,11 @@ data Env
   | EUvar TyNom Env       -- universal type variable
   | EEvar TyNom Env       -- existential type variable (unsolved)
   | ESvar TyNom Ty Env    -- solved existential type variable
+  deriving (Eq, Show)
+
+data Signal
+  = SYes
+  | SNo
   deriving (Eq, Show)
 
 data Context
@@ -200,6 +208,21 @@ instance Repr Polar where
   mapReified _ RPos = RPos
   mapReified _ RNeg = RNeg
 
+instance Repr Signal where
+  data Reified Signal = RYes | RNo
+
+  project SYes = RYes
+  project SNo = RNo
+
+  reify RYes = Just SYes
+  reify RNo = Just SNo
+
+  quote RYes = ("Yes", [])
+  quote RNo = ("No", [])
+
+  mapReified _ RYes = RYes
+  mapReified _ RNo = RNo
+
 instance Repr Env where
   data Reified Env
     = REmpty
@@ -305,8 +328,13 @@ instance Pretty Polar where
   prettyReified RPos = pure "+"
   prettyReified RNeg = pure "-"
 
+instance Pretty Signal where
+  varNames = cycleNames ["\x2713/\x2717"]
+  prettyReified RYes = pure "\x2713"
+  prettyReified RNo = pure "\x2717"
+
 instance Pretty Env where
-  varNames = cycleNames ["G"]
+  varNames = cycleNames ["Γ"]
   prettyReified REmpty = pure "."
   prettyReified (RTrm x ty env) = do
     dx <- prettyLogic x
@@ -328,13 +356,13 @@ instance Pretty Env where
     pure (denv <+> ", " <+> da <+> " = " <+> dty)
 
 instance Pretty Context where
-  varNames = cycleNames ["S"]
+  varNames = cycleNames ["Σ"]
   prettyReified RCEmpty = pure "[]"
   prettyReified (RCType ty) = prettyLogic ty
   prettyReified (RCTm tm ctx) = do
     dtm <- prettyLogic tm
     dctx <- prettyLogic ctx
-    pure (dtm <+> " ~> " <+> dctx)
+    pure ("[" <+> dtm <+> "] ~> " <+> dctx)
 
 prettyBind
   :: forall name body.
@@ -549,6 +577,12 @@ eevar = lift2 (\a env -> Ground (REvar a env))
 
 esvar :: Term TyNom -> Term Ty -> Term Env -> Term Env
 esvar = lift3 (\a ty env -> Ground (RSvar a ty env))
+
+yes :: Term Signal
+yes = ground SYes
+
+no :: Term Signal
+no = ground SNo
 
 cempty :: Term Context
 cempty = ground CEmpty
