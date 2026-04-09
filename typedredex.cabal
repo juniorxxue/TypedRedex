@@ -22,9 +22,6 @@ tested-with:        GHC == 9.6.7
 extra-doc-files:
     CONTRIBUTING.md
     README.md
-    notes/README.md
-    notes/archived-readme-notes.md
-    notes/open-source-checklist.md
 
 source-repository head
     type:           git
@@ -94,62 +91,6 @@ executable example-lcti
         TypeOperators
     ghc-options:      -main-is LCTI.Main
 
-executable example-lti
-    import:           warnings
-    main-is:          LTI/Main.hs
-    other-modules:
-        LTI.Syntax
-        LTI.Rules
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is LTI.Main
-
-executable example-poly
-    import:           warnings
-    main-is:          Poly/Main.hs
-    other-modules:
-        Poly.Syntax
-        Poly.Rules
-        Support.Nat
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is Poly.Main
-
-executable example-polyweak
-    import:           warnings
-    main-is:          PolyWeak/Main.hs
-    other-modules:
-        PolyWeak.Syntax
-        PolyWeak.Rules
-        Support.Nat
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is PolyWeak.Main
-
 executable example-stlc
     import:           warnings
     main-is:          STLC/Main.hs
@@ -172,21 +113,3 @@ executable example-stlc
         TypeOperators
     ghc-options:      -main-is STLC.Main
 
-executable example-signal
-    import:           warnings
-    main-is:          Signal/Main.hs
-    other-modules:
-        Signal.Syntax
-        Signal.Rules
-        Support.Nat
-    build-depends:
-        base >= 4.17 && < 5,
-        typedredex
-    hs-source-dirs:   examples/projects, examples
-    default-language: GHC2021
-    default-extensions:
-        DataKinds
-        TypeFamilies
-        GADTs
-        TypeOperators
-    ghc-options:      -main-is Signal.Main

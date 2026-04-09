@@ -18,6 +18,7 @@ cabal update
 cabal check
 cabal build all
 cabal run example-stlc
+cabal run example-lcti
 cabal sdist
 ```
 
@@ -27,7 +28,6 @@ If you change the public API or the examples, please update the relevant docs as
 
 - The core library lives in `src/`.
 - Runnable semantics examples live in `examples/projects/`.
-- Maintainer notes and archived design material live in `notes/`.
 - The project currently targets GHC 9.6.7.
 
 ## Style Expectations

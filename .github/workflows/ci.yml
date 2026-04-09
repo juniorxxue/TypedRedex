@@ -36,5 +36,8 @@ jobs:
       - name: Run STLC example
         run: cabal run example-stlc
 
+      - name: Run LCTI example
+        run: cabal run example-lcti
+
       - name: Build source distribution
         run: cabal sdist

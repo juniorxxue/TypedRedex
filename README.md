@@ -4,7 +4,7 @@
 
 TypedRedex is a Haskell library for defining Redex-style judgments, reduction rules, and semantic relations as a typed AST.
 
-It is aimed at language prototyping and semantics engineering in a style that stays close to Redex, while fitting naturally into the Haskell toolchain.
+It is designed for language prototyping and semantics engineering in a style that stays close to Redex while fitting naturally into the Haskell toolchain.
 
 ## Features
 
@@ -14,32 +14,26 @@ It is aimed at language prototyping and semantics engineering in a style that st
 - partial derivation traces for debugging failed queries
 - mode checking for scheduling and output-discipline issues
 - nominal support for binders and freshness constraints
-- easy integration with the rest of the Haskell ecosystem, including QuickCheck
+- straightforward integration with the Haskell ecosystem, including QuickCheck
 
 ## Installation
 
-TypedRedex is not on Hackage yet.
-
-Today, the intended way to use it is from a source checkout:
+TypedRedex is currently intended to be used from a source checkout.
 
 ```bash
 cabal update
 cabal build
 ```
 
-To build everything in this repository, including the example executables:
+To build the library and the included example executables:
 
 ```bash
 cabal build all
 ```
 
-The project is currently tested with GHC 9.6.7 and `cabal-install` 3.14.
-
-A Hackage release is planned later, once the public API settles a bit more.
-
 ## Quick Start
 
-The core entry point is [`TypedRedex.DSL`](src/TypedRedex/DSL.hs).
+The main entry point is [`TypedRedex.DSL`](src/TypedRedex/DSL.hs).
 
 A judgment is defined once, then reused by different interpreters.
 
@@ -69,7 +63,7 @@ plusOne n = eval $ query $ do
   pure (add (R.ground n) (R.ground (S Z)) out, out)
 ```
 
-That snippet is intentionally minimal. For complete examples with syntax definitions, pretty-printing, binders, tracing, and property tests, start with [`examples/projects/STLC`](examples/projects/STLC).
+For complete examples with syntax definitions, pretty-printing, binders, tracing, and property tests, start with [`examples/projects/STLC`](examples/projects/STLC) or [`examples/projects/LCTI`](examples/projects/LCTI).
 
 ## Interpreters
 
@@ -92,33 +86,17 @@ TypedRedex ships with several interpreters over the same rule AST.
 
 ## Examples
 
-The repository includes several runnable example languages.
+The repository currently includes two runnable examples.
 
 - `STLC`: simply typed lambda calculus with tracing and QuickCheck properties
-- `LTI` and `LCTI`: larger inference-oriented case studies
-- `Poly` and `PolyWeak`: polymorphism-focused experiments
-- `Signal`: a larger ruleset used for typesetting and mode checking
+- `LCTI`: a larger inference-oriented case study
 
-Useful entry points:
+Run them with:
 
 ```bash
 cabal run example-stlc
-cabal run example-poly
 cabal run example-lcti
-cabal run example-signal
 ```
-
-## Package Metadata And Hackage Prep
-
-The package metadata is being kept Hackage-friendly even before the first upload.
-
-The repository currently includes:
-
-- a public `README.md`
-- an explicit `LICENSE`
-- homepage and issue tracker links in the Cabal file
-- `tested-with` information in the Cabal file
-- source-distribution checks in CI via `cabal sdist`
 
 ## Development
 
@@ -127,17 +105,16 @@ CI runs the following checks on GitHub Actions:
 - `cabal check`
 - `cabal build all`
 - `cabal run example-stlc`
+- `cabal run example-lcti`
 - `cabal sdist`
 
 Contribution guidelines live in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-Internal design notes and maintainer-oriented material live under [`notes/`](notes/README.md).
-
 ## Status
 
-TypedRedex is currently an experimental library.
+TypedRedex is currently experimental.
 
-The implementation is usable and the examples are non-trivial, but the package should still be treated as research-oriented and evolving.
+The implementation is usable and the examples are non-trivial, but the public API should still be treated as evolving.
 
 ## License
 
