@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -594,8 +595,8 @@ prettyBindAnn
   -> PrettyM (Doc, Doc, Doc)
 prettyBindAnn bnd =
   case unbind bnd of
-    Just (pair, body) -> do
-      (dn, dty) <- prettyAnnPair pair
+    Just (annPair, body) -> do
+      (dn, dty) <- prettyAnnPair annPair
       db <- prettyLogic body
       pure (dn, dty, db)
     Nothing -> do
@@ -616,14 +617,14 @@ prettyBindAnnList bnd =
       pure (d, d)
 
 prettyAnnPair :: Logic (Nom, Ty) -> PrettyM (Doc, Doc)
-prettyAnnPair pair =
-  case pair of
+prettyAnnPair annPair =
+  case annPair of
     Ground (RTuple n ty) -> do
       dn <- prettyLogic n
       dty <- prettyLogic ty
       pure (dn, dty)
     _ -> do
-      d <- prettyLogic pair
+      d <- prettyLogic annPair
       pure (d, d)
 
 prettyAnnList :: Logic [(Nom, Ty)] -> PrettyM Doc

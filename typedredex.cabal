@@ -1,10 +1,34 @@
 cabal-version:      3.0
 name:               typedredex
 version:            0.1.0.0
-synopsis:           Pure AST TypedRedex with multiple interpreters
+synopsis:           Typed Haskell embedding for Redex-style semantics
+description:
+    TypedRedex is an embedded Haskell DSL for specifying judgments,
+    reduction rules, and semantic relations as a typed AST.
+    .
+    The same rule set can be evaluated, traced as partial derivations,
+    typeset for documentation, or analyzed with a mode checker.
 license:            MIT
+license-file:       LICENSE
 author:             Xu Xue
+maintainer:         Xu Xue
+copyright:          2025-2026 Xu Xue
+homepage:           https://github.com/juniorxxue/TypedRedex
+bug-reports:        https://github.com/juniorxxue/TypedRedex/issues
+category:           Language
+stability:          experimental
 build-type:         Simple
+tested-with:        GHC == 9.6.7
+extra-doc-files:
+    CONTRIBUTING.md
+    README.md
+    notes/README.md
+    notes/archived-readme-notes.md
+    notes/open-source-checklist.md
+
+source-repository head
+    type:           git
+    location:       https://github.com/juniorxxue/TypedRedex.git
 
 common warnings
     ghc-options: -Wall -Wno-unticked-promoted-constructors
@@ -31,8 +55,8 @@ library
         TypedRedex.Nominal.Prelude
     build-depends:
         base >= 4.17 && < 5,
-        containers,
-        mtl
+        containers >= 0.6 && < 0.8,
+        mtl >= 2.2 && < 2.4
     hs-source-dirs:   src
     default-language: GHC2021
     default-extensions:
@@ -137,7 +161,7 @@ executable example-stlc
         Support.Nat
     build-depends:
         base >= 4.17 && < 5,
-        QuickCheck,
+        QuickCheck >= 2.14 && < 2.19,
         typedredex
     hs-source-dirs:   examples/projects, examples
     default-language: GHC2021

@@ -17,12 +17,6 @@ assertNonEmpty name xs =
     then error ("[fail] " ++ name ++ ": expected results, got " ++ show xs)
     else putStrLn ("[ok] " ++ name)
 
-assertEmpty :: Show a => String -> [a] -> IO ()
-assertEmpty name xs =
-  if null xs
-    then putStrLn ("[ok] " ++ name)
-    else error ("[fail] " ++ name ++ ": expected no results, got " ++ show xs)
-
 printTrace :: String -> [TraceResult a] -> IO ()
 printTrace name results =
   case results of

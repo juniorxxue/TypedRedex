@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up GHC and cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.7'
+          cabal-version: '3.14.2.0'
+
+      - name: Update package index
+        run: cabal update
+
+      - name: Check package metadata
+        run: cabal check
+
+      - name: Build all targets
+        run: cabal build all
+
+      - name: Run STLC example
+        run: cabal run example-stlc
+
+      - name: Build source distribution
+        run: cabal sdist

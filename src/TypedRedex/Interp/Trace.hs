@@ -246,14 +246,16 @@ selectTrace extract search =
           case select x of
             Nothing -> go best rest
             Just ok@(PickOk _ _) -> Just ok
-            Just fail@(PickFail _ _ _) ->
-              go (Just (bestFailure best fail)) rest
+            Just failed@(PickFail _ _ _) ->
+              go (Just (bestFailure best failed)) rest
 
     bestFailure Nothing candidate = candidate
     bestFailure (Just current@(PickFail _ _ depthCurr)) candidate@(PickFail _ _ depthCand)
       | depthCurr >= depthCand = current
       | otherwise = candidate
     bestFailure (Just (PickOk _ _)) candidate = candidate
+    bestFailure (Just (PickFail _ _ _)) (PickOk _ _) =
+      error "bestFailure called with a successful candidate"
 
 derivDepth :: Derivation -> Int
 derivDepth deriv =

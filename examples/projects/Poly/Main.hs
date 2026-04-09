@@ -2,12 +2,9 @@ module Poly.Main (main) where
 
 import TypedRedex.Backend.Eval (eval, query, qfresh)
 import TypedRedex.Interp.Trace (TraceResult(..), prettyDerivation, trace)
-import TypedRedex.Interp.MCheck (mcheck)
-
-import TypedRedex.Interp.Typeset (typeset)
 import TypedRedex.Nominal.Prelude (nom, tynom)
 
-import Poly.Rules (infer, ssub, sub)
+import Poly.Rules (sub)
 import Poly.Syntax
 import Support.Nat (zro, suc)
 
@@ -16,12 +13,6 @@ assertNonEmpty name xs =
   if null xs
     then error ("[fail] " ++ name ++ ": expected results, got " ++ show xs)
     else putStrLn ("[ok] " ++ name)
-
-assertEmpty :: Show a => String -> [a] -> IO ()
-assertEmpty name xs =
-  if null xs
-    then putStrLn ("[ok] " ++ name)
-    else error ("[fail] " ++ name ++ ": expected no results, got " ++ show xs)
 
 printTrace :: String -> [TraceResult a] -> IO ()
 printTrace name results =
@@ -38,18 +29,9 @@ main :: IO ()
 main = do
   putStrLn "=== Poly ==="
   putStrLn ""
-  -- putStrLn (typeset ssub)
-  -- putStrLn (typeset sub)
-  -- putStrLn $ mcheck infer
 
   let one = suc zro
-      x0 = nom 0
       a0 = tynom 0
-      idLam = lam x0 (var x0)
-      idAnn = ann idLam (tarr tint tint)
-      idApp = app idAnn (lit one)
-      idAppUnann = app idLam (lit one)
-
 
   -- Test: id (g 1) and g (id 1) where g : forall b. int -> b, id : forall a. a -> a
   let gVar = nom 1
@@ -61,14 +43,6 @@ main = do
       idTy = tforall a0 (tarr (tvar a0) (tvar a0))
       -- environment with g and id
       envGId = etrm gVar gTy (etrm idVar idTy eempty)
-      -- id (g 1)
-      idGApp = app (var idVar) (app (var gVar) (lit one))
-
-  -- let qPolyIdGTop = query $ do
-  --       env <- qfresh
-  --       pure (infer envGId (ctype ttop) idGApp ttop env, ttop)
-  -- printTrace "infer id (g 1) : top (ctx top)" (trace qPolyIdGTop)
-  -- assertNonEmpty "infer id (g 1) : top (ctx top)" (eval qPolyIdGTop)
 
   -- Test: envGId |- forall a. a -> a <: [g 1] ~> []
   let qSubForallIdG = query $ do

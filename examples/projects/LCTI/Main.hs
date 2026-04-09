@@ -511,10 +511,10 @@ preEnv = foldr (uncurry ETrm) EEmpty preEnvEntries
 -- Variable references
 idV, chooseV, idsV, autoV, auto'V, polyV, headV, tailV, lengthV, singleV :: Tm
 incV, appendV, mapV, appV, revappV, runSTV, argSTV, fV, hV, kV, lstV, rV :: Tm
-nilV, consV, fstV, sndV, f1V, f2V, stV :: Tm
+nilV, consV, fstV, f1V, f2V :: Tm
 idUcV, chooseUcV, idsUcV, autoUcV, auto'UcV, polyUcV, headUcV, tailUcV, lengthUcV :: Tm
 singleUcV, incUcV, appendUcV, mapUcV, appUcV, revappUcV, runSTUcV, argSTUcV :: Tm
-fUcV, hUcV, kUcV, lstUcV, rUcV, consUcV, fstUcV, sndUcV, stUcV :: Tm
+hUcV, kUcV, lstUcV, rUcV, consUcV :: Tm
 idV = Var idN
 chooseV = Var chooseN
 idsV = Var idsN
@@ -540,10 +540,8 @@ rV = Var rN
 nilV = Var nilN
 consV = Var consN
 fstV = Var fstN
-sndV = Var sndN
 f1V = Var f1N
 f2V = Var f2N
-stV = Var stN
 idUcV = Var idUcN
 chooseUcV = Var chooseUcN
 idsUcV = Var idsUcN
@@ -561,15 +559,11 @@ appUcV = Var appUcN
 revappUcV = Var revappUcN
 runSTUcV = Var runSTUcN
 argSTUcV = Var argSTUcN
-fUcV = Var fUcN
 hUcV = Var hUcN
 kUcV = Var kUcN
 lstUcV = Var lstUcN
 rUcV = Var rUcN
 consUcV = Var consUcN
-fstUcV = Var fstUcN
-sndUcV = Var sndUcN
-stUcV = Var stUcN
 
 --------------------------------------------------------------------------------
 -- Helper functions for building terms

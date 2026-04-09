@@ -27,7 +27,6 @@ import Data.String (fromString)
 import Prelude hiding ((>>=), (>>), return)
 import qualified Prelude as P
 import TypedRedex.DSL hiding (neg, var)
-import TypedRedex.Nominal.Bind (bind)
 import TypedRedex.Nominal.Prelude (Nom, TyNom)
 import TypedRedex.Pretty ((<+>))
 
