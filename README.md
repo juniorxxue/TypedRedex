@@ -11,7 +11,7 @@ The pitch is simple:
 - multiple interpreters over the same rule definition
 - better failure information when a derivation gets stuck
 
-A more motivating introduction can be found in this [slides](https://types.hk/TypedRedex/) .
+A more motivating introduction can be found on this [slides](https://types.hk/TypedRedex/) .
 
 ## Why TypedRedex
 
