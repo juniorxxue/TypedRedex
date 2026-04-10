@@ -11,14 +11,15 @@ The pitch is simple:
 - multiple interpreters over the same rule definition
 - better failure information when a derivation gets stuck
 
+A more motivating introduction can be found in this [slides](https://types.hk/TypedRedex/) .
+
 ## Why TypedRedex
 
 PLT Redex is a great environment for prototyping programming-language semantics, but in practice some common pain points remain:
 
 - many mistakes are discovered only at runtime
 - arity, mode, and contract issues are easy to encode accidentally
-- failures can collapse to "no answers"
-- it can be hard to inspect where a derivation stopped
+- failures can collapse to "no answers", it can be hard to inspect where a derivation stopped
 
 TypedRedex keeps the same general workflow while leaning on Haskell's type system and tooling.
 
@@ -51,7 +52,7 @@ The STLC example in this repository defines typing as a typed judgment:
 typeof :: Judgment "typeof" '[I, I, O] '[Env, Tm, Ty]
 typeof = judgment $
   format (\env tm ty -> env <+> " ⊢ " <+> tm <+> " : " <+> ty)
-  P.>> rules
+  >> rules
     [ rule "T-Var" $ do
         (env, x, ty) <- fresh
         prem  $ lookupVar env x ty
@@ -70,13 +71,6 @@ typeof = judgment $
     ]
 ```
 
-The type already carries three important pieces of information:
-
-- the judgment name
-- the mode list
-- the argument types
-
-That means many shape errors are pushed earlier, into Haskell's type checking, instead of being left entirely to runtime.
 
 ## Interpreters
 
@@ -89,20 +83,12 @@ TypedRedex ships with several interpreters over the same rule AST.
 | `TypedRedex.Interp.Typeset` | Render rules for notes and papers |
 | `TypedRedex.Interp.MCheck` | Analyze mode discipline and scheduling |
 
-## Failure Traces
-
-One of the main goals of the library is to make failures more informative.
-
-Instead of only getting an empty result, the trace interpreter can show which rule matched, which premise failed, and how far the derivation progressed before getting stuck.
-
-This is especially useful while tuning a semantics or debugging a rule set.
-
 ## Included Examples
 
 The repository currently includes two runnable examples.
 
 - `STLC`: simply typed lambda calculus with tracing and QuickCheck properties
-- `LCTI`: a larger inference-oriented case study with a regression suite
+- `LCTI`: a larger type inference algorithm study with a regression suite. For essential logics, compare [original haskell impl](https://github.com/juniorxxue/LCTI/blob/public/impl/Poly/app/Infer.hs) and [typeredex-version](examples/projects/LCTI/Rules.hs) to feel the lightweightness of the logic implementation.
 
 Run them with:
 
