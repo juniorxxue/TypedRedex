@@ -134,6 +134,11 @@ cabal build all
 - `TypedRedex.Nominal*`: binder-oriented utilities and nominal support
 - `TypedRedex.Core.*`: internal typed AST and supporting infrastructure
 
+## Roadmap
+
+- Use Template Haskell to generate routine syntax definitions automatically, while still letting users define binder-heavy or otherwise non-standard cases by hand.
+- Add an interactive front end for building derivations by selecting rules, in the spirit of [Hazel Deriver](https://arxiv.org/abs/2506.10781). This would support reasoning with rule systems that are not purely algorithmic, and would likely take the form of a new interpreter.
+
 ## Status
 
 TypedRedex is currently experimental.
